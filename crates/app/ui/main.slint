@@ -1,0 +1,984 @@
+import { Theme, Icons } from "theme.slint";
+import { Icon, IconBtn, Btn, Divider } from "widgets.slint";
+import { Backend, Box2 } from "backend.slint";
+import { Dock } from "dock.slint";
+import { MessageDialogView } from "dialogs.slint";
+import { ModelsPanel, MenuPanel, BatchPanel, AboutPanel, SettingsDialog } from "panels.slint";
+
+export { Backend, Theme }
+
+component ToolButton inherits IconBtn {
+    in property <string> id;
+    in property <color> accent: Theme.accent;
+    size: 36px;
+    icon-size: 22px;
+    enabled: Backend.has-doc;
+    active: Backend.tool == root.id;
+    active-tint: root.accent;
+    clicked => {
+        Backend.set-tool(root.id);
+    }
+}
+
+component Rail inherits Rectangle {
+    width: 48px;
+    background: Theme.surface-1;
+    accessible-role: groupbox;
+    accessible-label: @tr("Tools");
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        background: Theme.line;
+    }
+    VerticalLayout {
+        padding-top: 10px;
+        spacing: 6px;
+        alignment: start;
+        HorizontalLayout {
+            alignment: center;
+            ToolButton {
+                id: "keep";
+                d: Icons.keep;
+                accent: Theme.keep;
+                label: @tr("Foreground");
+                hint: @tr("Mark areas to keep") + " (F)";
+            }
+        }
+        if Backend.p.graphcut: HorizontalLayout {
+            alignment: center;
+            ToolButton {
+                id: "remove";
+                d: Icons.remove;
+                accent: Theme.remove;
+                label: @tr("Background");
+                hint: @tr("Mark areas to remove") + " (B)";
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            ToolButton {
+                id: "erase";
+                d: Icons.erase;
+                label: @tr("Erase");
+                hint: @tr("Erase markings and prediction") + " (E)";
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22px;
+                height: 1px;
+                background: Theme.line;
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            ToolButton {
+                id: "select";
+                d: Icons.wand;
+                label: @tr("Smart select");
+                hint: @tr("Click what to keep, right-click what to leave out, drag a box") + " (S)";
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22px;
+                height: 1px;
+                background: Theme.line;
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            ToolButton {
+                id: "hair";
+                d: Icons.hair;
+                accent: Theme.hair;
+                label: @tr("Hair");
+                hint: @tr("Mark areas where hair is, for soft edges") + " (H)";
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            ToolButton {
+                id: "hair_erase";
+                d: Icons.hair-erase;
+                accent: Theme.hair;
+                label: @tr("Erase hair markings");
+                hint: @tr("Erase hair markings") + " (Shift+H)";
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22px;
+                height: 1px;
+                background: Theme.line;
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            ToolButton {
+                id: "move";
+                d: Icons.move;
+                label: @tr("Move image");
+                hint: @tr("Drag to pan (or hold Space)") + " (M)";
+            }
+        }
+    }
+}
+
+component Chip inherits Rectangle {
+    height: 28px;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: touch.has-hover ? Theme.line-strong : Theme.line;
+    background: Theme.surface-2;
+    accessible-role: button;
+    accessible-label: Backend.chip-text;
+    in property <bool> compact;
+    callback clicked();
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 7px;
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            background: Backend.chip-tone == 0 ? Theme.accent : Backend.chip-tone == 1 ? Theme.keep : Backend.chip-tone == 2 ? Theme.warn : Theme.text-3;
+        }
+        Icon {
+            d: Icons.model;
+            size: 16px;
+            y: (parent.height - self.height) / 2;
+        }
+        Text {
+            text: Backend.chip-text;
+            color: Theme.text;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+            overflow: elide;
+            max-width: root.compact ? 130px : 190px;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Topbar inherits Rectangle {
+    in property <bool> compact;
+    height: 48px;
+    background: Theme.surface-1;
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.line;
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 4px;
+        alignment: start;
+        IconBtn {
+            y: 8px;
+            d: Icons.open;
+            label: @tr("Open image");
+            hint: @tr("Open image (Ctrl+O)");
+            clicked => {
+                Backend.open-image();
+            }
+        }
+        IconBtn {
+            y: 8px;
+            d: Icons.save;
+            label: @tr("Save");
+            hint: @tr("Save (Ctrl+S)");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.save();
+            }
+        }
+        Rectangle {
+            width: 13px;
+            Rectangle {
+                width: 1px;
+                height: 20px;
+                background: Theme.line;
+            }
+        }
+        IconBtn {
+            y: 8px;
+            d: Icons.undo;
+            label: @tr("Undo");
+            hint: @tr("Undo (Ctrl+Z)");
+            enabled: Backend.can-undo;
+            clicked => {
+                Backend.undo();
+            }
+        }
+        IconBtn {
+            y: 8px;
+            d: Icons.redo;
+            label: @tr("Redo");
+            hint: @tr("Redo (Ctrl+Y)");
+            enabled: Backend.can-redo;
+            clicked => {
+                Backend.redo();
+            }
+        }
+        Rectangle {
+            width: 13px;
+            Rectangle {
+                width: 1px;
+                height: 20px;
+                background: Theme.line;
+            }
+        }
+        IconBtn {
+            y: 8px;
+            d: Icons.zoom-out;
+            label: @tr("Zoom out");
+            hint: @tr("Zoom out (Ctrl+-)");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.zoom-out();
+            }
+        }
+        Rectangle {
+            width: 68px;
+            Btn {
+                y: 10px;
+                width: parent.width;
+                quiet: true;
+                text: Backend.has-doc ? Math.round(Backend.view-scale * 100) + "%" : "–%";
+                enabled: Backend.has-doc;
+                clicked => {
+                    Backend.zoom-actual();
+                }
+            }
+        }
+        IconBtn {
+            y: 8px;
+            d: Icons.zoom-in;
+            label: @tr("Zoom in");
+            hint: @tr("Zoom in (Ctrl++)");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.zoom-in();
+            }
+        }
+        IconBtn {
+            y: 8px;
+            d: Icons.fit;
+            label: @tr("Zoom to fit");
+            hint: @tr("Zoom to fit (Ctrl+9)");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.zoom-fit();
+            }
+        }
+        Rectangle {
+            width: 13px;
+            Rectangle {
+                width: 1px;
+                height: 20px;
+                background: Theme.line;
+            }
+        }
+        if !root.compact: Rectangle {
+            width: gbtn.preferred-width;
+            gbtn := Btn {
+                y: 10px;
+                text: @tr("Group by color");
+                d: Icons.group;
+                enabled: Backend.has-doc;
+                primary: Backend.p.graphcut;
+                clicked => {
+                    Backend.toggle-graphcut();
+                }
+            }
+        }
+        if root.compact: IconBtn {
+            y: 8px;
+            d: Icons.group;
+            label: @tr("Group by color");
+            hint: @tr("Group by color");
+            enabled: Backend.has-doc;
+            active: Backend.p.graphcut;
+            clicked => {
+                Backend.toggle-graphcut();
+            }
+        }
+        Rectangle {
+            width: 13px;
+            Rectangle {
+                width: 1px;
+                height: 20px;
+                background: Theme.line;
+            }
+        }
+        Rectangle {
+            property <length> lblw: root.compact ? 0px : lbl.preferred-width + 10px;
+            width: self.lblw + 88px + 12px + 24px;
+            opacity: Backend.has-doc ? 1 : 0.45;
+            accessible-role: slider;
+            accessible-label: @tr("Marker size");
+            accessible-value: Backend.marker-size;
+            lbl := Text {
+                x: 0;
+                visible: !root.compact;
+                text: @tr("Marker size");
+                color: Theme.text-2;
+                font-size: Theme.fs-sm;
+                vertical-alignment: center;
+                height: parent.height;
+            }
+            Rectangle {
+                x: parent.lblw;
+                y: 22px;
+                width: 88px;
+                height: 4px;
+                border-radius: 2px;
+                background: Theme.surface-3;
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width * (Backend.marker-size - 1) / 299;
+                    height: parent.height;
+                    border-radius: 2px;
+                    background: Theme.accent;
+                }
+            }
+            Rectangle {
+                x: parent.lblw + (88px - 12px) * (Backend.marker-size - 1) / 299;
+                y: 18px;
+                width: 12px;
+                height: 12px;
+                border-radius: 6px;
+                background: Theme.text;
+            }
+            TouchArea {
+                x: parent.lblw - 4px;
+                width: 96px;
+                enabled: Backend.has-doc;
+                mouse-cursor: MouseCursor.pointer;
+                pointer-event(e) => {
+                    if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                        Backend.set-marker(1 + round(clamp((self.mouse-x - 4px) / 88px, 0, 1) * 299));
+                    }
+                }
+                moved => {
+                    if (self.pressed) {
+                        Backend.set-marker(1 + round(clamp((self.mouse-x - 4px) / 88px, 0, 1) * 299));
+                    }
+                }
+            }
+            Text {
+                x: parent.lblw + 88px + 12px;
+                text: Backend.marker-size;
+                color: Theme.text;
+                font-size: Theme.fs-sm;
+                vertical-alignment: center;
+                height: parent.height;
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        Rectangle {
+            width: chip.preferred-width;
+            chip := Chip {
+                y: 10px;
+                compact: root.compact;
+                clicked => {
+                    Backend.popover = Backend.popover == 1 ? 0 : 1;
+                }
+            }
+        }
+        IconBtn {
+            y: 8px;
+            d: Icons.settings;
+            label: @tr("Settings");
+            hint: @tr("Settings");
+            active: Backend.popover == 5;
+            clicked => {
+                Backend.popover = Backend.popover == 5 ? 0 : 5;
+            }
+        }
+        IconBtn {
+            y: 8px;
+            d: Icons.more;
+            label: @tr("Menu");
+            hint: @tr("Menu");
+            active: Backend.popover == 2 || Backend.popover == 4;
+            clicked => {
+                Backend.popover = Backend.popover == 2 ? 0 : 2;
+            }
+        }
+    }
+}
+
+component Handle inherits Rectangle {
+    width: 10px;
+    height: 10px;
+    background: Theme.text;
+    border-width: 1px;
+    border-color: Theme.canvas;
+    border-radius: 2px;
+}
+
+component ViewPane inherits Rectangle {
+    in property <int> side;
+    in property <string> label;
+    property <image> img: root.side == 0 ? Backend.src-img : Backend.res-img;
+    property <Box2> reg: root.side == 0 ? Backend.src-region : Backend.res-region;
+    property <length> cx0: Backend.view-tx * 1px + Backend.crop.x0 * Backend.view-scale * 1px;
+    property <length> cy0: Backend.view-ty * 1px + Backend.crop.y0 * Backend.view-scale * 1px;
+    property <length> cx1: Backend.view-tx * 1px + Backend.crop.x1 * Backend.view-scale * 1px;
+    property <length> cy1: Backend.view-ty * 1px + Backend.crop.y1 * Backend.view-scale * 1px;
+    clip: true;
+    background: Theme.canvas;
+    changed width => {
+        if (root.side == 0) {
+            Backend.pane-resized(self.width / 1px, self.height / 1px);
+        }
+    }
+    changed height => {
+        if (root.side == 0) {
+            Backend.pane-resized(self.width / 1px, self.height / 1px);
+        }
+    }
+    Image {
+        source: root.img;
+        x: round((Backend.view-tx + root.reg.x0 * Backend.view-scale)) * 1px;
+        y: round((Backend.view-ty + root.reg.y0 * Backend.view-scale)) * 1px;
+        width: round((root.reg.x1 - root.reg.x0) * Backend.view-scale) * 1px;
+        height: round((root.reg.y1 - root.reg.y0) * Backend.view-scale) * 1px;
+        image-fit: fill;
+        image-rendering: Backend.view-scale >= 1 ? ImageRendering.pixelated : ImageRendering.smooth;
+    }
+
+    // Crop rectangle, over the result.
+    if root.side == 1 && Backend.crop-visible: Rectangle {
+        Rectangle {
+            visible: !Backend.crop-full;
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: max(0px, root.cy0);
+            background: #00000099;
+        }
+        Rectangle {
+            visible: !Backend.crop-full;
+            x: 0;
+            y: root.cy1;
+            width: parent.width;
+            height: max(0px, parent.height - root.cy1);
+            background: #00000099;
+        }
+        Rectangle {
+            visible: !Backend.crop-full;
+            x: 0;
+            y: root.cy0;
+            width: max(0px, root.cx0);
+            height: root.cy1 - root.cy0;
+            background: #00000099;
+        }
+        Rectangle {
+            visible: !Backend.crop-full;
+            x: root.cx1;
+            y: root.cy0;
+            width: max(0px, parent.width - root.cx1);
+            height: root.cy1 - root.cy0;
+            background: #00000099;
+        }
+        Rectangle {
+            x: root.cx0;
+            y: root.cy0;
+            width: root.cx1 - root.cx0;
+            height: root.cy1 - root.cy0;
+            border-width: 1.5px;
+            border-color: Backend.crop-full ? #ffffff55 : Theme.accent;
+        }
+        if !Backend.crop-locked: Rectangle {
+            Handle {
+                x: root.cx0 - 5px;
+                y: root.cy0 - 5px;
+            }
+            Handle {
+                x: (root.cx0 + root.cx1) / 2 - 5px;
+                y: root.cy0 - 5px;
+            }
+            Handle {
+                x: root.cx1 - 5px;
+                y: root.cy0 - 5px;
+            }
+            Handle {
+                x: root.cx1 - 5px;
+                y: (root.cy0 + root.cy1) / 2 - 5px;
+            }
+            Handle {
+                x: root.cx1 - 5px;
+                y: root.cy1 - 5px;
+            }
+            Handle {
+                x: (root.cx0 + root.cx1) / 2 - 5px;
+                y: root.cy1 - 5px;
+            }
+            Handle {
+                x: root.cx0 - 5px;
+                y: root.cy1 - 5px;
+            }
+            Handle {
+                x: root.cx0 - 5px;
+                y: (root.cy0 + root.cy1) / 2 - 5px;
+            }
+        }
+        if !Backend.crop-full: Rectangle {
+            x: (root.cx0 + root.cx1) / 2 - self.width / 2;
+            y: root.cy1 + 8px;
+            width: sz.preferred-width + 12px;
+            height: 20px;
+            border-radius: 10px;
+            background: #000000b0;
+            sz := Text {
+                text: Backend.crop-label;
+                color: Theme.text;
+                font-size: Theme.fs-xs;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    // Marks being drawn, smart select prompts, brush outline (over the original).
+    if root.side == 0: Rectangle {
+        Path {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            viewbox-x: 0;
+            viewbox-y: 0;
+            viewbox-width: self.width / 1px;
+            viewbox-height: self.height / 1px;
+            commands: Backend.stroke-path;
+            stroke: Backend.stroke-color;
+            stroke-width: Backend.stroke-width;
+            stroke-line-cap: round;
+            stroke-line-join: round;
+        }
+        for d in Backend.dots: Rectangle {
+            x: Backend.view-tx * 1px + d.x * Backend.view-scale * 1px - 6px;
+            y: Backend.view-ty * 1px + d.y * Backend.view-scale * 1px - 6px;
+            width: 12px;
+            height: 12px;
+            border-radius: 6px;
+            background: d.keep ? Theme.keep : Theme.remove;
+            border-width: 2px;
+            border-color: white;
+        }
+        for b in Backend.boxes: Rectangle {
+            x: Backend.view-tx * 1px + b.x0 * Backend.view-scale * 1px;
+            y: Backend.view-ty * 1px + b.y0 * Backend.view-scale * 1px;
+            width: (b.x1 - b.x0) * Backend.view-scale * 1px;
+            height: (b.y1 - b.y0) * Backend.view-scale * 1px;
+            border-width: 2px;
+            border-color: #5ad2f0;
+        }
+        if Backend.drag-visible: Rectangle {
+            x: min(Backend.drag-box.x0, Backend.drag-box.x1) * 1px;
+            y: min(Backend.drag-box.y0, Backend.drag-box.y1) * 1px;
+            width: abs(Backend.drag-box.x1 - Backend.drag-box.x0) * 1px;
+            height: abs(Backend.drag-box.y1 - Backend.drag-box.y0) * 1px;
+            border-width: 2px;
+            border-color: #5ad2f0;
+        }
+        if Backend.brush-visible: Rectangle {
+            x: Backend.brush-x - Backend.brush-d / 2 - 0.5px;
+            y: Backend.brush-y - Backend.brush-d / 2 - 0.5px;
+            width: Backend.brush-d + 1px;
+            height: Backend.brush-d + 1px;
+            border-radius: self.width / 2;
+            border-width: 1px;
+            border-color: #000000b3;
+            Rectangle {
+                x: 1px;
+                y: 1px;
+                width: parent.width - 2px;
+                height: parent.height - 2px;
+                border-radius: self.width / 2;
+                border-width: 1px;
+                border-color: #fffffff2;
+            }
+        }
+    }
+
+    Rectangle {
+        x: 10px;
+        y: 10px;
+        width: lbl.preferred-width + 16px;
+        height: 22px;
+        border-radius: 11px;
+        background: #000000a0;
+        lbl := Text {
+            text: root.label;
+            color: Theme.text-2;
+            font-size: Theme.fs-xs;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: Backend.cursor == 1 ? MouseCursor.crosshair
+            : Backend.cursor == 2 ? MouseCursor.grab
+            : Backend.cursor == 3 ? MouseCursor.grabbing
+            : Backend.cursor == 4 ? MouseCursor.none
+            : Backend.cursor == 5 ? MouseCursor.move
+            : Backend.cursor == 6 ? MouseCursor.ns-resize
+            : Backend.cursor == 7 ? MouseCursor.ew-resize
+            : Backend.cursor == 8 ? MouseCursor.nwse-resize
+            : Backend.cursor == 9 ? MouseCursor.nesw-resize
+            : MouseCursor.default;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                Backend.pane-down(root.side, e.button == PointerEventButton.left ? 0 : e.button == PointerEventButton.middle ? 1 : 2, self.mouse-x / 1px, self.mouse-y / 1px, e.modifiers.alt);
+            } else if (e.kind == PointerEventKind.up) {
+                Backend.pane-up(root.side, e.button == PointerEventButton.left ? 0 : e.button == PointerEventButton.middle ? 1 : 2, self.mouse-x / 1px, self.mouse-y / 1px);
+            }
+        }
+        moved => {
+            Backend.pane-move(root.side, self.mouse-x / 1px, self.mouse-y / 1px);
+        }
+        scroll-event(e) => {
+            Backend.pane-wheel(root.side, self.mouse-x / 1px, self.mouse-y / 1px, e.delta-x / 1px, e.delta-y / 1px, e.modifiers.control, e.modifiers.shift);
+            return accept;
+        }
+        changed has-hover => {
+            if (!self.has-hover) {
+                Backend.pane-leave(root.side);
+            }
+        }
+    }
+
+    @children
+}
+
+export component MainWindow inherits Window {
+    title: Backend.doc-title;
+    default-font-family: "Segoe UI";
+    preferred-width: 1320px;
+    preferred-height: 820px;
+    min-width: 960px;
+    min-height: 600px;
+    background: Theme.bg;
+    icon: @image-url("../assets/icon.png");
+    property <bool> narrow: false;
+    changed width => {
+        root.narrow = self.width < 1240px;
+    }
+    property <int> pop: Backend.popover;
+    changed pop => {
+        Backend.popover-changed(self.pop);
+        fs.focus();
+    }
+
+    property <int> ftick: Backend.focus-tick;
+    changed ftick => {
+        fs.focus();
+    }
+
+    fs := FocusScope {
+        width: parent.width;
+        height: parent.height;
+        key-pressed(e) => {
+            Backend.key-down(e.text, e.modifiers.control, e.modifiers.shift, e.modifiers.alt);
+            return accept;
+        }
+        key-released(e) => {
+            Backend.key-up(e.text);
+            return accept;
+        }
+        init => {
+            self.focus();
+        }
+
+        VerticalLayout {
+            Topbar {
+                compact: root.narrow;
+            }
+            HorizontalLayout {
+                Rail { }
+                views := HorizontalLayout {
+                    spacing: 1px;
+                    ViewPane {
+                        side: 0;
+                        label: @tr("Original");
+                        if Backend.busy: Rectangle {
+                            y: 0;
+                            height: 2px;
+                            clip: true;
+                            Rectangle {
+                                width: parent.width * 0.3;
+                                x: -self.width + (parent.width + self.width) * Math.mod(animation-tick(), 1.4s) / 1.4s;
+                                background: Theme.accent;
+                            }
+                        }
+                        if Backend.smart-count > 0: Rectangle {
+                            x: (parent.width - self.width) / 2;
+                            y: 42px;
+                            width: bar.preferred-width;
+                            height: 40px;
+                            border-radius: 8px;
+                            background: Theme.surface-2;
+                            border-width: 1px;
+                            border-color: Theme.line-strong;
+                            bar := HorizontalLayout {
+                                padding: 6px;
+                                spacing: 6px;
+                                for m[i] in [@tr("Replace"), @tr("Add"), @tr("Subtract")]: Btn {
+                                    text: m;
+                                    primary: Backend.smart-mode == i;
+                                    clicked => {
+                                        Backend.set-smart-mode(i);
+                                    }
+                                }
+                                Btn {
+                                    text: @tr("Apply");
+                                    primary: true;
+                                    enabled: !Backend.smart-busy;
+                                    clicked => {
+                                        Backend.smart-apply();
+                                    }
+                                }
+                                Btn {
+                                    text: @tr("Cancel");
+                                    clicked => {
+                                        Backend.smart-cancel();
+                                    }
+                                }
+                            }
+                        }
+                        if Backend.no-model: Rectangle {
+                            x: 10px;
+                            y: parent.height - 52px;
+                            width: parent.width - 20px;
+                            height: 40px;
+                            border-radius: 8px;
+                            background: Theme.surface-2;
+                            border-width: 1px;
+                            border-color: Theme.line-strong;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 6px;
+                                spacing: 8px;
+                                Icon {
+                                    d: Icons.warning;
+                                    size: 16px;
+                                    tint: Theme.warn;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                                Text {
+                                    text: @tr("No AI model is ready. You can still mark areas by hand.");
+                                    color: Theme.text;
+                                    font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                                Btn {
+                                    y: 6px;
+                                    text: @tr("Choose a model");
+                                    clicked => {
+                                        Backend.popover = 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ViewPane {
+                        side: 1;
+                        label: @tr("Result");
+                        if Backend.busy: Rectangle {
+                            y: 0;
+                            height: 2px;
+                            clip: true;
+                            Rectangle {
+                                width: parent.width * 0.3;
+                                x: -self.width + (parent.width + self.width) * Math.mod(animation-tick(), 1.4s) / 1.4s;
+                                background: Theme.accent;
+                            }
+                        }
+                    }
+                }
+                Dock { }
+            }
+            Rectangle {
+                height: 26px;
+                background: Theme.surface-1;
+                Rectangle {
+                    y: 0;
+                    height: 1px;
+                    background: Theme.line;
+                }
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 18px;
+                    Text {
+                        horizontal-stretch: 1;
+                        text: Backend.status-text != "" ? Backend.status-text : Backend.hint;
+                        color: Backend.status-error ? Theme.danger : Theme.text-2;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        accessible-role: text;
+                    }
+                    Text {
+                        text: Backend.pred-text;
+                        color: Theme.text-2;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: Backend.usage-text;
+                        color: Backend.usage-near ? Theme.warn : Theme.text-2;
+                        font-size: Theme.fs-sm;
+                        font-weight: Backend.usage-near ? 600 : 400;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: Backend.size-text;
+                        color: Theme.text-2;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Empty state
+        if !Backend.has-doc: Rectangle {
+            x: 48px;
+            y: 48px;
+            width: parent.width - 48px - 308px;
+            height: parent.height - 48px - 26px;
+            VerticalLayout {
+                alignment: center;
+                spacing: 14px;
+                HorizontalLayout {
+                    alignment: center;
+                    Icon {
+                        d: Icons.scissors;
+                        size: 36px;
+                        tint: Theme.text-3;
+                    }
+                }
+                Text {
+                    text: @tr("Open an image to start");
+                    color: Theme.text;
+                    font-size: Theme.fs-lg;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: @tr("Drop a photo here or press Ctrl+O. The AI proposes a cut-out; you refine it with the brush.");
+                    color: Theme.text-3;
+                    font-size: Theme.fs-md;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Btn {
+                        text: @tr("Open image");
+                        d: Icons.open;
+                        primary: true;
+                        clicked => {
+                            Backend.open-image();
+                        }
+                    }
+                }
+            }
+        }
+
+        if Backend.drop-active: Rectangle {
+            x: 48px;
+            y: 48px;
+            width: parent.width - 48px - 308px;
+            height: parent.height - 48px - 26px;
+            background: #6fb8f522;
+            border-width: 2px;
+            border-color: Theme.accent;
+            Text {
+                text: @tr("Drop an image to open it");
+                color: Theme.accent;
+                font-size: Theme.fs-lg;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Popovers
+        if Backend.popover != 0: TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                Backend.popover = 0;
+            }
+        }
+        if Backend.popover == 1: ModelsPanel {
+            x: parent.width - self.width - 12px;
+            y: 54px;
+            limit-h: parent.height - 54px - 38px;
+        }
+        if Backend.popover == 2: MenuPanel {
+            x: parent.width - self.width - 12px;
+            y: 54px;
+            limit-h: parent.height - 54px - 38px;
+        }
+        if Backend.popover == 5: Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #00000066;
+            TouchArea {
+                clicked => {
+                    Backend.popover = 0;
+                }
+            }
+            SettingsDialog {
+                x: (parent.width - self.width) / 2;
+                y: max(20px, (parent.height - self.height) / 3);
+                limit-h: parent.height - 40px;
+            }
+        }
+        if Backend.popover == 4: AboutPanel {
+            x: parent.width - self.width - 12px;
+            y: 54px;
+            limit-h: parent.height - 54px - 38px;
+        }
+        if Backend.popover == 3: BatchPanel {
+            x: parent.width - self.width - 12px;
+            y: 54px;
+            limit-h: parent.height - 54px - 38px;
+        }
+
+        if Backend.blocked: TouchArea {
+            width: parent.width;
+            height: parent.height;
+            mouse-cursor: MouseCursor.default;
+        }
+        if Backend.dlg-open: MessageDialogView {
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+}

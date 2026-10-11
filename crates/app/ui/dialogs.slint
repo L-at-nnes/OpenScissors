@@ -1,0 +1,83 @@
+import { Theme } from "theme.slint";
+import { Btn } from "widgets.slint";
+import { Backend } from "backend.slint";
+
+// A question with up to three buttons. Enter answers with the first, Escape with the cancel one.
+export component MessageDialogView inherits Rectangle {
+    background: #000000aa;
+    TouchArea { }
+    fs := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Escape) {
+                Backend.dlg-answer(Backend.dlg-cancel);
+                return accept;
+            }
+            if (e.text == "\n" || e.text == Key.Return) {
+                Backend.dlg-answer(0);
+                return accept;
+            }
+            return accept;
+        }
+    }
+    init => {
+        fs.focus();
+    }
+    property <bool> shown: Backend.dlg-open;
+    changed shown => {
+        if (self.shown) {
+            fs.focus();
+        }
+    }
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 3;
+        width: 460px;
+        height: col.preferred-height + 32px;
+        background: Theme.surface-2;
+        border-width: 1px;
+        border-color: Theme.line-strong;
+        border-radius: 10px;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: #00000099;
+        drop-shadow-offset-y: 8px;
+        col := VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            Text {
+                text: Backend.dlg-title;
+                color: Theme.text;
+                font-size: Theme.fs-lg;
+                font-weight: 600;
+            }
+            Text {
+                text: Backend.dlg-text;
+                color: Theme.text-2;
+                font-size: Theme.fs-md;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                if Backend.dlg-b3 != "": Btn {
+                    text: Backend.dlg-b3;
+                    clicked => {
+                        Backend.dlg-answer(2);
+                    }
+                }
+                if Backend.dlg-b2 != "": Btn {
+                    text: Backend.dlg-b2;
+                    clicked => {
+                        Backend.dlg-answer(1);
+                    }
+                }
+                Btn {
+                    text: Backend.dlg-b1;
+                    primary: true;
+                    clicked => {
+                        Backend.dlg-answer(0);
+                    }
+                }
+            }
+        }
+    }
+}

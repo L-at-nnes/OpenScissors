@@ -1,0 +1,18 @@
+# build output
+target/
+dist/
+
+# local development data (models, settings, scratch files)
+portable-dev/
+models/
+temp/
+data/settings.json
+
+# model weights are downloaded at runtime, never committed
+*.onnx
+*.db
+
+# dev material
+_private/
+archives/
+

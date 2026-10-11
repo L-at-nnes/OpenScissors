@@ -1,0 +1,382 @@
+import { Theme, Icons } from "theme.slint";
+import { Icon, IconBtn, Btn, Heading, SliderRow, SwitchRow, SelectRow, ColorRow, Divider } from "widgets.slint";
+import { Backend, FilterV } from "backend.slint";
+
+component Tab inherits Rectangle {
+    in property <string> text;
+    in property <string> d;
+    in property <bool> selected;
+    callback clicked();
+    height: 40px;
+    background: touch.has-hover && !root.selected ? Theme.surface-2 : transparent;
+    accessible-role: tab;
+    accessible-label: root.text;
+    accessible-checked: root.selected;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        alignment: center;
+        spacing: 5px;
+        Icon {
+            d: root.d;
+            size: 16px;
+            tint: root.selected ? Theme.accent : Theme.text-2;
+            y: (parent.height - self.height) / 2;
+        }
+        Text {
+            text: root.text;
+            color: root.selected ? Theme.text : Theme.text-2;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+    Rectangle {
+        y: parent.height - 2px;
+        height: 2px;
+        background: root.selected ? Theme.accent : transparent;
+    }
+    touch := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => {
+            root.clicked();
+            Backend.focus-tick += 1;
+        }
+    }
+}
+
+component FilterFields inherits VerticalLayout {
+    in property <string> path;
+    in property <FilterV> f;
+    spacing: 4px;
+    SelectRow {
+        label: @tr("Effect");
+        options: [@tr("None"), @tr("Blur"), @tr("Colorize"), @tr("Grayscale"), @tr("Negative"), @tr("Pixelate")];
+        current: root.f.kind;
+        selected(i) => {
+            Backend.set-index(root.path + ".kind", i);
+        }
+    }
+    if root.f.kind == 1 || root.f.kind == 5: SliderRow {
+        label: @tr("Radius");
+        value: root.f.radius;
+        changed(v) => {
+            Backend.set-int(root.path + ".radius", v);
+        }
+    }
+    if root.f.kind == 2: SliderRow {
+        label: @tr("Strength");
+        value: root.f.strength;
+        unit: "%";
+        changed(v) => {
+            Backend.set-int(root.path + ".strength", v);
+        }
+    }
+    if root.f.kind == 2: ColorRow {
+        label: @tr("Color");
+        value: root.f.color;
+        changed(r, g, b) => {
+            Backend.set-rgb(root.path + ".color", r, g, b);
+        }
+    }
+}
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    spacing: 4px;
+    Heading {
+        text: root.title;
+    }
+    @children
+}
+
+export component Dock inherits Rectangle {
+    width: 308px;
+    background: Theme.surface-1;
+    accessible-role: groupbox;
+    accessible-label: @tr("Result settings");
+    Rectangle {
+        x: 0;
+        width: 1px;
+        background: Theme.line;
+    }
+    VerticalLayout {
+        HorizontalLayout {
+            height: 40px;
+            Tab {
+                text: @tr("Foreground");
+                d: Icons.foreground;
+                selected: Backend.tab == 0;
+                clicked => {
+                    Backend.tab = 0;
+                }
+            }
+            Tab {
+                text: @tr("Background");
+                d: Icons.background;
+                selected: Backend.tab == 1;
+                clicked => {
+                    Backend.tab = 1;
+                }
+            }
+            Tab {
+                text: @tr("Shadow");
+                d: Icons.shadow;
+                selected: Backend.tab == 2;
+                clicked => {
+                    Backend.tab = 2;
+                }
+            }
+        }
+        Divider { }
+        Flickable {
+            interactive: false;
+            content-height: panel.preferred-height + 24px;
+            panel := VerticalLayout {
+                x: 16px;
+                y: 12px;
+                width: parent.width - 32px;
+                spacing: 16px;
+                if !Backend.has-doc: Text {
+                    text: @tr("Open an image to adjust the result.");
+                    color: Theme.text-3;
+                    font-size: Theme.fs-md;
+                    wrap: word-wrap;
+                }
+                if Backend.has-doc && Backend.tab == 0: Section {
+                    title: @tr("Boundary");
+                    SliderRow {
+                        label: @tr("Offset the boundary");
+                        value: Backend.p.mask-offset;
+                        minimum: -50;
+                        maximum: 50;
+                        unit: "px";
+                        changed(v) => {
+                            Backend.set-int("mask.offset", v);
+                        }
+                    }
+                    SliderRow {
+                        label: @tr("Feathering radius");
+                        value: Backend.p.feather;
+                        maximum: 50;
+                        unit: "px";
+                        changed(v) => {
+                            Backend.set-int("foreground.feather", v);
+                        }
+                    }
+                }
+                if Backend.has-doc && Backend.tab == 0: Section {
+                    title: @tr("Effect");
+                    FilterFields {
+                        path: "foreground.filter";
+                        f: Backend.p.fg-filter;
+                    }
+                }
+                if Backend.has-doc && Backend.tab == 1: Section {
+                    title: @tr("Background");
+                    SelectRow {
+                        label: @tr("Type");
+                        options: [@tr("Transparent"), @tr("Solid color"), @tr("Image"), @tr("Original")];
+                        current: Backend.p.bg-mode;
+                        selected(i) => {
+                            Backend.set-index("background.mode", i);
+                        }
+                    }
+                    if Backend.p.bg-mode == 1: ColorRow {
+                        label: @tr("Color");
+                        value: Backend.p.bg-color;
+                        changed(r, g, b) => {
+                            Backend.set-rgb("background.color", r, g, b);
+                        }
+                    }
+                    if Backend.p.bg-mode == 2: VerticalLayout {
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: start;
+                            Btn {
+                                text: @tr("Choose image…");
+                                d: Icons.image;
+                                clicked => {
+                                    Backend.pick-bg-image();
+                                }
+                            }
+                        }
+                        Text {
+                            text: Backend.p.bg-image != "" ? Backend.p.bg-image : @tr("No image chosen");
+                            color: Theme.text-3;
+                            font-size: Theme.fs-sm;
+                            overflow: elide;
+                        }
+                    }
+                    if Backend.p.bg-mode == 3: SwitchRow {
+                        label: @tr("Fill hole");
+                        checked: Backend.p.fill-hole;
+                        toggled(v) => {
+                            Backend.set-bool("background.fill_hole", v);
+                        }
+                    }
+                }
+                if Backend.has-doc && Backend.tab == 1 && (Backend.p.bg-mode == 2 || Backend.p.bg-mode == 3): Section {
+                    title: @tr("Background effect");
+                    FilterFields {
+                        path: "background.filter";
+                        f: Backend.p.bg-filter;
+                    }
+                }
+                if Backend.has-doc && Backend.tab == 1: Section {
+                    title: @tr("Crop");
+                    SelectRow {
+                        label: @tr("Aspect ratio");
+                        options: Backend.ratio-options;
+                        current: Backend.p.ratio;
+                        selected(i) => {
+                            Backend.set-index("background.aspect_ratio", i);
+                        }
+                    }
+                    SwitchRow {
+                        label: @tr("Fit to result");
+                        checked: Backend.p.fit;
+                        toggled(v) => {
+                            Backend.set-bool("background.fit_to_result", v);
+                        }
+                    }
+                    SliderRow {
+                        label: @tr("Padding");
+                        value: Backend.p.padding;
+                        maximum: 50;
+                        unit: "%";
+                        enabled: Backend.p.fit;
+                        changed(v) => {
+                            Backend.set-int("background.padding", v);
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        Btn {
+                            text: @tr("Reset crop");
+                            quiet: true;
+                            enabled: Backend.p.has-crop;
+                            clicked => {
+                                Backend.reset-crop();
+                            }
+                        }
+                    }
+                }
+                if Backend.has-doc && Backend.tab == 2: Section {
+                    title: @tr("Shadow");
+                    SwitchRow {
+                        label: @tr("Enabled");
+                        checked: Backend.p.sh-on;
+                        toggled(v) => {
+                            Backend.set-bool("shadow.enabled", v);
+                        }
+                    }
+                    SliderRow {
+                        label: @tr("Opacity");
+                        value: Backend.p.sh-opacity;
+                        unit: "%";
+                        enabled: Backend.p.sh-on;
+                        changed(v) => {
+                            Backend.set-int("shadow.opacity", v);
+                        }
+                    }
+                    SliderRow {
+                        label: @tr("Blur radius");
+                        value: Backend.p.sh-blur;
+                        unit: "px";
+                        enabled: Backend.p.sh-on;
+                        changed(v) => {
+                            Backend.set-int("shadow.blur_radius", v);
+                        }
+                    }
+                    ColorRow {
+                        label: @tr("Color");
+                        value: Backend.p.sh-color;
+                        enabled: Backend.p.sh-on;
+                        changed(r, g, b) => {
+                            Backend.set-rgb("shadow.color", r, g, b);
+                        }
+                    }
+                }
+            }
+        }
+        Divider { }
+        HorizontalLayout {
+            height: 48px;
+            padding: 10px;
+            spacing: 2px;
+            alignment: start;
+            Btn {
+                text: @tr("Reset");
+                d: Icons.reset;
+                enabled: Backend.has-doc;
+                clicked => {
+                    Backend.reset(Backend.tab, false);
+                }
+            }
+            more := IconBtn {
+                d: Icons.chevron;
+                size: 28px;
+                icon-size: 16px;
+                enabled: Backend.has-doc;
+                label: @tr("More reset options");
+                clicked => {
+                    menu.show();
+                }
+            }
+        }
+    }
+    menu := PopupWindow {
+                x: 12px;
+                y: root.height - 48px - 72px;
+                width: 270px;
+                height: 68px;
+                Rectangle {
+                    background: Theme.surface-2;
+                    border-width: 1px;
+                    border-color: Theme.line-strong;
+                    border-radius: Theme.r-md;
+                    VerticalLayout {
+                        padding: 4px;
+                        Rectangle {
+                            height: 28px;
+                            border-radius: Theme.r-sm;
+                            background: a.has-hover ? Theme.surface-3 : transparent;
+                            Text {
+                                x: 8px;
+                                text: @tr("Save current as defaults");
+                                color: Theme.text;
+                                font-size: Theme.fs-md;
+                                vertical-alignment: center;
+                            }
+                            a := TouchArea {
+                                mouse-cursor: MouseCursor.pointer;
+                                clicked => {
+                                    menu.close();
+                                    Backend.save-defaults();
+                                }
+                            }
+                        }
+                        Rectangle {
+                            height: 28px;
+                            border-radius: Theme.r-sm;
+                            background: b.has-hover ? Theme.surface-3 : transparent;
+                            Text {
+                                x: 8px;
+                                text: @tr("Restore factory defaults");
+                                color: Theme.text;
+                                font-size: Theme.fs-md;
+                                vertical-alignment: center;
+                            }
+                            b := TouchArea {
+                                mouse-cursor: MouseCursor.pointer;
+                                clicked => {
+                                    menu.close();
+                                    Backend.reset(Backend.tab, true);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+}

@@ -1,0 +1,64 @@
+// Design tokens: a quiet, dark, neutral palette (the photo is the interface) with one cool accent; semantic colours
+// only for the tools. The values are the sRGB conversion of OKLCH tokens, tinted toward the cool hue 255.
+export global Theme {
+    out property <color> bg: #0e1114;
+    out property <color> canvas: #090b0e;
+    out property <color> surface-1: #171a1e;
+    out property <color> surface-2: #202328;
+    out property <color> surface-3: #2a2e33;
+    out property <color> line: #33373c;
+    out property <color> line-strong: #494d54;
+    out property <color> text: #eceff2;
+    out property <color> text-2: #aeb1b6;
+    out property <color> text-3: #92959a;
+    out property <color> accent: #6fb8f5;
+    out property <color> accent-strong: #499fe3;
+    out property <color> accent-ink: #0a131a;
+    out property <color> accent-soft: #1b354b;
+    out property <color> keep: #4fce74;
+    out property <color> remove: #f75d59;
+    out property <color> hair: #e9c944;
+    out property <color> warn: #ebbd57;
+    out property <color> danger: #f66d67;
+
+    out property <length> r-sm: 4px;
+    out property <length> r-md: 6px;
+    out property <length> fs-xs: 11px;
+    out property <length> fs-sm: 12px;
+    out property <length> fs-md: 13px;
+    out property <length> fs-lg: 15px;
+}
+
+// Own icon set: 24px grid, round strokes.
+export global Icons {
+    out property <string> open: "M3.5 7.5a2 2 0 0 1 2-2H9l2 2.2h7.5a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z";
+    out property <string> save: "M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6";
+    out property <string> undo: "M9 14 4.5 9.5 9 5 M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3";
+    out property <string> redo: "m15 14 4.5-4.5L15 5 M19.5 9.5H10a5.5 5.5 0 0 0 0 11h3";
+    out property <string> zoom-in: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z m9 16-3.8-3.8 M11 8v6 M8 11h6";
+    out property <string> zoom-out: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z m9 16-3.8-3.8 M8 11h6";
+    out property <string> fit: "M4 9V5h4 M20 9V5h-4 M4 15v4h4 M20 15v4h-4 M9 9h6v6H9z";
+    out property <string> keep: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z M8.5 12.2l2.5 2.5 4.5-5";
+    out property <string> remove: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z M9 9l6 6 M15 9l-6 6";
+    out property <string> group: "M5 6.5a2.5 2.5 0 1 0 0-.01z M19 17.5a2.5 2.5 0 1 0 0-.01z M7.2 8 10 11 M14 13l2.8 3 M9.5 14.5a3 3 0 1 0 5-5 3 3 0 0 0-5 5z";
+    out property <string> wand: "M5 19 14 10 M13.5 4.5l1 2 2 1-2 1-1 2-1-2-2-1 2-1z M18.5 12.5l.6 1.2 1.2.6-1.2.6-.6 1.2-.6-1.2-1.2-.6 1.2-.6z M6 9l.5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5z";
+    out property <string> hair: "M7 20c0-6 1-11 5-16 M12 20c0-5 1-9 4-13 M17 20c0-4 .5-7 2.5-10 M5 20h15";
+    out property <string> hair-erase: "M7 20c0-6 1-11 5-16 M12 20c0-5 1-9 4-13 M5 20h10 M16.5 5.5l4 4 M20.5 5.5l-4 4";
+    out property <string> erase: "m7 20-3.6-3.6a1.4 1.4 0 0 1 0-2l9-9a1.4 1.4 0 0 1 2 0l4.6 4.6a1.4 1.4 0 0 1 0 2L12 20 M20.5 20H7 M6.5 11.5l6 6";
+    out property <string> move: "M12 3v18 M3 12h18 M9 6l3-3 3 3 M9 18l3 3 3-3 M6 9l-3 3 3 3 M18 9l3 3-3 3";
+    out property <string> foreground: "M12 5a3.2 3.2 0 1 0 0 6.4A3.2 3.2 0 0 0 12 5z M5.5 19.5c.6-3.4 3.2-5.5 6.5-5.5s5.9 2.1 6.5 5.5";
+    out property <string> background: "M4 5h16v14H4z M4 15l4.5-4.5 4 4 3-3L20 16 M15.5 8.5h.4";
+    out property <string> shadow: "M12 4c3.2 3.6 5.5 6.4 5.5 9.2a5.5 5.5 0 0 1-11 0C6.5 10.4 8.8 7.6 12 4z";
+    out property <string> model: "M8 8h8v8H8z M4 10h2 M4 14h2 M18 10h2 M18 14h2 M10 4v2 M14 4v2 M10 18v2 M14 18v2";
+    out property <string> settings: "M4 7h8 M16 7h4 M4 12h3 M11 12h9 M4 17h9 M17 17h3 M14 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z M9 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z M15 15a2 2 0 1 0 0 4 2 2 0 0 0 0-4z";
+    out property <string> more: "M5 12h.4 M12 12h.4 M19 12h.4";
+    out property <string> chevron: "m6 9 6 6 6-6";
+    out property <string> check: "m5 12.5 4.5 4.5L19 7.5";
+    out property <string> download: "M12 4v11 M7.5 11 12 15.5 16.5 11 M5 19.5h14";
+    out property <string> trash: "M5 7h14 M9 7V4.5h6V7 M7 7l1 12.5h8L17 7";
+    out property <string> close: "m6 6 12 12 M18 6 6 18";
+    out property <string> reset: "M5 12a7 7 0 1 0 2.2-5.1 M5 4.5v4h4";
+    out property <string> warning: "M12 4 3 19.5h18z M12 10v4.5 M12 17.2h.4";
+    out property <string> image: "M4 5h16v14H4z M4 15l4.5-4.5 4 4 3-3L20 16";
+    out property <string> scissors: "M6 7.5a2.5 2.5 0 1 0 0-.01z M6 16.5a2.5 2.5 0 1 0 0-.01z M8 9 20 18 M8 15 20 6";
+}

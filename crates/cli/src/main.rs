@@ -1,0 +1,163 @@
+#![allow(clippy::chunks_exact_to_as_chunks)]
+//! Command line front end: `openscissors-cli predict|cut|models`.
+//!
+//! The models folder is `$OPENSCISSORS_HOME/models`, or `./models` next to the executable.
+
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::sync::atomic::AtomicBool;
+
+use openscissors_core::batch::{self, BatchOptions};
+use openscissors_core::io::{load_image, save_mask_png, save_rgba, Format};
+use openscissors_core::model::{ModelRegistry, ModelState, Predictor};
+use openscissors_core::params::Params;
+use openscissors_core::settings::Settings;
+use openscissors_core::types::Rgba;
+
+const USAGE: &str = "usage:
+  openscissors-cli models                      list models and their state
+  openscissors-cli models download <id>        download a model (HTTPS, sha256 checked)
+  openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>]
+  openscissors-cli cut <in> <out.png|webp|tiff> [--model <id|file.onnx>]
+  openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp] [--quality 95]
+                         [--model <id|file.onnx>] [--defaults]
+      cuts out every image of the folder; --defaults applies the layer settings saved in the app";
+
+/// The portable folder: `$OPENSCISSORS_HOME`, or the folder of the executable.
+fn home_dir() -> PathBuf {
+    if let Ok(home) = std::env::var("OPENSCISSORS_HOME") {
+        return PathBuf::from(home);
+    }
+    std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn models_dir() -> PathBuf {
+    home_dir().join("models")
+}
+
+fn flag(args: &[String], name: &str) -> Option<String> {
+    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+}
+
+fn load_predictor(registry: &ModelRegistry, choice: Option<String>) -> Result<Predictor, String> {
+    let choice = choice.or_else(|| std::env::var("OPENSCISSORS_MODEL").ok());
+    if let Some(c) = &choice {
+        if Path::new(c).is_file() {
+            // A bare ONNX file: assume an IS-Net style model (x/255 - 0.5, min-max output).
+            let mut spec = registry.available().remove(0);
+            spec.mean = [0.5; 3];
+            spec.std = [1.0; 3];
+            spec.output = openscissors_core::model::OutputNorm::Minmax;
+            return Predictor::load(&spec, Path::new(c)).map_err(|e| e.to_string());
+        }
+    }
+    let spec = match &choice {
+        Some(id) => registry.get(id).ok_or_else(|| format!("unknown model '{id}'"))?,
+        None => registry
+            .available()
+            .into_iter()
+            .find(|s| registry.state(s) == ModelState::Ready)
+            .ok_or("no model downloaded; run `openscissors-cli models download isnet-general-use`")?,
+    };
+    if registry.state(&spec) != ModelState::Ready {
+        return Err(format!("model '{}' is not downloaded", spec.id));
+    }
+    Predictor::load(&spec, &registry.model_path(&spec)).map_err(|e| e.to_string())
+}
+
+fn run(args: Vec<String>) -> Result<(), String> {
+    let registry = ModelRegistry::new(models_dir());
+    match args.first().map(String::as_str) {
+        Some("models") if args.get(1).map(String::as_str) == Some("download") => {
+            let id = args.get(2).ok_or("model id expected")?;
+            let spec = registry.get(id).ok_or_else(|| format!("unknown model '{id}'"))?;
+            let mut last = 0;
+            let mut progress = |done: u64, total: u64| {
+                let pct = (done * 100).checked_div(total).unwrap_or(0);
+                if pct != last {
+                    last = pct;
+                    eprint!("\r{} {}%", spec.id, pct);
+                }
+            };
+            registry.download(&spec, &mut progress, &AtomicBool::new(false)).map_err(|e| e.to_string())?;
+            eprintln!("\ndownloaded to {}", registry.model_path(&spec).display());
+            Ok(())
+        }
+        Some("models") => {
+            for s in registry.available() {
+                let state = if registry.state(&s) == ModelState::Ready { "ready" } else { "not downloaded" };
+                println!("{:<18} {:<16} {:>6} MB  {}  {}", s.id, state, s.size_bytes / 1_000_000, s.license, s.name);
+            }
+            Ok(())
+        }
+        Some("batch") => {
+            let (src, dst) = (args.get(1).ok_or("source folder expected")?, args.get(2).ok_or("destination folder expected")?);
+            let format = match flag(&args, "--format").as_deref().unwrap_or("png") {
+                "png" => Format::Png,
+                "jpg" | "jpeg" => Format::Jpeg,
+                "webp" => Format::Webp,
+                other => return Err(format!("unsupported format '{other}'")),
+            };
+            let quality = flag(&args, "--quality")
+                .map(|q| q.parse::<u8>().map_err(|_| "quality must be a number from 10 to 100"))
+                .transpose()?
+                .unwrap_or(95);
+            let params = if args.iter().any(|a| a == "--defaults") {
+                Settings::load(&home_dir().join("data").join("settings.json")).defaults
+            } else {
+                Params::default()
+            };
+            let files = batch::validate(Path::new(src), Path::new(dst)).map_err(|e| e.to_string())?;
+            let predictor = load_predictor(&registry, flag(&args, "--model"))?;
+            let opts = BatchOptions { dst: PathBuf::from(dst), format, quality, params };
+            let predict = |img: &openscissors_core::types::Image| predictor.predict(img, true);
+            let report = batch::run_batch(
+                &files,
+                &opts,
+                &predict,
+                &mut |p| {
+                    if let Some(f) = p.current {
+                        eprintln!("[{}/{}] {}", p.done + 1, p.total, f.file_name().map(|n| n.to_string_lossy()).unwrap_or_default());
+                    }
+                },
+                &AtomicBool::new(false),
+            );
+            for f in &report.failed {
+                eprintln!("failed: {}: {}", f.file, f.error);
+            }
+            eprintln!("{} processed, {} failed", report.processed, report.failed.len());
+            if report.failed.is_empty() {
+                Ok(())
+            } else {
+                Err(format!("{} file(s) failed", report.failed.len()))
+            }
+        }
+        Some(cmd @ ("predict" | "cut")) => {
+            let (input, output) = (args.get(1).ok_or("input expected")?, args.get(2).ok_or("output expected")?);
+            let predictor = load_predictor(&registry, flag(&args, "--model"))?;
+            let image = load_image(Path::new(input)).map_err(|e| e.to_string())?;
+            let mask = predictor.predict(&image, true).map_err(|e| e.to_string())?;
+            if cmd == "predict" {
+                return save_mask_png(Path::new(output), &mask).map_err(|e| e.to_string());
+            }
+            let mut rgba = Rgba::new(image.w, image.h);
+            for (i, p) in rgba.data.chunks_exact_mut(4).enumerate() {
+                p[..3].copy_from_slice(&image.data[i * 3..i * 3 + 3]);
+                p[3] = mask.data[i];
+            }
+            let format = Format::from_path(Path::new(output)).filter(|f| f.supports_alpha()).ok_or("output must be png, webp or tiff")?;
+            save_rgba(Path::new(output), &rgba, format, 95, [255; 3]).map_err(|e| e.to_string())
+        }
+        _ => Err(USAGE.to_string()),
+    }
+}
+
+fn main() -> ExitCode {
+    match run(std::env::args().skip(1).collect()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}

@@ -1,0 +1,233 @@
+// The contract between the interface and the Rust side: values go in, events come out.
+
+export struct FilterV {
+    kind: int,
+    radius: int,
+    strength: int,
+    color: color,
+}
+
+export struct ParamsV {
+    mask-offset: int,
+    graphcut: bool,
+    feather: int,
+    fg-filter: FilterV,
+    bg-mode: int,
+    bg-color: color,
+    bg-image: string,
+    fill-hole: bool,
+    ratio: int,
+    fit: bool,
+    padding: int,
+    bg-filter: FilterV,
+    sh-on: bool,
+    sh-opacity: int,
+    sh-blur: int,
+    sh-color: color,
+    has-crop: bool,
+}
+
+export struct ModelRow {
+    id: string,
+    name: string,
+    description: string,
+    meta: string,
+    badge: string,
+    ready: bool,
+    active: bool,
+    loading: bool,
+    downloading: bool,
+    progress: int,
+    deletable: bool,
+    is-sam: bool,
+}
+
+export struct PluginRow {
+    name: string,
+    description: string,
+    enabled: bool,
+    error: string,
+}
+
+// Smart-select point, in image pixels.
+export struct Dot {
+    x: float,
+    y: float,
+    keep: bool,
+}
+
+// Rectangle in image pixels.
+export struct Box2 {
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+}
+
+export global Backend {
+    // -- dialogs drawn by the application
+    in property <bool> dlg-open;
+    in property <string> dlg-title;
+    in property <string> dlg-text;
+    in property <string> dlg-b1;
+    in property <string> dlg-b2;
+    in property <string> dlg-b3;
+    in property <int> dlg-cancel;
+    callback dlg-answer(int);
+    // A system dialog is open: the window ignores clicks meanwhile.
+    in property <bool> blocked;
+
+    // -- document
+    in property <bool> has-doc;
+    in property <string> doc-title;
+    in property <bool> can-undo;
+    in property <bool> can-redo;
+    in property <ParamsV> p;
+    in property <[string]> ratio-options;
+    in property <string> tool: "keep";
+    in property <int> marker-size: 30;
+
+    // -- views
+    in property <float> view-scale: 1;
+    in property <float> view-tx: 0;
+    in property <float> view-ty: 0;
+    in property <image> src-img;
+    in property <Box2> src-region;
+    in property <image> res-img;
+    in property <Box2> res-region;
+    in property <string> stroke-path;
+    in property <color> stroke-color: transparent;
+    in property <length> stroke-width: 10px;
+    in property <bool> brush-visible;
+    in property <length> brush-x;
+    in property <length> brush-y;
+    in property <length> brush-d: 30px;
+    in property <[Dot]> dots;
+    in property <[Box2]> boxes;
+    in property <bool> drag-visible;
+    in property <Box2> drag-box;
+    in property <bool> crop-visible;
+    in property <bool> crop-full;
+    in property <bool> crop-locked;
+    in property <Box2> crop;
+    in property <string> crop-label;
+    // 0 default, 1 crosshair, 2 grab, 3 grabbing, 4 none, 5 move, 6 ns-resize, 7 ew-resize, 8 nwse-resize, 9 nesw-resize
+    in property <int> cursor;
+    in property <bool> busy;
+    in property <int> smart-count;
+    in property <int> smart-mode;
+    in property <bool> smart-busy;
+    in property <bool> no-model;
+    in property <bool> drop-active;
+
+    // -- status
+    in property <string> chip-text;
+    // 0 busy, 1 ready, 2 warning, 3 idle
+    in property <int> chip-tone;
+    in property <string> status-text;
+    in property <bool> status-error;
+    in-out property <string> hint;
+    in property <string> pred-text;
+    in property <string> usage-text;
+    in property <bool> usage-near;
+    in property <string> size-text;
+
+    // -- popovers: 0 none, 1 models, 2 menu, 3 batch
+    in-out property <int> popover;
+    in-out property <int> tab;
+
+    // -- models
+    in property <[ModelRow]> models;
+    in property <string> model-error;
+    in property <int> accel-index;
+    in property <bool> fast;
+    in property <bool> half;
+    in property <string> backend-text;
+    in property <string> models-dir;
+
+    // -- menu
+    in property <int> jpeg-quality: 95;
+    in property <bool> export16: true;
+    in property <int> lang-index;
+    in property <[string]> lang-options;
+    in property <[string]> recent;
+    in property <[PluginRow]> plugins;
+    in property <bool> can-run-plugin;
+    in property <string> about-version;
+    in property <string> root-path;
+
+    // -- batch
+    in property <string> batch-src;
+    in property <string> batch-dst;
+    in property <int> batch-format;
+    in property <bool> batch-running;
+    in property <int> batch-done;
+    in property <int> batch-total;
+    in property <string> batch-file;
+    in property <string> batch-report;
+    in property <bool> batch-can-run;
+    in property <bool> batch-ready;
+
+    // -- events: toolbar and keys
+    callback open-image();
+    callback save();
+    callback save-as();
+    callback undo();
+    callback redo();
+    callback zoom-in();
+    callback zoom-out();
+    callback zoom-fit();
+    callback zoom-actual();
+    callback toggle-graphcut();
+    callback set-tool(string);
+    callback set-marker(int);
+    callback key-down(string, bool, bool, bool);
+    callback key-up(string);
+    callback popover-changed(int);
+    // Give the keyboard back to the window (shortcuts) after a control that kept it was removed or used.
+    in-out property <int> focus-tick;
+    callback clear-recent();
+
+    // -- events: panes. side 0 = original, 1 = result
+    callback pane-resized(float, float);
+    callback pane-down(int, int, float, float, bool);
+    callback pane-up(int, int, float, float);
+    callback pane-move(int, float, float);
+    callback pane-leave(int);
+    callback pane-wheel(int, float, float, float, float, bool, bool);
+
+    // -- events: dock
+    callback set-int(string, int);
+    callback set-bool(string, bool);
+    callback set-index(string, int);
+    callback set-rgb(string, int, int, int);
+    callback pick-bg-image();
+    callback reset-crop();
+    callback reset(int, bool);
+    callback save-defaults();
+    callback smart-apply();
+    callback smart-cancel();
+    callback set-smart-mode(int);
+
+    // -- events: panels
+    callback use-model(string);
+    callback download-model(string);
+    callback cancel-download(string);
+    callback delete-model(string);
+    callback set-accelerator(int);
+    callback set-fast(bool);
+    callback set-half(bool);
+    callback save-project();
+    callback load-marks();
+    callback save-marks();
+    callback open-recent(int);
+    callback set-jpeg-quality(int);
+    callback set-export16(bool);
+    callback set-language(int);
+    callback plugin-toggle(int, bool);
+    callback plugin-run(int);
+    callback pick-folder(bool);
+    callback set-batch-format(int);
+    callback run-batch();
+    callback stop-batch();
+}

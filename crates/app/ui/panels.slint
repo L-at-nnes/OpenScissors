@@ -1,0 +1,618 @@
+import { Theme, Icons } from "theme.slint";
+import { Icon, IconBtn, Btn, Heading, SliderRow, SwitchRow, SelectRow, Divider } from "widgets.slint";
+import { Backend, ModelRow } from "backend.slint";
+import { AboutSlint } from "std-widgets.slint";
+
+// Floating panel anchored under the top bar, on the right.
+component Frame inherits Rectangle {
+    in property <length> limit-h;
+    in property <length> content-height;
+    width: 320px;
+    height: min(root.content-height + 14px, root.limit-h);
+    background: Theme.surface-2;
+    border-width: 1px;
+    border-color: Theme.line-strong;
+    border-radius: 8px;
+    drop-shadow-blur: 24px;
+    drop-shadow-color: #00000099;
+    drop-shadow-offset-y: 8px;
+    clip: true;
+    // Swallow clicks so the click-away layer behind does not close the panel.
+    TouchArea { }
+    fl := Flickable {
+        interactive: false;
+        x: 7px;
+        y: 7px;
+        width: parent.width - 14px;
+        height: parent.height - 14px;
+        content-height: root.content-height;
+        @children
+    }
+    if root.content-height > root.height - 14px: Rectangle {
+        x: parent.width - 6px;
+        width: 3px;
+        border-radius: 1.5px;
+        background: Theme.line-strong;
+        y: 7px + (parent.height - 14px) * (-fl.content-y / root.content-height);
+        height: (parent.height - 14px) * (parent.height - 14px) / root.content-height;
+    }
+}
+
+component PanelHead inherits Rectangle {
+    in property <string> title;
+    height: 32px;
+    Text {
+        x: 0;
+        text: root.title;
+        color: Theme.text;
+        font-size: Theme.fs-lg;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+    IconBtn {
+        x: parent.width - self.width;
+        d: Icons.close;
+        size: 28px;
+        icon-size: 16px;
+        label: @tr("Close");
+        clicked => {
+            Backend.popover = 0;
+        }
+    }
+}
+
+component Note inherits Text {
+    color: Theme.text-3;
+    font-size: Theme.fs-sm;
+    wrap: word-wrap;
+}
+
+export component ModelsPanel inherits Frame {
+    content-height: col.preferred-height;
+    col := VerticalLayout {
+        spacing: 8px;
+        PanelHead {
+            title: @tr("AI models");
+        }
+        Note {
+            text: @tr("Choose the model that cuts out your photos. Models run on this computer; nothing is sent anywhere.");
+        }
+        if Backend.model-error != "": HorizontalLayout {
+            spacing: 6px;
+            Icon {
+                d: Icons.warning;
+                size: 16px;
+                tint: Theme.warn;
+                y: 2px;
+            }
+            Text {
+                text: Backend.model-error;
+                color: Theme.warn;
+                font-size: Theme.fs-sm;
+                wrap: word-wrap;
+            }
+        }
+        for m in Backend.models: Rectangle {
+            border-radius: Theme.r-md;
+            border-width: 1px;
+            border-color: m.active && !m.is-sam ? Theme.accent : Theme.line;
+            background: Theme.surface-1;
+            VerticalLayout {
+                padding: 10px;
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: m.name;
+                        color: Theme.text;
+                        font-size: Theme.fs-md;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+                    if m.badge != "": Text {
+                        text: m.badge;
+                        color: Theme.accent;
+                        font-size: Theme.fs-xs;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { }
+                    if m.downloading: Text {
+                        text: m.progress + "%";
+                        color: Theme.text-2;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
+                }
+                Note {
+                    text: m.description;
+                }
+                Note {
+                    text: m.meta;
+                }
+                if m.downloading: Rectangle {
+                    height: 6px;
+                    Rectangle {
+                        y: 1px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.surface-3;
+                        Rectangle {
+                            x: 0;
+                            y: 0;
+                            width: parent.width * clamp(m.progress, 0, 100) / 100;
+                            height: parent.height;
+                            border-radius: 2px;
+                            background: Theme.accent;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    height: 32px;
+                    alignment: end;
+                    if m.downloading: Btn {
+                        text: @tr("Cancel");
+                        clicked => {
+                            Backend.cancel-download(m.id);
+                        }
+                    }
+                    if !m.downloading && !m.ready: Btn {
+                        text: @tr("Download");
+                        d: Icons.download;
+                        primary: true;
+                        clicked => {
+                            Backend.download-model(m.id);
+                        }
+                    }
+                    if m.ready && (m.is-sam || m.active): HorizontalLayout {
+                        spacing: 4px;
+                        Icon {
+                            d: Icons.check;
+                            size: 16px;
+                            tint: Theme.keep;
+                            y: 6px;
+                        }
+                        Text {
+                            text: m.is-sam ? @tr("Ready") : m.loading ? @tr("Loading…") : @tr("In use");
+                            color: Theme.keep;
+                            font-size: Theme.fs-sm;
+                            vertical-alignment: center;
+                        }
+                    }
+                    if m.ready && !m.is-sam && !m.active: Btn {
+                        text: @tr("Use");
+                        clicked => {
+                            Backend.use-model(m.id);
+                        }
+                    }
+                    if m.ready && m.deletable: IconBtn {
+                        d: Icons.trash;
+                        size: 28px;
+                        icon-size: 18px;
+                        label: @tr("Delete from disk");
+                        clicked => {
+                            Backend.delete-model(m.id);
+                        }
+                    }
+                }
+            }
+        }
+        Divider { }
+        Note {
+            text: @tr("Stored in") + " " + Backend.models-dir;
+        }
+        Note {
+            text: @tr("Add your own: put model.onnx and a model.json in a new folder there.");
+        }
+    }
+}
+
+component MenuRow inherits Rectangle {
+    in property <string> text;
+    in property <string> hint;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 30px;
+    border-radius: Theme.r-sm;
+    background: touch.has-hover && root.enabled ? Theme.surface-3 : transparent;
+    opacity: root.enabled ? 1 : 0.45;
+    accessible-role: button;
+    accessible-label: root.text;
+    Text {
+        x: 8px;
+        width: parent.width - 16px;
+        text: root.text;
+        color: Theme.text;
+        font-size: Theme.fs-md;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Text {
+        x: parent.width - self.width - 8px;
+        text: root.hint;
+        color: Theme.text-3;
+        font-size: Theme.fs-xs;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: MouseCursor.pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component MenuPanel inherits Frame {
+    content-height: col.preferred-height;
+    col := VerticalLayout {
+        spacing: 4px;
+        MenuRow {
+            text: @tr("Save as…");
+            enabled: Backend.has-doc;
+            hint: "Ctrl+Shift+S";
+            clicked => {
+                Backend.popover = 0;
+                Backend.save-as();
+            }
+        }
+        Divider { }
+        MenuRow {
+            text: @tr("Save project…");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.popover = 0;
+                Backend.save-project();
+            }
+        }
+        MenuRow {
+            text: @tr("Load marks…");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.popover = 0;
+                Backend.load-marks();
+            }
+        }
+        MenuRow {
+            text: @tr("Save marks…");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.popover = 0;
+                Backend.save-marks();
+            }
+        }
+        MenuRow {
+            text: @tr("Batch processing…");
+            clicked => {
+                Backend.popover = 3;
+            }
+        }
+        if Backend.recent.length > 0: Divider { }
+        if Backend.recent.length > 0: HorizontalLayout {
+            Heading {
+                text: @tr("Recent");
+                vertical-alignment: center;
+            }
+            Rectangle { }
+            Btn {
+                text: @tr("Clear history");
+                quiet: true;
+                clicked => {
+                    Backend.clear-recent();
+                }
+            }
+        }
+        for r[i] in Backend.recent: MenuRow {
+            text: r;
+            clicked => {
+                Backend.popover = 0;
+                Backend.open-recent(i);
+            }
+        }
+        Divider { }
+        MenuRow {
+            text: @tr("Settings");
+            clicked => {
+                Backend.popover = 5;
+            }
+        }
+        MenuRow {
+            text: @tr("About");
+            clicked => {
+                Backend.popover = 4;
+            }
+        }
+    }
+}
+
+export component AboutPanel inherits Frame {
+    content-height: col.preferred-height;
+    col := VerticalLayout {
+        spacing: 8px;
+        PanelHead {
+            title: @tr("About");
+        }
+        Text {
+            text: "OpenScissors " + Backend.about-version;
+            color: Theme.text;
+            font-size: Theme.fs-md;
+            font-weight: 600;
+        }
+        Note {
+            text: @tr("Independent open source project, not affiliated with any commercial product.");
+        }
+        Note {
+            text: @tr("Portable folder") + ": " + Backend.root-path;
+        }
+        AboutSlint {
+            preferred-height: 110px;
+        }
+    }
+}
+
+export component BatchPanel inherits Frame {
+    content-height: col.preferred-height;
+    col := VerticalLayout {
+        spacing: 10px;
+        PanelHead {
+            title: @tr("Batch processing");
+        }
+        Note {
+            text: @tr("Cut out every image of a folder with your saved defaults. Markers are not used.");
+        }
+        if !Backend.batch-ready: HorizontalLayout {
+            spacing: 6px;
+            Icon {
+                d: Icons.warning;
+                size: 16px;
+                tint: Theme.warn;
+                y: 2px;
+            }
+            Text {
+                text: @tr("No AI model is ready. Choose and download a model first.");
+                color: Theme.warn;
+                font-size: Theme.fs-sm;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            spacing: 4px;
+            Heading {
+                text: @tr("1. Source folder");
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                Rectangle {
+                    height: 28px;
+                    border-radius: Theme.r-sm;
+                    border-width: 1px;
+                    border-color: Theme.line;
+                    background: Theme.surface-1;
+                    Text {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        text: Backend.batch-src != "" ? Backend.batch-src : @tr("No folder chosen");
+                        color: Backend.batch-src != "" ? Theme.text : Theme.text-3;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+                Btn {
+                    text: @tr("Browse…");
+                    enabled: !Backend.batch-running;
+                    clicked => {
+                        Backend.pick-folder(true);
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 4px;
+            Heading {
+                text: @tr("2. Destination folder");
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                Rectangle {
+                    height: 28px;
+                    border-radius: Theme.r-sm;
+                    border-width: 1px;
+                    border-color: Theme.line;
+                    background: Theme.surface-1;
+                    Text {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        text: Backend.batch-dst != "" ? Backend.batch-dst : @tr("No folder chosen");
+                        color: Backend.batch-dst != "" ? Theme.text : Theme.text-3;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+                Btn {
+                    text: @tr("Browse…");
+                    enabled: !Backend.batch-running;
+                    clicked => {
+                        Backend.pick-folder(false);
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 4px;
+            Heading {
+                text: @tr("3. Result format");
+            }
+            SelectRow {
+                options: ["PNG", "JPG"];
+                current: Backend.batch-format;
+                enabled: !Backend.batch-running;
+                selected(i) => {
+                    Backend.set-batch-format(i);
+                }
+            }
+            if Backend.batch-format == 1: Note {
+                text: @tr("JPEG has no transparency: the background is filled with white.");
+            }
+        }
+        if Backend.batch-running: VerticalLayout {
+            spacing: 4px;
+            Rectangle {
+                height: 6px;
+                Rectangle {
+                    y: 1px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.surface-3;
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        width: parent.width * (Backend.batch-total > 0 ? Backend.batch-done / Backend.batch-total : 0);
+                        height: parent.height;
+                        border-radius: 2px;
+                        background: Theme.accent;
+                    }
+                }
+            }
+            Note {
+                text: Backend.batch-done + " / " + Backend.batch-total + (Backend.batch-file != "" ? " · " + Backend.batch-file : "");
+            }
+        }
+        if !Backend.batch-running && Backend.batch-report != "": Note {
+            text: Backend.batch-report;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: end;
+            if Backend.batch-running: Btn {
+                text: @tr("Cancel");
+                clicked => {
+                    Backend.stop-batch();
+                }
+            }
+            if !Backend.batch-running: Btn {
+                text: @tr("Close");
+                quiet: true;
+                clicked => {
+                    Backend.popover = 0;
+                }
+            }
+            if !Backend.batch-running: Btn {
+                text: @tr("Process");
+                primary: true;
+                enabled: Backend.batch-can-run;
+                clicked => {
+                    Backend.run-batch();
+                }
+            }
+        }
+    }
+}
+
+export component SettingsDialog inherits Frame {
+    width: 460px;
+    content-height: col.preferred-height;
+    col := VerticalLayout {
+        spacing: 10px;
+        PanelHead {
+            title: @tr("Settings");
+        }
+        Heading {
+            text: @tr("Language");
+        }
+        SelectRow {
+            options: Backend.lang-options;
+            current: Backend.lang-index;
+            selected(i) => {
+                Backend.set-language(i);
+            }
+        }
+        Divider { }
+        Heading {
+            text: @tr("Performance");
+        }
+        Text {
+            text: @tr("Processing");
+            color: Theme.text-2;
+            font-size: Theme.fs-md;
+        }
+        SelectRow {
+            options: [@tr("CPU (reference, always works)"), @tr("GPU (DirectML, experimental)"), @tr("Automatic (GPU if it works)")];
+            current: Backend.accel-index;
+            selected(i) => {
+                Backend.set-accelerator(i);
+            }
+        }
+        if Backend.backend-text != "": Note {
+            text: Backend.backend-text;
+        }
+        SwitchRow {
+            label: @tr("Use more memory for speed");
+            checked: Backend.fast;
+            toggled(v) => {
+                Backend.set-fast(v);
+            }
+        }
+        Note {
+            text: @tr("Faster, but BiRefNet then needs about 11 GB of free memory instead of 5 GB.");
+        }
+        SwitchRow {
+            label: @tr("Use up to 50% of the memory");
+            checked: Backend.half;
+            toggled(v) => {
+                Backend.set-half(v);
+            }
+        }
+        Note {
+            text: @tr("The default limit is 25% of the memory of the PC. Heavier models and larger images need more.");
+        }
+        Divider { }
+        Heading {
+            text: @tr("Export");
+        }
+        SliderRow {
+            label: @tr("JPEG quality");
+            value: Backend.jpeg-quality;
+            minimum: 10;
+            maximum: 100;
+            changed(v) => {
+                Backend.set-jpeg-quality(v);
+            }
+        }
+        SwitchRow {
+            label: @tr("Export 16-bit when possible");
+            checked: Backend.export16;
+            toggled(v) => {
+                Backend.set-export16(v);
+            }
+        }
+        if Backend.plugins.length > 0: Divider { }
+        if Backend.plugins.length > 0: Heading {
+            text: @tr("Plug-ins");
+        }
+        for pl[i] in Backend.plugins: VerticalLayout {
+            spacing: 2px;
+            if pl.error != "": Text {
+                text: pl.name + " · " + @tr("Invalid");
+                color: Theme.danger;
+                font-size: Theme.fs-sm;
+            }
+            if pl.error == "": SwitchRow {
+                label: pl.name;
+                checked: pl.enabled;
+                toggled(v) => {
+                    Backend.plugin-toggle(i, v);
+                }
+            }
+            if pl.enabled: Btn {
+                text: @tr("Run on the last saved file");
+                enabled: Backend.can-run-plugin;
+                clicked => {
+                    Backend.popover = 0;
+                    Backend.plugin-run(i);
+                }
+            }
+        }
+    }
+}
