@@ -26,6 +26,21 @@ impl Default for GraphcutOptions {
     }
 }
 
+/// Reduce a mask of marks to `sw` x `sh`: a reduced pixel is marked when any pixel it covers is. Nearest-neighbour
+/// sampling would drop a thin stroke that falls between the sampled pixels.
+fn shrink_marks(m: &Mask, sw: usize, sh: usize) -> Mask {
+    let mut out = Mask::new(sw, sh);
+    for y in 0..sh {
+        let (y0, y1) = (y * m.h / sh, ((y + 1) * m.h / sh).max(y * m.h / sh + 1).min(m.h));
+        for x in 0..sw {
+            let (x0, x1) = (x * m.w / sw, ((x + 1) * m.w / sw).max(x * m.w / sw + 1).min(m.w));
+            let marked = (y0..y1).any(|yy| m.data[yy * m.w + x0..yy * m.w + x1].iter().any(|&v| v > 127));
+            out.data[y * sw + x] = if marked { 255 } else { 0 };
+        }
+    }
+    out
+}
+
 /// Compute the mask with GrabCut. `fg` / `bg` are the keep / remove marks (255 = marked).
 /// Returns `None` when a class has no mark: there is nothing to separate yet.
 pub fn graphcut_alpha(image: &Image, predicted: Option<&Mask>, fg: &Mask, bg: &Mask, opts: &GraphcutOptions) -> Option<Mask> {
@@ -43,8 +58,8 @@ pub fn graphcut_alpha(image: &Image, predicted: Option<&Mask>, fg: &Mask, bg: &M
     let (small, fg_s, bg_s, pred_s) = if resized {
         (
             resize_image(image, sw, sh, Interp::Area),
-            resize_mask(fg, sw, sh, Interp::Nearest),
-            resize_mask(bg, sw, sh, Interp::Nearest),
+            shrink_marks(fg, sw, sh),
+            shrink_marks(bg, sw, sh),
             predicted.map(|p| resize_mask(p, sw, sh, Interp::Area)),
         )
     } else {
@@ -86,6 +101,21 @@ pub fn graphcut_alpha(image: &Image, predicted: Option<&Mask>, fg: &Mask, bg: &M
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_thin_mark_survives_the_reduction() {
+        // A one-pixel line on a 1200 x 900 image, reduced to 600 x 450: the old nearest sampling kept the
+        // odd rows only, so a line on an even row vanished.
+        let mut m = Mask::new(1200, 900);
+        for x in 100..1100 {
+            m.data[451 * 1200 + x] = 255;
+            m.data[600 * 1200 + x] = 255;
+        }
+        let small = shrink_marks(&m, 600, 450);
+        assert!(small.data.iter().any(|&v| v == 255), "the line is still there");
+        assert!(small.data[225 * 600 + 300] == 255 && small.data[300 * 600 + 300] == 255);
+        assert_eq!(small.data[100 * 600 + 300], 0, "nothing is marked elsewhere");
+    }
 
     fn scene(w: usize, h: usize) -> Image {
         // Red disc on a blue background, mild noise.
