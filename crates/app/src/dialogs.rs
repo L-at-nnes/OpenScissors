@@ -40,23 +40,38 @@ pub fn init(ui: &MainWindow) {
     });
 }
 
+/// Marks a system dialog as open and blocks the window; dropping it undoes both, even when the dialog panics.
+struct SystemDialog;
+
+impl SystemDialog {
+    /// `None` while another system dialog is open.
+    fn open() -> Option<Self> {
+        if SYSTEM_DIALOG.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        set_blocked(true);
+        Some(Self)
+    }
+}
+
+impl Drop for SystemDialog {
+    fn drop(&mut self) {
+        set_blocked(false);
+        SYSTEM_DIALOG.store(false, Ordering::Release);
+    }
+}
+
+fn set_blocked(on: bool) {
+    if let Some(w) = UI.get() {
+        let _ = w.upgrade_in_event_loop(move |ui| ui.global::<Backend>().set_blocked(on));
+    }
+}
+
 /// Run a system dialog while the window is blocked (a click on it would otherwise start a second
 /// action behind the dialog). A second request while one is open is refused.
 fn system<R>(f: impl FnOnce() -> Option<R>) -> Option<R> {
-    if SYSTEM_DIALOG.swap(true, Ordering::AcqRel) {
-        return None;
-    }
-    let weak = UI.get().cloned();
-    let block = |on: bool| {
-        if let Some(w) = &weak {
-            let _ = w.upgrade_in_event_loop(move |ui| ui.global::<Backend>().set_blocked(on));
-        }
-    };
-    block(true);
-    let result = f();
-    block(false);
-    SYSTEM_DIALOG.store(false, Ordering::Release);
-    result
+    let _open = SystemDialog::open()?;
+    f()
 }
 
 fn base(dir: Option<&str>) -> FileDialog {
@@ -142,4 +157,23 @@ pub fn confirm_discard() -> Answer {
 /// An OK / Cancel question.
 pub fn confirm(title: &str, text: &str, ok: String, cancel: String) -> bool {
     question(title, text, &[ok, cancel], 1) == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // One test: the flag is shared by the whole process, parallel tests would see each other's dialogs.
+    #[test]
+    fn the_dialog_flag_is_released_after_a_panic_and_a_second_dialog_is_refused() {
+        let crashed = std::panic::catch_unwind(|| system::<()>(|| panic!("the dialog crashed")));
+        assert!(crashed.is_err());
+        assert!(!is_open(), "the flag is released");
+        assert_eq!(system(|| Some(1)), Some(1), "the next dialog can open");
+
+        let first = SystemDialog::open().expect("free");
+        assert!(system(|| Some(())).is_none(), "refused while one is open");
+        drop(first);
+        assert!(system(|| Some(())).is_some());
+    }
 }
