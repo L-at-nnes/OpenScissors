@@ -364,9 +364,11 @@ impl Document {
         }
     }
 
-    /// Install new properties. Switching graph-cut mode changes the composed mask.
+    /// Install new properties. Switching graph-cut mode (or the feather, under hair marks) changes the composed mask.
     fn replace_params(&mut self, p: Params) {
-        let mask_changed = p.mask.graphcut != self.params.mask.graphcut;
+        // The hair matting reads the feather radius too: with hair marks, changing it changes the mask.
+        let hair = self.strokes.iter().any(|s| matches!(s.kind, StrokeKind::Hair | StrokeKind::HairErase));
+        let mask_changed = p.mask.graphcut != self.params.mask.graphcut || (hair && p.foreground.feather != self.params.foreground.feather);
         self.params = p;
         if mask_changed {
             self.alpha = None;
@@ -907,6 +909,36 @@ mod tests {
         d.undo();
         assert!(!d.computing());
         assert_eq!(d.alpha().data[15 * w + 25], 0);
+    }
+
+    #[test]
+    fn changing_the_feather_recomputes_the_hair_matting() {
+        let (w, h) = (60usize, 30usize);
+        let mut img = Image::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                let a = ((x as f64 - 20.0) / 20.0).clamp(0.0, 1.0);
+                for (c, (f, b)) in [(230.0, 20.0), (200.0, 40.0), (60.0, 150.0)].into_iter().enumerate() {
+                    img.data[(y * w + x) * 3 + c] = (a * f + (1.0 - a) * b) as u8;
+                }
+            }
+        }
+        let mut d = Document::new(8, img, None);
+        let mut pred = Mask::new(w, h);
+        for y in 0..h {
+            for x in 30..w {
+                pred.data[y * w + x] = 255;
+            }
+        }
+        d.set_prediction(Some(pred));
+        d.add_stroke(Stroke { kind: StrokeKind::Hair, width: 24, points: vec![[30.0, -5.0], [30.0, 35.0]] });
+        let first = d.alpha_blocking().clone();
+        assert!(!d.computing());
+
+        d.set_param("foreground.feather", json!(8)).unwrap();
+        assert!(d.computing(), "the cached matting is stale: a new job is needed");
+        let second = d.alpha_blocking().clone();
+        assert_ne!(first.data, second.data, "the feather changes the matting");
     }
 
     #[test]
