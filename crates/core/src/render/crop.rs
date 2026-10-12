@@ -25,8 +25,9 @@ pub fn fit_inside(r: Rect, canvas: (f64, f64)) -> Rect {
     let (nw, nh) = (w * k, h * k);
     let cx = (r.x0 + r.x1) / 2.0;
     let cy = (r.y0 + r.y1) / 2.0;
-    let x0 = (cx - nw / 2.0).clamp(0.0, canvas.0 - nw);
-    let y0 = (cy - nh / 2.0).clamp(0.0, canvas.1 - nh);
+    // `w * (canvas / w)` can exceed `canvas` by an ulp: the room left may be a tiny negative number.
+    let x0 = (cx - nw / 2.0).clamp(0.0, (canvas.0 - nw).max(0.0));
+    let y0 = (cy - nh / 2.0).clamp(0.0, (canvas.1 - nh).max(0.0));
     Rect::new(x0, y0, x0 + nw, y0 + nh)
 }
 
@@ -138,5 +139,29 @@ mod tests {
         assert_eq!(effective_crop(&p, None, (80.0, 60.0)), Rect::new(10.0, 10.0, 30.0, 40.0));
         p.background.aspect_ratio = "1:1".into();
         assert!((ratio_of(effective_crop(&p, None, (80.0, 60.0))) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fit_inside_never_panics_when_rounding_leaves_no_room() {
+        // Pseudo-random rectangles larger than the canvas: `canvas - w * (canvas / w)` is sometimes a tiny negative.
+        let mut seed = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        for _ in 0..20_000 {
+            let canvas = (100.0 + next() * 3000.0, 100.0 + next() * 3000.0);
+            let (w, h) = (50.0 + next() * 5000.0, 50.0 + next() * 5000.0);
+            let r = Rect::new(10.0, 10.0, 10.0 + w, 10.0 + h);
+            let fitted = fit_inside(r, canvas);
+            assert!(
+                fitted.x0 >= 0.0 && fitted.y0 >= 0.0 && fitted.x1 <= canvas.0 + 1e-6 && fitted.y1 <= canvas.1 + 1e-6,
+                "{r:?} {canvas:?}"
+            );
+            let ratio = constrain_ratio(r, (16, 9), canvas);
+            assert!(ratio.x0 >= 0.0 && ratio.y0 >= 0.0);
+        }
     }
 }
