@@ -40,6 +40,7 @@ fn open_predict_edit_style_export() {
         kind: openscissors_core::model::ModelKind::Segmenter,
         files: vec![],
         ram_mb: 0,
+        folder: None,
     };
     let predictor = Predictor::load(&spec, Path::new(&model)).unwrap();
     let image = load_image(&data("synthetic_figure.png")).unwrap();
@@ -136,6 +137,7 @@ fn graphcut_with_real_prediction_and_a_large_image_timing() {
         kind: openscissors_core::model::ModelKind::Segmenter,
         files: vec![],
         ram_mb: 0,
+        folder: None,
     };
     let predictor = Predictor::load(&spec, Path::new(&model)).unwrap();
     let image = load_image(&data("synthetic_figure.png")).unwrap();

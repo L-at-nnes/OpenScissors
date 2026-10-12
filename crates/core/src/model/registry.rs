@@ -103,6 +103,15 @@ pub struct ModelSpec {
     /// by `file_name`, `url`, `sha256` and `size_bytes`.
     #[serde(default)]
     pub files: Vec<ModelFile>,
+    /// Folder under the models folder when it differs from `id` (a model dropped in by hand). Set from
+    /// the disk by [`ModelRegistry::available`], never read from `model.json`.
+    #[serde(skip)]
+    pub folder: Option<String>,
+}
+
+/// An id or folder name is one plain path component: no separator, no `..`, not hidden.
+fn is_plain_name(name: &str) -> bool {
+    !name.is_empty() && !name.starts_with('.') && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
 impl ModelSpec {
@@ -149,6 +158,7 @@ pub fn builtin_catalog() -> Vec<ModelSpec> {
             output: OutputNorm::Sigmoid,
             recommended: false,
             ram_mb: 5200,
+            folder: None,
             kind: ModelKind::Segmenter,
             files: vec![],
         },
@@ -169,6 +179,7 @@ pub fn builtin_catalog() -> Vec<ModelSpec> {
             output: OutputNorm::Sigmoid,
             recommended: false,
             ram_mb: 5300,
+            folder: None,
             kind: ModelKind::Segmenter,
             files: vec![],
         },
@@ -189,6 +200,7 @@ pub fn builtin_catalog() -> Vec<ModelSpec> {
             output: OutputNorm::Sigmoid,
             recommended: false,
             ram_mb: 0,
+            folder: None,
             kind: ModelKind::Segmenter,
             files: vec![],
         },
@@ -209,6 +221,7 @@ pub fn builtin_catalog() -> Vec<ModelSpec> {
             output: OutputNorm::Minmax,
             recommended: true,
             ram_mb: 600,
+            folder: None,
             kind: ModelKind::Segmenter,
             files: vec![],
         },
@@ -229,6 +242,7 @@ pub fn builtin_catalog() -> Vec<ModelSpec> {
             output: OutputNorm::None,
             recommended: false,
             ram_mb: 0,
+            folder: None,
             kind: ModelKind::Sam2,
             files: vec![
                 ModelFile {
@@ -287,10 +301,12 @@ impl ModelRegistry {
         let mut specs = builtin_catalog();
         if let Ok(entries) = fs::read_dir(&self.dir) {
             for e in entries.flatten() {
+                let folder = e.file_name().to_string_lossy().into_owned();
                 let json = e.path().join("model.json");
                 if let Ok(text) = fs::read_to_string(&json) {
-                    if let Ok(spec) = serde_json::from_str::<ModelSpec>(&text) {
-                        if !specs.iter().any(|s| s.id == spec.id) {
+                    if let Ok(mut spec) = serde_json::from_str::<ModelSpec>(&text) {
+                        if is_plain_name(&spec.id) && is_plain_name(&folder) && !specs.iter().any(|s| s.id == spec.id) {
+                            spec.folder = (folder != spec.id).then_some(folder);
                             specs.push(spec);
                         }
                     }
@@ -305,12 +321,12 @@ impl ModelRegistry {
     }
 
     pub fn model_path(&self, spec: &ModelSpec) -> PathBuf {
-        self.dir.join(&spec.id).join(&spec.file_name)
+        self.model_dir(spec).join(&spec.file_name)
     }
 
-    /// Folder holding the files of `spec`.
+    /// Folder holding the files of `spec`: its `id`, or the folder it was found in.
     pub fn model_dir(&self, spec: &ModelSpec) -> PathBuf {
-        self.dir.join(&spec.id)
+        self.dir.join(spec.folder.as_deref().unwrap_or(&spec.id))
     }
 
     pub fn state(&self, spec: &ModelSpec) -> ModelState {
@@ -322,7 +338,11 @@ impl ModelRegistry {
     }
 
     pub fn delete(&self, spec: &ModelSpec) -> Result<()> {
-        let folder = self.dir.join(&spec.id);
+        // Never remove anything outside the models folder, whatever the spec says.
+        if !is_plain_name(spec.folder.as_deref().unwrap_or(&spec.id)) {
+            return Err(Error::msg(format!("refusing to delete the folder of model '{}'", spec.id)));
+        }
+        let folder = self.model_dir(spec);
         if folder.is_dir() {
             fs::remove_dir_all(folder)?;
         }
@@ -338,6 +358,9 @@ impl ModelRegistry {
         }
         if files.iter().any(|f| !f.url.starts_with("https://")) {
             return Err(Error::Download("model URL must use HTTPS".into()));
+        }
+        if !is_plain_name(spec.folder.as_deref().unwrap_or(&spec.id)) {
+            return Err(Error::Download(format!("model id '{}' is not a valid folder name", spec.id)));
         }
         let dir = self.model_dir(spec);
         fs::create_dir_all(&dir)?;
@@ -450,6 +473,39 @@ mod tests {
         assert_eq!(mine.input_size, [1024, 1024]);
         assert_eq!(mine.output, OutputNorm::Sigmoid);
         assert!(reg.available().len() > builtin_catalog().len());
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_user_model_in_a_folder_named_differently_from_its_id_is_found() {
+        let dir = tmp("folder");
+        fs::create_dir_all(dir.join("my_folder")).unwrap();
+        fs::write(dir.join("my_folder/model.json"), r#"{"id":"mine","name":"Mine","license":"MIT"}"#).unwrap();
+        fs::write(dir.join("my_folder/model.onnx"), b"x").unwrap();
+        let reg = ModelRegistry::new(&dir);
+        let mine = reg.get("mine").expect("listed");
+        assert_eq!(reg.model_path(&mine), dir.join("my_folder").join("model.onnx"));
+        assert_eq!(reg.state(&mine), ModelState::Ready);
+        reg.delete(&mine).unwrap();
+        assert!(!dir.join("my_folder").exists());
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn ids_that_could_leave_the_models_folder_are_refused() {
+        let dir = tmp("traversal");
+        fs::create_dir_all(dir.join("evil")).unwrap();
+        fs::write(dir.join("evil/model.json"), r#"{"id":"../victim","name":"Evil","license":"MIT"}"#).unwrap();
+        let reg = ModelRegistry::new(&dir);
+        assert!(reg.get("../victim").is_none(), "an id with a separator is not listed");
+        let mut spec = builtin_catalog().remove(0);
+        spec.id = "../victim".into();
+        let victim = dir.parent().unwrap().join("victim");
+        fs::create_dir_all(&victim).unwrap();
+        assert!(reg.delete(&spec).is_err());
+        assert!(victim.exists(), "nothing outside the models folder was removed");
+        assert!(matches!(reg.download(&spec, &mut |_, _| {}, &AtomicBool::new(false)), Err(Error::Download(_))));
+        fs::remove_dir_all(victim).ok();
         fs::remove_dir_all(dir).ok();
     }
 

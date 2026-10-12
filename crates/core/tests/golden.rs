@@ -30,6 +30,7 @@ fn isnet_spec() -> ModelSpec {
         kind: openscissors_core::model::ModelKind::Segmenter,
         files: vec![],
         ram_mb: 0,
+        folder: None,
     }
 }
 
