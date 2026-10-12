@@ -95,7 +95,7 @@ impl Tracker {
             changed
         };
         if changed {
-            self.state.save_settings();
+            let _ = self.state.save_settings(); // the window position is not worth an error message
         }
     }
 

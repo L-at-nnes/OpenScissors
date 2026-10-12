@@ -151,8 +151,8 @@ impl AppState {
         self.paths.data.join("settings.json")
     }
 
-    pub fn save_settings(&self) {
-        self.settings.lock().expect("settings lock").save(&self.settings_path());
+    pub fn save_settings(&self) -> std::io::Result<()> {
+        self.settings.lock().expect("settings lock").save(&self.settings_path())
     }
 
     /// Catalogue plus the development-only local file entry.

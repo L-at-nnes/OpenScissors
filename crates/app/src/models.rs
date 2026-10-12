@@ -194,7 +194,7 @@ impl Ctl {
             return self.say("download this model first", true);
         }
         self.st.settings.lock().expect("settings lock").chosen_model = Some(id.to_string());
-        self.st.save_settings();
+        self.save_settings();
         *self.st.predicted_doc.lock().expect("predicted lock") = None;
         self.ux.lock().expect("ux lock").repredict = true; // the open image is predicted again with it
         self.load_model_async(id.to_string());
@@ -252,7 +252,7 @@ impl Ctl {
             *self.st.model.lock().expect("model lock") = None;
             *self.st.model_status.lock().expect("status lock") = ModelStatus::default();
             self.st.settings.lock().expect("settings lock").chosen_model = None;
-            self.st.save_settings();
+            self.save_settings();
         }
         if let Err(e) = self.st.registry.delete(&spec) {
             self.say(e.to_string(), true);
@@ -266,13 +266,13 @@ impl Ctl {
             2 => Accelerator::Auto,
             _ => Accelerator::Cpu,
         };
-        self.st.save_settings();
+        self.save_settings();
         self.reload_active();
     }
 
     pub fn set_fast(self: &Arc<Self>, on: bool) {
         self.st.settings.lock().expect("settings lock").fast_memory = on;
-        self.st.save_settings();
+        self.save_settings();
         self.reload_active();
     }
 
@@ -280,7 +280,7 @@ impl Ctl {
         let p = if on { 50 } else { 25 };
         self.st.settings.lock().expect("settings lock").ram_percent = p;
         sysmem::set_budget_percent(p as u64);
-        self.st.save_settings();
+        self.save_settings();
         // A model refused for lack of room gets another try.
         if !self.st.model_status.lock().expect("status lock").ready {
             self.reload_active();

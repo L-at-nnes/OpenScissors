@@ -19,6 +19,24 @@ pub struct Loaded {
 }
 
 /// Read an image as 8-bit RGB. EXIF orientation is applied; alpha is dropped.
+/// Write `bytes` to `path` so that a crash or a full disk never leaves a half-written file: the data goes to a
+/// temporary file in the same folder, is flushed to disk, then replaces the target in one step.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let tmp = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    let result = (|| {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        std::fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
 pub fn load_image(path: &Path) -> Result<Image> {
     Ok(load_image_deep(path)?.image)
 }
@@ -167,5 +185,19 @@ mod tests {
         assert_eq!(Format::from_path(Path::new("x.JPEG")), Some(Format::Jpeg));
         assert_eq!(Format::from_path(Path::new("x.txt")), None);
         assert!(!Format::Jpeg.supports_alpha() && Format::Png.supports_alpha());
+    }
+
+    #[test]
+    fn atomic_write_replaces_the_file_and_leaves_nothing_behind() {
+        let dir = std::env::temp_dir().join(format!("osc-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.json");
+        write_atomic(&file, b"first").unwrap();
+        write_atomic(&file, b"second").unwrap();
+        assert_eq!(std::fs::read(&file).unwrap(), b"second");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file is left");
+        // A folder that does not exist is an error, not a silent loss.
+        assert!(write_atomic(&dir.join("missing").join("b.json"), b"x").is_err());
+        std::fs::remove_dir_all(dir).ok();
     }
 }

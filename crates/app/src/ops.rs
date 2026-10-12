@@ -38,6 +38,13 @@ fn stem(name: Option<&str>, fallback: &str) -> String {
 }
 
 impl Ctl {
+    /// Write the settings; a failure is shown, never silent (the next start would otherwise forget them).
+    pub fn save_settings(self: &Arc<Self>) {
+        if let Err(e) = self.st.save_settings() {
+            self.say(tf("Cannot save the settings: {error}", &[("error", &e.to_string())]), true);
+        }
+    }
+
     pub fn doc_name(&self) -> Option<String> {
         self.ux.lock().expect("ux lock").doc.as_ref().and_then(|d| d.name.clone())
     }
@@ -143,7 +150,7 @@ impl Ctl {
             s.push_recent(&path.display().to_string());
             s.last_dir = path.parent().map(|d| d.display().to_string());
         }
-        self.st.save_settings();
+        self.save_settings();
         self.after_open(false);
         Ok(None)
     }
@@ -160,7 +167,7 @@ impl Ctl {
             let mut s = self.st.settings.lock().expect("settings lock");
             s.push_recent(&path.display().to_string());
         }
-        self.st.save_settings();
+        self.save_settings();
         self.ux.lock().expect("ux lock").marker = loaded.marker_size;
         self.after_open(predicted);
         self.kick_alpha();
@@ -239,7 +246,7 @@ impl Ctl {
         }
         .map_err(|e| e.to_string())?;
         self.st.settings.lock().expect("settings lock").last_dir = target.parent().map(|d| d.display().to_string());
-        self.st.save_settings();
+        self.save_settings();
         let (transparent, name) = {
             let mut g = self.st.doc.lock().expect("doc lock");
             if let Some(d) = g.as_mut() {
@@ -466,7 +473,7 @@ impl Ctl {
             params.crop = None;
             params.background.image_path = None;
             self.st.settings.lock().expect("settings lock").defaults = params;
-            self.st.save_settings();
+            self.save_settings();
             self.say(t("Current settings saved as defaults"), false);
         }
     }
@@ -485,7 +492,7 @@ impl Ctl {
             }
         }
         self.st.settings.lock().expect("settings lock").group_by_color = on;
-        self.st.save_settings();
+        self.save_settings();
         self.refresh(R_MAIN);
     }
 
@@ -513,7 +520,7 @@ impl Ctl {
             ux.marker = n;
         }
         self.st.settings.lock().expect("settings lock").marker_size = n;
-        self.st.save_settings();
+        self.save_settings();
         self.refresh(R_MAIN | R_VIEW);
     }
 
@@ -537,7 +544,7 @@ impl Ctl {
                         s.batch_dst = v;
                     }
                 }
-                me.st.save_settings();
+                me.save_settings();
                 me.refresh(crate::ctl::R_BATCH);
             }
         });
@@ -646,7 +653,7 @@ impl Ctl {
                     s.plugins_enabled.push(p.manifest.id.clone());
                 }
             }
-            me.st.save_settings();
+            me.save_settings();
             me.refresh(R_MENU);
         });
     }
@@ -694,24 +701,24 @@ impl Ctl {
         let code = crate::i18n::apply(&setting);
         let _ = slint::select_bundled_translation(code);
         self.st.settings.lock().expect("settings lock").locale = setting;
-        self.st.save_settings();
+        self.save_settings();
         self.refresh(R_ALL);
     }
 
     pub fn clear_recent(self: &Arc<Self>) {
         self.st.settings.lock().expect("settings lock").recent.clear();
-        self.st.save_settings();
+        self.save_settings();
         self.refresh(R_MENU);
     }
 
-    pub fn set_jpeg_quality(&self, q: i32) {
+    pub fn set_jpeg_quality(self: &Arc<Self>, q: i32) {
         self.st.settings.lock().expect("settings lock").jpeg_quality = q.clamp(10, 100) as u8;
-        self.st.save_settings();
+        self.save_settings();
     }
 
-    pub fn set_export16(&self, on: bool) {
+    pub fn set_export16(self: &Arc<Self>, on: bool) {
         self.st.settings.lock().expect("settings lock").export_16bit = on;
-        self.st.save_settings();
+        self.save_settings();
     }
 
     pub fn set_drop_active(self: &Arc<Self>, on: bool) {

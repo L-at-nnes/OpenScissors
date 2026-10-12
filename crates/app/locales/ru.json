@@ -172,5 +172,6 @@
   "Half-size file with the same quality. Made for the GPU; slower than the regular one on a CPU.": "Файл вдвое меньше при том же качестве. Рассчитан на GPU; на процессоре медленнее обычного.",
   "Highest quality, several times slower on CPU. Best with a GPU.": "Максимальное качество, на процессоре в несколько раз медленнее. Лучше с GPU.",
   "Fastest option (under a second on CPU). Good on clear subjects, softer on hair.": "Самый быстрый вариант (меньше секунды на процессоре). Хорош для чётких объектов, мягче на волосах.",
-  "Point at a subject to select it: click what to keep, right-click what to leave out, or drag a box. Used by the Smart select tool.": "Укажите объект, чтобы выделить его: щелчок — оставить, правый щелчок — исключить, либо протяните рамку. Используется инструментом «Умное выделение»."
+  "Point at a subject to select it: click what to keep, right-click what to leave out, or drag a box. Used by the Smart select tool.": "Укажите объект, чтобы выделить его: щелчок — оставить, правый щелчок — исключить, либо протяните рамку. Используется инструментом «Умное выделение».",
+  "Cannot save the settings: {error}": "Не удалось сохранить настройки: {error}"
 }

@@ -139,7 +139,7 @@ pub fn save_project(doc: &Document, model: Option<ModelRef>, marker_size: u32, p
         crop: p.crop,
         ui: Ui { graphcut: p.mask.graphcut, marker_size },
     };
-    std::fs::write(path, serde_json::to_vec(&file)?)?;
+    crate::io::write_atomic(path, &serde_json::to_vec(&file)?)?;
     Ok(())
 }
 

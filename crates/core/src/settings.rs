@@ -76,10 +76,9 @@ impl Settings {
         std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
     }
 
-    pub fn save(&self, path: &Path) {
-        if let Ok(text) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(path, text);
-        }
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        let text = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        crate::io::write_atomic(path, text.as_bytes())
     }
 
     pub fn push_recent(&mut self, path: &str) {
@@ -104,7 +103,8 @@ mod tests {
         s.push_recent("a.png");
         s.push_recent("b.png");
         s.push_recent("a.png");
-        s.save(&file);
+        s.save(&file).unwrap();
+        assert!(s.save(&dir.join("missing").join("s.json")).is_err(), "a failed save is reported");
         let back = Settings::load(&file);
         assert_eq!(back.locale, "fr");
         assert!(back.defaults.shadow.enabled);
