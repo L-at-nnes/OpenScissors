@@ -116,9 +116,28 @@ pub fn discover(plugins_dir: &Path) -> Vec<Discovered> {
     found
 }
 
+/// Replace `{input}` and `{dir}` in one pass: a file name that itself contains `{dir}` stays as it is.
 fn expand(arg: &str, input: &Path) -> String {
     let dir = input.parent().map(|p| p.display().to_string()).unwrap_or_default();
-    arg.replace("{input}", &input.display().to_string()).replace("{dir}", &dir)
+    let file = input.display().to_string();
+    let mut out = String::with_capacity(arg.len());
+    let mut rest = arg;
+    while let Some(i) = rest.find('{') {
+        out.push_str(&rest[..i]);
+        let tail = &rest[i..];
+        if let Some(t) = tail.strip_prefix("{input}") {
+            out.push_str(&file);
+            rest = t;
+        } else if let Some(t) = tail.strip_prefix("{dir}") {
+            out.push_str(&dir);
+            rest = t;
+        } else {
+            out.push('{');
+            rest = &tail[1..];
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Run `plugin` on `input` with the plug-in folder as working directory. Killed after `timeout`.
@@ -282,5 +301,13 @@ mod tests {
         let err = run(&get("slow"), &file, Duration::from_millis(500)).unwrap_err();
         assert!(err.to_string().contains("did not finish") && started.elapsed() < Duration::from_secs(5));
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn placeholders_are_replaced_in_one_pass() {
+        let input = Path::new("/photos/{dir}/a{input}.png");
+        assert_eq!(expand("{input}", input), "/photos/{dir}/a{input}.png");
+        assert_eq!(expand("--in={input} --dir={dir} {other}", input), "--in=/photos/{dir}/a{input}.png --dir=/photos/{dir} {other}");
+        assert_eq!(expand("plain {", input), "plain {");
     }
 }
