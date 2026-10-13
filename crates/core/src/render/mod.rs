@@ -4,6 +4,7 @@
 //! the export (the whole image at scale 1), so both always look the same.
 
 pub mod crop;
+pub mod defringe;
 pub mod filters;
 pub mod inpaint;
 
@@ -63,6 +64,7 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
     let shadow_sigma = p.shadow.blur_radius as f64 * scale / 2.0;
     let margin = (if p.mask.offset != 0 { ((p.mask.offset.unsigned_abs() + 2) as f64 * scale / 2.0).ceil() as usize + 1 } else { 0 })
         + (p.foreground.feather as f64 * scale).ceil() as usize
+        + (p.foreground.defringe as f64 * scale).ceil() as usize
         + if p.shadow.enabled { (3.0 * shadow_sigma).ceil() as usize } else { 0 }
         + filter_margin(&p.foreground.filter, scale).max(filter_margin(&p.background.filter, scale));
     let m = margin.min(512);
@@ -83,6 +85,7 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
     // Subject mask and colours.
     let a = finish_alpha_scaled(crop_resize_mask(scene.alpha, exp, ew, eh, interp), p.mask.offset, p.foreground.feather, scale);
     let mut fg = crop_resize_image(scene.image, exp, ew, eh, interp);
+    defringe::defringe(&mut fg, &a, (p.foreground.defringe as f64 * scale).round() as usize);
     apply_filter(&mut fg, &p.foreground.filter, scale, origin);
 
     // Background layer: colours plus whether it is opaque.
@@ -230,6 +233,8 @@ pub fn export_rgba(scene: &Scene) -> Rgba {
 pub fn deep_blocker(params: &Params) -> Option<&'static str> {
     if !matches!(params.background.mode, BgMode::Transparent | BgMode::Color) {
         Some("the background is a picture or the original")
+    } else if params.foreground.defringe > 0 {
+        Some("the edge clean-up is on")
     } else if params.foreground.filter.kind != crate::params::FilterKind::None {
         Some("a foreground effect is active")
     } else if params.shadow.enabled {
@@ -367,6 +372,7 @@ mod tests {
         let mut params = Params::default();
         params.background.mode = BgMode::Color;
         params.foreground.feather = 2;
+        params.foreground.defringe = 3;
         params.mask.offset = 2;
         params.shadow.enabled = true;
         params.shadow.blur_radius = 6;
@@ -414,6 +420,24 @@ mod tests {
         assert!(r.data[0] > img.data[0] && r.data[1] < 200);
         let y = render_source_view(&img, &SourceLayers { hair: Some(&full), ..Default::default() }, region, 80, 60);
         assert!(y.data[0] > img.data[0] && y.data[1] > img.data[1]);
+    }
+
+    #[test]
+    fn the_edge_cleanup_removes_a_halo_in_the_export_and_blocks_the_16_bit_path() {
+        let (mut img, mut alpha) = scene_parts();
+        img.data.chunks_exact_mut(3).for_each(|p| p.copy_from_slice(&[200, 0, 0]));
+        let halo = 30 * 80 + 29;
+        img.data[halo * 3..halo * 3 + 3].copy_from_slice(&[255, 255, 255]);
+        alpha.data[halo] = 128;
+        let mut params = Params::default();
+        let off = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        assert_eq!(&off.data[halo * 4..halo * 4 + 3], &[255, 255, 255]);
+        assert!(deep_blocker(&params).is_none());
+        params.foreground.defringe = 2;
+        let on = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        assert_eq!(&on.data[halo * 4..halo * 4 + 3], &[200, 0, 0]);
+        assert_eq!(on.data[halo * 4 + 3], 128, "the transparency is untouched");
+        assert!(deep_blocker(&params).is_some());
     }
 
     #[test]

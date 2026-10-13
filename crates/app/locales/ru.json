@@ -48,6 +48,7 @@
   "Export 16-bit when possible": "Экспорт в 16 бит, когда это возможно",
   "Faster, but BiRefNet then needs about 11 GB of free memory instead of 5 GB.": "Быстрее, но BiRefNet тогда требует около 11 ГБ свободной памяти вместо 5 ГБ.",
   "Feathering radius": "Радиус растушёвки",
+  "Clean up the edges": "Очистить края",
   "Fill hole": "Заполнить дыру",
   "Fit to result": "По размеру результата",
   "Foreground": "Передний план",

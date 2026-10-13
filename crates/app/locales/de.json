@@ -48,6 +48,7 @@
   "Export 16-bit when possible": "Wenn möglich mit 16 Bit exportieren",
   "Faster, but BiRefNet then needs about 11 GB of free memory instead of 5 GB.": "Schneller, aber BiRefNet braucht dann etwa 11 GB freien Speicher statt 5 GB.",
   "Feathering radius": "Weichzeichnungsradius der Kante",
+  "Clean up the edges": "Kanten bereinigen",
   "Fill hole": "Loch füllen",
   "Fit to result": "An Ergebnis anpassen",
   "Foreground": "Vordergrund",

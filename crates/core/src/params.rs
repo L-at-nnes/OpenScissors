@@ -58,6 +58,8 @@ pub struct MaskParams {
 pub struct ForegroundParams {
     /// Feathering radius in pixels.
     pub feather: u32,
+    /// Edge clean-up reach in pixels, 0 = off: soft edges take the colour of the subject next to them.
+    pub defringe: u32,
     pub filter: FilterSpec,
 }
 
@@ -121,6 +123,7 @@ impl Params {
     pub fn sanitize(&mut self) {
         self.mask.offset = self.mask.offset.clamp(-100, 100);
         self.foreground.feather = self.foreground.feather.min(50);
+        self.foreground.defringe = self.foreground.defringe.min(20);
         for f in [&mut self.foreground.filter, &mut self.background.filter] {
             f.radius = f.radius.min(100);
             f.strength = f.strength.min(100);

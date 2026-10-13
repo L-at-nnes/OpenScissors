@@ -164,6 +164,15 @@ export component Dock inherits Rectangle {
                             Backend.set-int("foreground.feather", v);
                         }
                     }
+                    SliderRow {
+                        label: @tr("Clean up the edges");
+                        value: Backend.p.defringe;
+                        maximum: 20;
+                        unit: "px";
+                        changed(v) => {
+                            Backend.set-int("foreground.defringe", v);
+                        }
+                    }
                 }
                 if Backend.has-doc && Backend.tab == 0: Section {
                     title: @tr("Effect");

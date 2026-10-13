@@ -185,6 +185,7 @@ pub fn params_v(p: &Params) -> ParamsV {
         mask_offset: p.mask.offset,
         graphcut: p.mask.graphcut,
         feather: p.foreground.feather as i32,
+        defringe: p.foreground.defringe as i32,
         fg_filter: filter_v(&p.foreground.filter),
         bg_mode: mode_index(p.background.mode),
         bg_color: rgb(p.background.color),
