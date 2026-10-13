@@ -1,6 +1,7 @@
 //! Viewport rendering off the interface thread: only the latest request per view is kept, so a
 //! burst of pans costs one render, not one per event.
 
+use openscissors_core::sync::LockExt;
 use std::sync::{Arc, Condvar, Mutex};
 
 use openscissors_core::types::Rect;
@@ -43,7 +44,7 @@ impl Renderer {
             .spawn(move || loop {
                 let job = {
                     let (lock, cv) = &*worker;
-                    let mut g = lock.lock().expect("render slots");
+                    let mut g = lock.guard();
                     loop {
                         if let Some(i) = (0..2).find(|&i| g[i].is_some()) {
                             break g[i].take().expect("slot");
@@ -62,7 +63,7 @@ impl Renderer {
     pub fn submit(&self, job: Job) {
         let (lock, cv) = &*self.slots;
         let side = job.side;
-        lock.lock().expect("render slots")[side] = Some(job);
+        lock.guard()[side] = Some(job);
         cv.notify_one();
     }
 }
@@ -75,7 +76,7 @@ fn render(state: &AppState, job: Job) -> Option<Output> {
     }
     let region = Rect::new(job.region.x0, job.region.y0, job.region.x1, job.region.y1);
     let mut rgba = {
-        let mut g = state.doc.lock().ok()?;
+        let mut g = state.doc.guard();
         let doc = g.as_mut()?;
         if doc.id != job.doc {
             return None;

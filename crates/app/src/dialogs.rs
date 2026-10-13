@@ -5,6 +5,7 @@
 //! Every call blocks the calling thread until the person answers: call them from a worker thread,
 //! never from the interface thread (which has to keep running to show or to block the window).
 
+use openscissors_core::sync::LockExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
@@ -24,14 +25,14 @@ static SYSTEM_DIALOG: AtomicBool = AtomicBool::new(false);
 
 /// Whether a dialog is on screen (the shortcuts are off meanwhile).
 pub fn is_open() -> bool {
-    SYSTEM_DIALOG.load(Ordering::Relaxed) || QUESTION.lock().expect("question lock").is_some()
+    SYSTEM_DIALOG.load(Ordering::Relaxed) || QUESTION.guard().is_some()
 }
 
 /// Connect the buttons of the questions to the interface; call once, on the interface thread.
 pub fn init(ui: &MainWindow) {
     let _ = UI.set(ui.as_weak());
     ui.global::<Backend>().on_dlg_answer(|i| {
-        if let Some(tx) = QUESTION.lock().expect("question lock").take() {
+        if let Some(tx) = QUESTION.guard().take() {
             if let Some(ui) = UI.get().and_then(|w| w.upgrade()) {
                 ui.global::<Backend>().set_dlg_open(false);
             }
@@ -112,7 +113,7 @@ pub fn question(title: &str, text: &str, buttons: &[String], cancel: usize) -> u
     let (tx, rx) = channel();
     let Some(weak) = UI.get().cloned() else { return cancel };
     {
-        let mut slot = QUESTION.lock().expect("question lock");
+        let mut slot = QUESTION.guard();
         if slot.is_some() {
             return cancel; // one question at a time
         }
@@ -131,7 +132,7 @@ pub fn question(title: &str, text: &str, buttons: &[String], cancel: usize) -> u
         g.set_dlg_open(true);
     });
     if shown.is_err() {
-        *QUESTION.lock().expect("question lock") = None;
+        *QUESTION.guard() = None;
         return cancel;
     }
     rx.recv().unwrap_or(cancel)

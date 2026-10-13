@@ -1,5 +1,6 @@
 //! Application state: portable folders, persisted settings, open document, loaded model.
 
+use openscissors_core::sync::LockExt;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -152,7 +153,7 @@ impl AppState {
     }
 
     pub fn save_settings(&self) -> std::io::Result<()> {
-        self.settings.lock().expect("settings lock").save(&self.settings_path())
+        self.settings.guard().save(&self.settings_path())
     }
 
     /// Catalogue plus the development-only local file entry.

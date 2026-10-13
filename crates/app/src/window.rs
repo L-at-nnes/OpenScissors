@@ -1,5 +1,6 @@
 //! Remembers where the window was (position, size, maximized) and puts it back at the next start.
 
+use openscissors_core::sync::LockExt;
 use std::sync::Arc;
 
 use openscissors_core::settings::WindowState;
@@ -72,7 +73,7 @@ pub struct Tracker {
 
 impl Tracker {
     pub fn new(state: Arc<AppState>) -> Self {
-        let saved = state.settings.lock().expect("settings lock").window;
+        let saved = state.settings.guard().window;
         Self { state, normal: saved.filter(|s| !s.maximized), seen: saved }
     }
 
@@ -89,7 +90,7 @@ impl Tracker {
 
     fn store(&self, ws: WindowState) {
         let changed = {
-            let mut s = self.state.settings.lock().expect("settings lock");
+            let mut s = self.state.settings.guard();
             let changed = s.window != Some(ws);
             s.window = Some(ws);
             changed

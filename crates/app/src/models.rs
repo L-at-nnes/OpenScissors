@@ -1,6 +1,7 @@
 //! Models and background computation: memory limits, loading, prediction, the exact mask jobs,
 //! downloads and smart select.
 
+use openscissors_core::sync::LockExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -52,7 +53,7 @@ pub fn fits_budget(spec: &ModelSpec, fast: bool) -> bool {
 /// The model to start with: the one the user chose, else the lightest one on disk that fits the memory budget
 /// (the basic model is enough most of the time; heavier ones are opt-in).
 pub fn pick_default_model(state: &AppState) -> Option<String> {
-    let wanted = state.settings.lock().ok()?.chosen_model.clone();
+    let wanted = state.settings.guard().chosen_model.clone();
     let mut ready: Vec<_> = state
         .models()
         .into_iter()
@@ -89,7 +90,7 @@ fn check_pipeline(model: &Predictor, w: usize, h: usize) -> Result<(), String> {
 type PendingJob = (u64, AlphaJob);
 
 fn take_job(state: &AppState) -> Option<PendingJob> {
-    let mut g = state.doc.lock().expect("doc lock");
+    let mut g = state.doc.guard();
     g.as_mut().and_then(|d| d.take_alpha_job().map(|j| (d.id, j)))
 }
 
@@ -100,7 +101,7 @@ pub fn run_alpha_jobs(state: &AppState, first: PendingJob, on_applied: impl Fn(u
     while let Some((doc_id, job)) = current.take() {
         let mask = job.run();
         let (applied, next) = {
-            let mut g = state.doc.lock().expect("doc lock");
+            let mut g = state.doc.guard();
             match g.as_mut() {
                 Some(d) if d.id == doc_id => (d.finish_alpha_job(job.rev(), mask), d.take_alpha_job().map(|j| (d.id, j))),
                 _ => (false, None),
@@ -116,7 +117,7 @@ pub fn run_alpha_jobs(state: &AppState, first: PendingJob, on_applied: impl Fn(u
 const SAM_MISSING: &str = "SAM2_MISSING";
 
 fn ensure_sam(state: &AppState) -> Result<Arc<Sam2>, String> {
-    if let Some(s) = state.sam.lock().map_err(|e| e.to_string())?.clone() {
+    if let Some(s) = state.sam.guard().clone() {
         return Ok(s);
     }
     let spec = state.registry.available().into_iter().find(|s| s.kind == ModelKind::Sam2).ok_or(SAM_MISSING)?;
@@ -124,7 +125,7 @@ fn ensure_sam(state: &AppState) -> Result<Arc<Sam2>, String> {
         return Err(SAM_MISSING.into());
     }
     let sam = Arc::new(Sam2::load(&state.registry.model_dir(&spec)).map_err(|e| e.to_string())?);
-    *state.sam.lock().map_err(|e| e.to_string())? = Some(sam.clone());
+    *state.sam.guard() = Some(sam.clone());
     Ok(sam)
 }
 
@@ -145,8 +146,7 @@ impl Ctl {
 
     /// Load `id` on a background thread and make it the active model.
     pub fn load_model_async(self: &Arc<Self>, id: String) {
-        *self.st.model_status.lock().expect("status lock") =
-            ModelStatus { active: Some(id.clone()), loading: true, ready: false, error: None, backend: None };
+        *self.st.model_status.guard() = ModelStatus { active: Some(id.clone()), loading: true, ready: false, error: None, backend: None };
         self.refresh(R_MAIN | R_MODELS);
         let me = self.clone();
         std::thread::spawn(move || {
@@ -158,7 +158,7 @@ impl Ctl {
                     return Err("model file is missing".into());
                 }
                 let (accel, fast) = {
-                    let s = state.settings.lock().map_err(|e| e.to_string())?;
+                    let s = state.settings.guard();
                     // The speed mode is dropped when it would not fit the memory budget.
                     (s.accelerator, s.fast_memory && fits_budget(&spec, true))
                 };
@@ -170,13 +170,12 @@ impl Ctl {
             match result {
                 Ok(p) => {
                     let backend = Some(p.backend().to_string());
-                    *state.model.lock().expect("model lock") = Some(Arc::new(p));
-                    *state.model_status.lock().expect("status lock") =
-                        ModelStatus { active: Some(id), loading: false, ready: true, error: None, backend };
+                    *state.model.guard() = Some(Arc::new(p));
+                    *state.model_status.guard() = ModelStatus { active: Some(id), loading: false, ready: true, error: None, backend };
                 }
                 Err(e) => {
-                    *state.model.lock().expect("model lock") = None;
-                    *state.model_status.lock().expect("status lock") =
+                    *state.model.guard() = None;
+                    *state.model_status.guard() =
                         ModelStatus { active: Some(id), loading: false, ready: false, error: Some(e), backend: None };
                 }
             }
@@ -193,10 +192,10 @@ impl Ctl {
         if !self.st.is_ready(&spec) {
             return self.say("download this model first", true);
         }
-        self.st.settings.lock().expect("settings lock").chosen_model = Some(id.to_string());
+        self.st.settings.guard().chosen_model = Some(id.to_string());
         self.save_settings();
-        *self.st.predicted_doc.lock().expect("predicted lock") = None;
-        self.ux.lock().expect("ux lock").repredict = true; // the open image is predicted again with it
+        *self.st.predicted_doc.guard() = None;
+        self.ux.guard().repredict = true; // the open image is predicted again with it
         self.load_model_async(id.to_string());
     }
 
@@ -204,13 +203,13 @@ impl Ctl {
         let Some(spec) = self.st.models().into_iter().find(|s| s.id == id) else { return };
         let cancel = Arc::new(AtomicBool::new(false));
         {
-            let mut d = self.st.downloads.lock().expect("downloads lock");
+            let mut d = self.st.downloads.guard();
             if d.contains_key(id) {
                 return;
             }
             d.insert(id.to_string(), cancel.clone());
         }
-        self.ux.lock().expect("ux lock").downloads.insert(id.to_string(), (0, 0));
+        self.ux.guard().downloads.insert(id.to_string(), (0, 0));
         self.refresh(R_MODELS);
         let me = self.clone();
         std::thread::spawn(move || {
@@ -218,13 +217,13 @@ impl Ctl {
             let mut progress = |done: u64, total: u64| {
                 if last.elapsed().as_millis() > 100 || done == total {
                     last = std::time::Instant::now();
-                    me.ux.lock().expect("ux lock").downloads.insert(spec.id.clone(), (done, total));
+                    me.ux.guard().downloads.insert(spec.id.clone(), (done, total));
                     me.refresh(R_MODELS);
                 }
             };
             let result = me.st.registry.download(&spec, &mut progress, &cancel);
-            me.st.downloads.lock().expect("downloads lock").remove(&spec.id);
-            me.ux.lock().expect("ux lock").downloads.remove(&spec.id);
+            me.st.downloads.guard().remove(&spec.id);
+            me.ux.guard().downloads.remove(&spec.id);
             match &result {
                 Ok(_) => me.say(t("Model downloaded"), false),
                 Err(e) if e.to_string() != "cancelled" => me.say(tf("Download failed: {error}", &[("error", &e.to_string())]), true),
@@ -240,18 +239,18 @@ impl Ctl {
     }
 
     pub fn cancel_download(&self, id: &str) {
-        if let Some(flag) = self.st.downloads.lock().expect("downloads lock").get(id) {
+        if let Some(flag) = self.st.downloads.guard().get(id) {
             flag.store(true, Ordering::Relaxed);
         }
     }
 
     pub fn delete_model(self: &Arc<Self>, id: &str) {
         let Some(spec) = self.st.registry.get(id) else { return };
-        let was_active = self.st.model_status.lock().expect("status lock").active.as_deref() == Some(id);
+        let was_active = self.st.model_status.guard().active.as_deref() == Some(id);
         if was_active {
-            *self.st.model.lock().expect("model lock") = None;
-            *self.st.model_status.lock().expect("status lock") = ModelStatus::default();
-            self.st.settings.lock().expect("settings lock").chosen_model = None;
+            *self.st.model.guard() = None;
+            *self.st.model_status.guard() = ModelStatus::default();
+            self.st.settings.guard().chosen_model = None;
             self.save_settings();
         }
         if let Err(e) = self.st.registry.delete(&spec) {
@@ -261,7 +260,7 @@ impl Ctl {
     }
 
     pub fn set_accelerator(self: &Arc<Self>, index: i32) {
-        self.st.settings.lock().expect("settings lock").accelerator = match index {
+        self.st.settings.guard().accelerator = match index {
             1 => Accelerator::Gpu,
             2 => Accelerator::Auto,
             _ => Accelerator::Cpu,
@@ -271,18 +270,18 @@ impl Ctl {
     }
 
     pub fn set_fast(self: &Arc<Self>, on: bool) {
-        self.st.settings.lock().expect("settings lock").fast_memory = on;
+        self.st.settings.guard().fast_memory = on;
         self.save_settings();
         self.reload_active();
     }
 
     pub fn set_half(self: &Arc<Self>, on: bool) {
         let p = if on { 50 } else { 25 };
-        self.st.settings.lock().expect("settings lock").ram_percent = p;
+        self.st.settings.guard().ram_percent = p;
         sysmem::set_budget_percent(p as u64);
         self.save_settings();
         // A model refused for lack of room gets another try.
-        if !self.st.model_status.lock().expect("status lock").ready {
+        if !self.st.model_status.guard().ready {
             self.reload_active();
         } else {
             self.refresh(R_MODELS);
@@ -291,7 +290,7 @@ impl Ctl {
 
     /// Run the active model again with the new settings.
     fn reload_active(self: &Arc<Self>) {
-        let active = self.st.model_status.lock().expect("status lock").active.clone();
+        let active = self.st.model_status.guard().active.clone();
         if let Some(id) = active {
             self.load_model_async(id);
         } else {
@@ -303,15 +302,15 @@ impl Ctl {
 
     /// Start predicting the open image when a model is ready and it has not been tried yet.
     pub fn maybe_predict(self: &Arc<Self>) {
-        let Some(model) = self.st.model.lock().expect("model lock").clone() else {
+        let Some(model) = self.st.model.guard().clone() else {
             let (loading, error, started) = {
-                let st = self.st.model_status.lock().expect("status lock");
+                let st = self.st.model_status.guard();
                 (st.loading, st.error.clone(), st.active.is_some())
             };
             if loading {
                 return; // load_model_async calls us again when the model is ready
             }
-            if self.st.doc.lock().expect("doc lock").is_none() {
+            if self.st.doc.guard().is_none() {
                 return;
             }
             if started {
@@ -319,18 +318,18 @@ impl Ctl {
                 self.prediction_failed(message);
             } else if let Some(id) = pick_default_model(&self.st) {
                 // First image of the session: only now does the model take any memory.
-                self.ux.lock().expect("ux lock").prediction = Prediction::Running;
+                self.ux.guard().prediction = Prediction::Running;
                 self.load_model_async(id);
             } else {
-                self.ux.lock().expect("ux lock").prediction = Prediction::NoModel;
+                self.ux.guard().prediction = Prediction::NoModel;
                 self.refresh(R_MAIN);
             }
             return;
         };
         let (id, image) = {
-            let g = self.st.doc.lock().expect("doc lock");
+            let g = self.st.doc.guard();
             let Some(doc) = g.as_ref() else { return };
-            if doc.has_prediction() && !std::mem::take(&mut self.ux.lock().expect("ux lock").repredict) {
+            if doc.has_prediction() && !std::mem::take(&mut self.ux.guard().repredict) {
                 return;
             }
             (doc.id, doc.image.clone())
@@ -339,13 +338,13 @@ impl Ctl {
             return self.prediction_failed(message);
         }
         {
-            let mut running = self.st.predicted_doc.lock().expect("predicted lock");
+            let mut running = self.st.predicted_doc.guard();
             if *running == Some(id) {
                 return;
             }
             *running = Some(id);
         }
-        self.ux.lock().expect("ux lock").prediction = Prediction::Running;
+        self.ux.guard().prediction = Prediction::Running;
         self.refresh(R_MAIN);
         let me = self.clone();
         std::thread::spawn(move || {
@@ -353,7 +352,7 @@ impl Ctl {
             match result {
                 Ok(mask) => {
                     let applied = {
-                        let mut g = me.st.doc.lock().expect("doc lock");
+                        let mut g = me.st.doc.guard();
                         match g.as_mut() {
                             Some(doc) if doc.id == id => {
                                 // The proposal is not an edit of the person: it must not ask to save on closing.
@@ -368,7 +367,7 @@ impl Ctl {
                         }
                     };
                     if applied {
-                        me.ux.lock().expect("ux lock").prediction = Prediction::Idle;
+                        me.ux.guard().prediction = Prediction::Idle;
                         me.kick_alpha();
                         me.refresh_doc();
                     }
@@ -379,21 +378,21 @@ impl Ctl {
     }
 
     fn prediction_failed(self: &Arc<Self>, message: String) {
-        self.ux.lock().expect("ux lock").prediction = Prediction::Failed;
+        self.ux.guard().prediction = Prediction::Failed;
         self.say(tf("Prediction failed: {message}", &[("message", &message)]), true);
     }
 
     // -- smart select (SAM 2)
 
     pub fn smart_add(self: &Arc<Self>, prompt: Prompt) {
-        self.ux.lock().expect("ux lock").prompts.push(prompt);
+        self.ux.guard().prompts.push(prompt);
         self.smart_run();
     }
 
     /// Remove the last prompt (Backspace); the selection follows.
     pub fn smart_undo_prompt(self: &Arc<Self>) {
         let empty = {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             if ux.prompts.is_empty() {
                 return;
             }
@@ -409,12 +408,12 @@ impl Ctl {
 
     fn smart_run(self: &Arc<Self>) {
         let (doc_id, image) = {
-            let g = self.st.doc.lock().expect("doc lock");
+            let g = self.st.doc.guard();
             let Some(d) = g.as_ref() else { return };
             (d.id, d.image.clone())
         };
         let prompts = {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             ux.smart_busy = true;
             ux.prompts.clone()
         };
@@ -424,27 +423,26 @@ impl Ctl {
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
                 let sam = ensure_sam(&me.st)?;
-                let cached =
-                    me.st.sam_cache.lock().map_err(|e| e.to_string())?.as_ref().filter(|(id, _)| *id == doc_id).map(|(_, e)| e.clone());
+                let cached = me.st.sam_cache.guard().as_ref().filter(|(id, _)| *id == doc_id).map(|(_, e)| e.clone());
                 let emb = match cached {
                     Some(e) => e,
                     None => Arc::new(sam.embed(&image).map_err(|e| e.to_string())?),
                 };
                 let mask = sam.select(&emb, &prompts, &image).map_err(|e| e.to_string())?;
-                *me.st.sam_cache.lock().map_err(|e| e.to_string())? = Some((doc_id, emb));
+                *me.st.sam_cache.guard() = Some((doc_id, emb));
                 Ok(mask)
             })();
-            me.ux.lock().expect("ux lock").smart_busy = false;
+            me.ux.guard().smart_busy = false;
             match result {
                 Ok(mask) => {
-                    if let Some(d) = me.st.doc.lock().expect("doc lock").as_mut().filter(|d| d.id == doc_id) {
+                    if let Some(d) = me.st.doc.guard().as_mut().filter(|d| d.id == doc_id) {
                         d.set_selection(Some(mask));
                     }
                     me.say("", false);
                     me.refresh_doc();
                 }
                 Err(e) => {
-                    me.ux.lock().expect("ux lock").prompts.clear();
+                    me.ux.guard().prompts.clear();
                     if e.contains(SAM_MISSING) {
                         me.say(t("Smart select needs the SAM 2 model. Download it in AI models."), true);
                         me.with_ui(|me, ui| {
@@ -463,14 +461,14 @@ impl Ctl {
 
     pub fn smart_apply(self: &Arc<Self>) {
         let mode = {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             if ux.prompts.is_empty() {
                 return;
             }
             ux.prompts.clear();
             ux.smart_mode
         };
-        if let Some(d) = self.st.doc.lock().expect("doc lock").as_mut() {
+        if let Some(d) = self.st.doc.guard().as_mut() {
             d.apply_selection(mode);
         }
         self.refresh_doc();
@@ -479,20 +477,20 @@ impl Ctl {
 
     pub fn smart_cancel(self: &Arc<Self>) {
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             if ux.prompts.is_empty() {
                 return;
             }
             ux.prompts.clear();
         }
-        if let Some(d) = self.st.doc.lock().expect("doc lock").as_mut() {
+        if let Some(d) = self.st.doc.guard().as_mut() {
             d.set_selection(None);
         }
         self.refresh_doc();
     }
 
     pub fn set_smart_mode(self: &Arc<Self>, index: i32) {
-        self.ux.lock().expect("ux lock").smart_mode = match index {
+        self.ux.guard().smart_mode = match index {
             1 => SelectionMode::Add,
             2 => SelectionMode::Subtract,
             _ => SelectionMode::Replace,
@@ -528,7 +526,7 @@ mod tests {
         let home = std::env::temp_dir().join(format!("osc-kick-{}", std::process::id()));
         std::env::set_var("OPENSCISSORS_HOME", &home);
         let state = AppState::new();
-        *state.doc.lock().unwrap() = Some(doc);
+        *state.doc.guard() = Some(doc);
         state
     }
 
@@ -537,10 +535,10 @@ mod tests {
         let state = state_with(disc_doc(1));
         let first = take_job(&state).expect("a graph-cut document needs a job");
         // An edit during the job: the result of the first one must not be shown as final.
-        state.doc.lock().unwrap().as_mut().unwrap().add_stroke(Stroke { kind: StrokeKind::Keep, width: 5, points: vec![[42.5, 30.5]] });
+        state.doc.guard().as_mut().unwrap().add_stroke(Stroke { kind: StrokeKind::Keep, width: 5, points: vec![[42.5, 30.5]] });
         let applied = RefCell::new(Vec::new());
         run_alpha_jobs(&state, first, |id| applied.borrow_mut().push(id));
-        assert!(!state.doc.lock().unwrap().as_mut().unwrap().computing(), "all jobs done");
+        assert!(!state.doc.guard().as_mut().unwrap().computing(), "all jobs done");
         assert!(!applied.borrow().is_empty());
     }
 
@@ -548,11 +546,11 @@ mod tests {
     fn a_result_for_a_closed_document_is_ignored() {
         let state = state_with(disc_doc(1));
         let first = take_job(&state).unwrap();
-        *state.doc.lock().unwrap() = Some(disc_doc(2)); // another image was opened
+        *state.doc.guard() = Some(disc_doc(2)); // another image was opened
         let applied = RefCell::new(0);
         run_alpha_jobs(&state, first, |_| *applied.borrow_mut() += 1);
         assert_eq!(*applied.borrow(), 0);
-        assert!(state.doc.lock().unwrap().as_ref().unwrap().computing(), "the new document still needs its own job");
+        assert!(state.doc.guard().as_ref().unwrap().computing(), "the new document still needs its own job");
     }
 
     fn spec(ram_mb: u32) -> ModelSpec {

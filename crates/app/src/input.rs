@@ -1,5 +1,6 @@
 //! Pointer and keyboard handling for the two views.
 
+use openscissors_core::sync::LockExt;
 use std::sync::Arc;
 
 use openscissors_core::model::Prompt;
@@ -17,7 +18,7 @@ fn ratio_of(key: &str) -> Option<(u32, u32)> {
 impl Ctl {
     pub fn pane_resized(self: &Arc<Self>, w: f64, h: f64) {
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             if (ux.pane.0 - w).abs() < 0.5 && (ux.pane.1 - h).abs() < 0.5 {
                 return;
             }
@@ -33,7 +34,7 @@ impl Ctl {
 
     pub fn zoom_by(self: &Arc<Self>, factor: f64, at: Option<(f64, f64)>) {
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             if ux.doc.is_none() {
                 return;
             }
@@ -52,7 +53,7 @@ impl Ctl {
     }
 
     pub fn zoom_actual(self: &Arc<Self>) {
-        let scale = self.ux.lock().expect("ux lock").view.scale;
+        let scale = self.ux.guard().view.scale;
         self.zoom_by(1.0 / scale, None);
     }
 
@@ -63,7 +64,7 @@ impl Ctl {
 
     pub fn pan(self: &Arc<Self>, dx: f64, dy: f64) {
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             if ux.doc.is_none() {
                 return;
             }
@@ -84,7 +85,7 @@ impl Ctl {
     }
 
     pub fn pane_down(self: &Arc<Self>, side: i32, button: i32, x: f64, y: f64, alt: bool) {
-        let mut ux = self.ux.lock().expect("ux lock");
+        let mut ux = self.ux.guard();
         if ux.doc.is_none() {
             return;
         }
@@ -117,7 +118,7 @@ impl Ctl {
 
     pub fn pane_move(self: &Arc<Self>, side: i32, x: f64, y: f64) {
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             ux.hover = Some((side, x, y));
             if let Some(from) = ux.pan_from {
                 ux.view = pan_by(ux.view, x - from.0, y - from.1);
@@ -148,7 +149,7 @@ impl Ctl {
     }
 
     pub fn pane_leave(self: &Arc<Self>, _side: i32) {
-        self.ux.lock().expect("ux lock").hover = None;
+        self.ux.guard().hover = None;
         self.refresh(R_VIEW);
     }
 
@@ -160,7 +161,7 @@ impl Ctl {
             Stroke(Tool, u32, Vec<(f64, f64)>),
         }
         let action = {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             ux.pan_from = None;
             let mut action = Action::None;
             if let Some(cd) = ux.crop_drag.take() {
@@ -218,7 +219,7 @@ impl Ctl {
 
     pub fn space(self: &Arc<Self>, down: bool) {
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             if ux.space == down {
                 return;
             }
@@ -243,7 +244,7 @@ impl Ctl {
             self.smart_cancel();
             return;
         }
-        let has_prompts = !self.ux.lock().expect("ux lock").prompts.is_empty();
+        let has_prompts = !self.ux.guard().prompts.is_empty();
         if has_prompts {
             if c == '\n' || c == '\r' {
                 return self.smart_apply();
@@ -314,7 +315,7 @@ impl Ctl {
     }
 
     fn step_marker(self: &Arc<Self>, delta: i32) {
-        let n = self.ux.lock().expect("ux lock").marker as i32 + delta;
+        let n = self.ux.guard().marker as i32 + delta;
         self.set_marker(n);
     }
 

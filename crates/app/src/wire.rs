@@ -1,5 +1,6 @@
 //! Connects the interface callbacks to the controller, and the background tickers.
 
+use openscissors_core::sync::LockExt;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -83,7 +84,7 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     cb!(b, ctl, on_load_marks, |c| c.load_marks_dialog());
     cb!(b, ctl, on_save_marks, |c| c.save_marks_dialog());
     cb!(b, ctl, on_open_recent, |c, i| {
-        let path = c.st.settings.lock().expect("settings lock").recent.get(i as usize).cloned();
+        let path = c.st.settings.guard().recent.get(i as usize).cloned();
         if let Some(p) = path {
             c.open_path(PathBuf::from(p));
         }
@@ -96,7 +97,7 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     cb!(b, ctl, on_plugin_run, |c, i| c.plugin_run(i as usize));
     cb!(b, ctl, on_pick_folder, |c, source| c.pick_folder(source));
     cb!(b, ctl, on_set_batch_format, |c, i| {
-        c.ux.lock().expect("ux lock").batch.format = i;
+        c.ux.guard().batch.format = i;
         c.refresh(R_BATCH);
     });
     cb!(b, ctl, on_run_batch, |c| c.run_batch());

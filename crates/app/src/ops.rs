@@ -1,5 +1,6 @@
 //! Document operations: open, save, export, projects, marks, properties, undo.
 
+use openscissors_core::sync::LockExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -46,15 +47,15 @@ impl Ctl {
     }
 
     pub fn doc_name(&self) -> Option<String> {
-        self.ux.lock().expect("ux lock").doc.as_ref().and_then(|d| d.name.clone())
+        self.ux.guard().doc.as_ref().and_then(|d| d.name.clone())
     }
 
     pub fn is_modified(&self) -> bool {
-        self.ux.lock().expect("ux lock").doc.as_ref().is_some_and(|d| d.modified)
+        self.ux.guard().doc.as_ref().is_some_and(|d| d.modified)
     }
 
     pub fn last_dir(&self) -> Option<String> {
-        self.st.settings.lock().expect("settings lock").last_dir.clone()
+        self.st.settings.guard().last_dir.clone()
     }
 
     /// Ask what to do with unsaved changes. `true` when it is fine to go on.
@@ -110,7 +111,7 @@ impl Ctl {
 
     fn after_open(self: &Arc<Self>, predicted: bool) {
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             ux.prompts.clear();
             ux.stroke = None;
             ux.live_crop = None;
@@ -124,11 +125,11 @@ impl Ctl {
         self.maybe_predict();
         // The model loads on the first image, so say what it is doing now.
         let (ready, loading, error) = {
-            let s = self.st.model_status.lock().expect("status lock");
+            let s = self.st.model_status.guard();
             (s.ready, s.loading, s.error.is_some())
         };
         if !predicted && !ready && !loading {
-            self.ux.lock().expect("ux lock").prediction = if error { Prediction::Failed } else { Prediction::NoModel };
+            self.ux.guard().prediction = if error { Prediction::Failed } else { Prediction::NoModel };
         }
         self.refresh(R_MAIN | R_VIEW);
     }
@@ -137,16 +138,16 @@ impl Ctl {
         let loaded = io::load_image_deep(path).map_err(|e| format!("Cannot read file {}: {e}", file_label(path)))?;
         let id = self.st.next_doc_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (mut defaults, group) = {
-            let s = self.st.settings.lock().expect("settings lock");
+            let s = self.st.settings.guard();
             (s.defaults.clone(), s.group_by_color)
         };
         defaults.mask.graphcut = group;
         let doc = Document::new(id, loaded.image, Some(path.to_path_buf())).with_deep(loaded.deep).with_params(defaults);
-        *self.st.doc.lock().expect("doc lock") = Some(doc);
-        *self.st.sam_cache.lock().expect("sam cache lock") = None;
-        *self.st.predicted_doc.lock().expect("predicted lock") = None;
+        *self.st.doc.guard() = Some(doc);
+        *self.st.sam_cache.guard() = None;
+        *self.st.predicted_doc.guard() = None;
         {
-            let mut s = self.st.settings.lock().expect("settings lock");
+            let mut s = self.st.settings.guard();
             s.push_recent(&path.display().to_string());
             s.last_dir = path.parent().map(|d| d.display().to_string());
         }
@@ -161,14 +162,14 @@ impl Ctl {
         let image_path = loaded.orig_path.map(PathBuf::from);
         let predicted = loaded.predicted.is_some();
         let doc = Document::restore(id, loaded.image, image_path, loaded.predicted, loaded.strokes, loaded.params);
-        *self.st.doc.lock().expect("doc lock") = Some(doc);
-        *self.st.predicted_doc.lock().expect("predicted lock") = None;
+        *self.st.doc.guard() = Some(doc);
+        *self.st.predicted_doc.guard() = None;
         {
-            let mut s = self.st.settings.lock().expect("settings lock");
+            let mut s = self.st.settings.guard();
             s.push_recent(&path.display().to_string());
         }
         self.save_settings();
-        self.ux.lock().expect("ux lock").marker = loaded.marker_size;
+        self.ux.guard().marker = loaded.marker_size;
         self.after_open(predicted);
         self.kick_alpha();
         Ok(loaded.warning)
@@ -193,10 +194,10 @@ impl Ctl {
     /// Export the result: to the last file unless `ask`; returns whether a file was written.
     pub fn save_sync(self: &Arc<Self>, ask: bool) -> bool {
         let (name, last) = {
-            let ux = self.ux.lock().expect("ux lock");
+            let ux = self.ux.guard();
             (ux.doc.as_ref().and_then(|d| d.name.clone()), ux.last_export.clone())
         };
-        if self.ux.lock().expect("ux lock").doc.is_none() {
+        if self.ux.guard().doc.is_none() {
             return false;
         }
         let path = match (ask, last) {
@@ -221,11 +222,11 @@ impl Ctl {
     pub fn export_to(self: &Arc<Self>, target: &Path) -> Result<(), String> {
         let format = Format::from_path(target).ok_or("unsupported file type; use png, jpg, webp, bmp or tiff")?;
         let (quality, want16) = {
-            let s = self.st.settings.lock().expect("settings lock");
+            let s = self.st.settings.guard();
             (s.jpeg_quality, s.export_16bit && matches!(format, Format::Png | Format::Tiff))
         };
         let (exported, why) = {
-            let mut g = self.st.doc.lock().expect("doc lock");
+            let mut g = self.st.doc.guard();
             let d = g.as_mut().ok_or("no image is open")?;
             if let Some(deep) = want16.then(|| d.export_deep()).flatten() {
                 (Exported::Bits16(deep), None)
@@ -245,10 +246,10 @@ impl Ctl {
             Exported::Bits8(img, flatten) => io::save_rgba(target, &img, format, quality, flatten),
         }
         .map_err(|e| e.to_string())?;
-        self.st.settings.lock().expect("settings lock").last_dir = target.parent().map(|d| d.display().to_string());
+        self.st.settings.guard().last_dir = target.parent().map(|d| d.display().to_string());
         self.save_settings();
         let (transparent, name) = {
-            let mut g = self.st.doc.lock().expect("doc lock");
+            let mut g = self.st.doc.guard();
             if let Some(d) = g.as_mut() {
                 d.mark_clean();
             }
@@ -258,7 +259,7 @@ impl Ctl {
             )
         };
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             ux.last_export = Some(target.display().to_string());
             ux.last_saved = Some(target.display().to_string());
         }
@@ -291,10 +292,10 @@ impl Ctl {
             if !target.extension().is_some_and(|e| e.eq_ignore_ascii_case("osproj")) {
                 target.set_extension("osproj");
             }
-            let marker = me.st.settings.lock().expect("settings lock").marker_size;
+            let marker = me.st.settings.guard().marker_size;
             let model = me.active_model_ref();
             let result = {
-                let mut g = me.st.doc.lock().expect("doc lock");
+                let mut g = me.st.doc.guard();
                 match g.as_mut() {
                     Some(d) => project::save_project(d, model, marker, &target).map(|_| d.mark_clean()).map_err(|e| e.to_string()),
                     None => Err("no image is open".to_string()),
@@ -311,7 +312,7 @@ impl Ctl {
     }
 
     fn active_model_ref(&self) -> Option<ModelRef> {
-        let id = self.st.model_status.lock().ok()?.active.clone()?;
+        let id = self.st.model_status.guard().active.clone()?;
         let sha256 = self.st.models().into_iter().find(|s| s.id == id).map(|s| s.sha256).unwrap_or_default();
         Some(ModelRef { id, sha256 })
     }
@@ -321,7 +322,7 @@ impl Ctl {
         std::thread::spawn(move || {
             let Some(p) = dialogs::open_file(me.last_dir().as_deref(), &t("Load marks…"), &[("Marks", &["psm"])]) else { return };
             let result = std::fs::read_to_string(&p).map_err(|e| e.to_string()).and_then(|text| {
-                let mut g = me.st.doc.lock().expect("doc lock");
+                let mut g = me.st.doc.guard();
                 let d = g.as_mut().ok_or("no image is open")?;
                 let strokes = project::marks_from_json(&text, d.image.w, d.image.h).map_err(|e| e.to_string())?;
                 d.load_marks(strokes);
@@ -349,7 +350,7 @@ impl Ctl {
                 target.set_extension("psm");
             }
             let result = {
-                let g = me.st.doc.lock().expect("doc lock");
+                let g = me.st.doc.guard();
                 match g.as_ref() {
                     Some(d) => {
                         std::fs::write(&target, project::marks_to_json(d.strokes(), d.image.w, d.image.h)).map_err(|e| e.to_string())
@@ -367,7 +368,7 @@ impl Ctl {
     // -- editing
 
     pub fn undo(self: &Arc<Self>) {
-        if let Some(d) = self.st.doc.lock().expect("doc lock").as_mut() {
+        if let Some(d) = self.st.doc.guard().as_mut() {
             d.undo();
         }
         self.refresh_doc();
@@ -375,7 +376,7 @@ impl Ctl {
     }
 
     pub fn redo(self: &Arc<Self>) {
-        if let Some(d) = self.st.doc.lock().expect("doc lock").as_mut() {
+        if let Some(d) = self.st.doc.guard().as_mut() {
             d.redo();
         }
         self.refresh_doc();
@@ -388,7 +389,7 @@ impl Ctl {
             return;
         }
         let stroke = Stroke { kind, width, points: points.into_iter().map(|(x, y)| [x as f32, y as f32]).collect() };
-        if let Some(d) = self.st.doc.lock().expect("doc lock").as_mut() {
+        if let Some(d) = self.st.doc.guard().as_mut() {
             d.add_stroke(stroke);
         }
         self.refresh_doc();
@@ -398,7 +399,7 @@ impl Ctl {
     /// Change one property of the result (JSON path, as the panel names it).
     pub fn set_param(self: &Arc<Self>, path: &str, value: Value) {
         let result = {
-            let mut g = self.st.doc.lock().expect("doc lock");
+            let mut g = self.st.doc.guard();
             match g.as_mut() {
                 Some(d) => d.set_param(path, value).map_err(|e| e.to_string()),
                 None => return,
@@ -443,9 +444,9 @@ impl Ctl {
 
     /// Reset one tab of the right panel (`tab`: 0 foreground, 1 background, 2 shadow).
     pub fn reset_tab(self: &Arc<Self>, tab: i32, factory: bool) {
-        let source = if factory { Params::default() } else { self.st.settings.lock().expect("settings lock").defaults.clone() };
+        let source = if factory { Params::default() } else { self.st.settings.guard().defaults.clone() };
         {
-            let mut g = self.st.doc.lock().expect("doc lock");
+            let mut g = self.st.doc.guard();
             let Some(d) = g.as_mut() else { return };
             let mut p = d.params().clone();
             match tab {
@@ -468,11 +469,11 @@ impl Ctl {
     }
 
     pub fn save_defaults(self: &Arc<Self>) {
-        let params = self.st.doc.lock().expect("doc lock").as_ref().map(|d| d.params().clone());
+        let params = self.st.doc.guard().as_ref().map(|d| d.params().clone());
         if let Some(mut params) = params {
             params.crop = None;
             params.background.image_path = None;
-            self.st.settings.lock().expect("settings lock").defaults = params;
+            self.st.settings.guard().defaults = params;
             self.save_settings();
             self.say(t("Current settings saved as defaults"), false);
         }
@@ -480,25 +481,25 @@ impl Ctl {
 
     pub fn toggle_graphcut(self: &Arc<Self>) {
         let on = {
-            let ux = self.ux.lock().expect("ux lock");
+            let ux = self.ux.guard();
             let Some(d) = &ux.doc else { return };
             !d.params.mask.graphcut
         };
         self.set_param("mask.graphcut", json!(on));
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             if !on && ux.tool == Tool::Remove {
                 ux.tool = Tool::Keep;
             }
         }
-        self.st.settings.lock().expect("settings lock").group_by_color = on;
+        self.st.settings.guard().group_by_color = on;
         self.save_settings();
         self.refresh(R_MAIN);
     }
 
     pub fn set_tool(self: &Arc<Self>, tool: Tool) {
         let cancel = {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             if tool == Tool::Remove && !ux.doc.as_ref().is_some_and(|d| d.params.mask.graphcut) {
                 return; // the red tool only exists in "group by color" mode
             }
@@ -516,10 +517,10 @@ impl Ctl {
     pub fn set_marker(self: &Arc<Self>, n: i32) {
         let n = n.clamp(1, 300) as u32;
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             ux.marker = n;
         }
-        self.st.settings.lock().expect("settings lock").marker_size = n;
+        self.st.settings.guard().marker_size = n;
         self.save_settings();
         self.refresh(R_MAIN | R_VIEW);
     }
@@ -530,13 +531,13 @@ impl Ctl {
         let me = self.clone();
         std::thread::spawn(move || {
             let start = {
-                let s = me.st.settings.lock().expect("settings lock");
+                let s = me.st.settings.guard();
                 (if source { s.batch_src.clone() } else { s.batch_dst.clone() }).or_else(|| s.last_dir.clone())
             };
             let title = if source { t("Source folder") } else { t("Destination folder") };
             if let Some(p) = dialogs::pick_folder(start.as_deref(), &title) {
                 {
-                    let mut s = me.st.settings.lock().expect("settings lock");
+                    let mut s = me.st.settings.guard();
                     let v = Some(p.display().to_string());
                     if source {
                         s.batch_src = v;
@@ -552,15 +553,15 @@ impl Ctl {
 
     pub fn run_batch(self: &Arc<Self>) {
         use openscissors_core::batch::{self, BatchOptions};
-        let Some(model) = self.st.model.lock().expect("model lock").clone() else {
+        let Some(model) = self.st.model.guard().clone() else {
             self.say(t("No AI model is ready. Choose and download a model first."), true);
             return;
         };
         let (src, dst, params, quality) = {
-            let s = self.st.settings.lock().expect("settings lock");
+            let s = self.st.settings.guard();
             (s.batch_src.clone().unwrap_or_default(), s.batch_dst.clone().unwrap_or_default(), s.defaults.clone(), s.jpeg_quality)
         };
-        let format = if self.ux.lock().expect("ux lock").batch.format == 1 { Format::Jpeg } else { Format::Png };
+        let format = if self.ux.guard().batch.format == 1 { Format::Jpeg } else { Format::Png };
         let (src, dst) = (PathBuf::from(src), PathBuf::from(dst));
         let files = match batch::validate(&src, &dst) {
             Ok(f) => f,
@@ -568,14 +569,14 @@ impl Ctl {
         };
         let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
         {
-            let mut running = self.st.batch.lock().expect("batch lock");
+            let mut running = self.st.batch.guard();
             if running.is_some() {
                 return self.say("A batch is already running.", true);
             }
             *running = Some(cancel.clone());
         }
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             ux.batch.running = true;
             ux.batch.done = 0;
             ux.batch.total = files.len();
@@ -593,7 +594,7 @@ impl Ctl {
                 &predict,
                 &mut |p| {
                     {
-                        let mut ux = me.ux.lock().expect("ux lock");
+                        let mut ux = me.ux.guard();
                         ux.batch.done = p.done;
                         ux.batch.total = p.total;
                         ux.batch.file = p.current.and_then(|c| c.file_name()).map(|n| n.to_string_lossy().into_owned());
@@ -602,7 +603,7 @@ impl Ctl {
                 },
                 &cancel,
             );
-            *me.st.batch.lock().expect("batch lock") = None;
+            *me.st.batch.guard() = None;
             let mut text = format!(
                 "{}. {}",
                 if report.cancelled { t("Cancelled") } else { t("Done") },
@@ -612,7 +613,7 @@ impl Ctl {
                 text.push_str(&format!("\n{} {}", f.file, f.error));
             }
             {
-                let mut ux = me.ux.lock().expect("ux lock");
+                let mut ux = me.ux.guard();
                 ux.batch.running = false;
                 ux.batch.file = None;
                 ux.batch.report = text;
@@ -622,7 +623,7 @@ impl Ctl {
     }
 
     pub fn stop_batch(&self) {
-        if let Some(flag) = self.st.batch.lock().expect("batch lock").as_ref() {
+        if let Some(flag) = self.st.batch.guard().as_ref() {
             flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
@@ -647,7 +648,7 @@ impl Ctl {
                 }
             }
             {
-                let mut s = me.st.settings.lock().expect("settings lock");
+                let mut s = me.st.settings.guard();
                 s.plugins_enabled.retain(|x| x != &p.manifest.id);
                 if enabled {
                     s.plugins_enabled.push(p.manifest.id.clone());
@@ -661,10 +662,10 @@ impl Ctl {
     pub fn plugin_run(self: &Arc<Self>, index: usize) {
         let me = self.clone();
         std::thread::spawn(move || {
-            let Some(file) = me.ux.lock().expect("ux lock").last_saved.clone() else { return };
+            let Some(file) = me.ux.guard().last_saved.clone() else { return };
             let found = openscissors_core::plugin::discover(&me.st.paths.plugins);
             let Some(Ok(p)) = found.into_iter().nth(index).map(|d| d.plugin) else { return };
-            if !me.st.settings.lock().expect("settings lock").plugins_enabled.contains(&p.manifest.id) {
+            if !me.st.settings.guard().plugins_enabled.contains(&p.manifest.id) {
                 return me.say("This plug-in is not enabled.", true);
             }
             let name = p.manifest.name.clone();
@@ -700,29 +701,29 @@ impl Ctl {
         };
         let code = crate::i18n::apply(&setting);
         let _ = slint::select_bundled_translation(code);
-        self.st.settings.lock().expect("settings lock").locale = setting;
+        self.st.settings.guard().locale = setting;
         self.save_settings();
         self.refresh(R_ALL);
     }
 
     pub fn clear_recent(self: &Arc<Self>) {
-        self.st.settings.lock().expect("settings lock").recent.clear();
+        self.st.settings.guard().recent.clear();
         self.save_settings();
         self.refresh(R_MENU);
     }
 
     pub fn set_jpeg_quality(self: &Arc<Self>, q: i32) {
-        self.st.settings.lock().expect("settings lock").jpeg_quality = q.clamp(10, 100) as u8;
+        self.st.settings.guard().jpeg_quality = q.clamp(10, 100) as u8;
         self.save_settings();
     }
 
     pub fn set_export16(self: &Arc<Self>, on: bool) {
-        self.st.settings.lock().expect("settings lock").export_16bit = on;
+        self.st.settings.guard().export_16bit = on;
         self.save_settings();
     }
 
     pub fn set_drop_active(self: &Arc<Self>, on: bool) {
-        self.ux.lock().expect("ux lock").drop_active = on;
+        self.ux.guard().drop_active = on;
         self.refresh(R_MAIN);
     }
 }

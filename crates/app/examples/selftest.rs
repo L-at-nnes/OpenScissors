@@ -3,6 +3,7 @@
 //!
 //! `cargo run -p openscissors --example selftest -- <image> <out-dir> [scenario]`
 
+use openscissors_core::sync::LockExt;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -68,7 +69,7 @@ impl Driver {
     fn wait_prediction(&self) {
         let t = Instant::now();
         loop {
-            let done = self.ctl.st.doc.lock().unwrap().as_ref().is_some_and(|d| d.has_prediction());
+            let done = self.ctl.st.doc.guard().as_ref().is_some_and(|d| d.has_prediction());
             if done || t.elapsed() > Duration::from_secs(60) {
                 break;
             }
@@ -109,7 +110,7 @@ fn main() {
     if std::env::var("OSC_SIZE").is_ok() || std::env::var("OSC_KEEP_WINDOW").is_err() {
         ui.window().set_size(slint::LogicalSize::new(w, h));
     } else {
-        let saved = ctl.st.settings.lock().unwrap().window;
+        let saved = ctl.st.settings.guard().window;
         openscissors::window::restore(&ui, saved);
     }
     if let Ok(lang) = std::env::var("OSC_LANG") {
@@ -177,15 +178,15 @@ fn main() {
                 });
                 d.settle(150);
             };
-            let tool = |d: &Driver| d.ctl.ux.lock().unwrap().tool.as_str();
+            let tool = |d: &Driver| d.ctl.ux.guard().tool.as_str();
             press("h");
             println!("after h: {}", tool(&d));
             press("e");
             println!("after e: {}", tool(&d));
             press("]");
-            println!("marker after ]: {}", d.ctl.ux.lock().unwrap().marker);
+            println!("marker after ]: {}", d.ctl.ux.guard().marker);
             // Ctrl+Z via the Control key then z
-            let before = d.ctl.ux.lock().unwrap().doc.as_ref().map(|x| x.can_undo);
+            let before = d.ctl.ux.guard().doc.as_ref().map(|x| x.can_undo);
             d.ui(|_, ui| {
                 let _ = ui.window().dispatch_event_with_result(WindowEvent::KeyPressed { text: Key::Control.into() });
                 let _ = ui.window().dispatch_event_with_result(WindowEvent::KeyPressed { text: "z".into() });
@@ -193,10 +194,10 @@ fn main() {
                 let _ = ui.window().dispatch_event_with_result(WindowEvent::KeyReleased { text: Key::Control.into() });
             });
             d.settle(300);
-            let after = d.ctl.ux.lock().unwrap().doc.as_ref().map(|x| x.can_undo);
+            let after = d.ctl.ux.guard().doc.as_ref().map(|x| x.can_undo);
             println!("can_undo before {before:?} after ctrl+z {after:?}");
             // Wheel: ctrl + scroll zooms, plain scroll pans.
-            let s0 = d.ctl.ux.lock().unwrap().view;
+            let s0 = d.ctl.ux.guard().view;
             d.ui(|_, ui| {
                 let _ = ui
                     .window()
@@ -210,22 +211,22 @@ fn main() {
                 let _ = ui.window().dispatch_event_with_result(WindowEvent::KeyReleased { text: Key::Control.into() });
             });
             d.settle(300);
-            let s1 = d.ctl.ux.lock().unwrap().view;
+            let s1 = d.ctl.ux.guard().view;
             println!("scale {:.3} -> {:.3} after ctrl+wheel up", s0.scale, s1.scale);
             d.shot("20-after-keys");
         }
         if scenario == "flows" || scenario == "all" {
             // Crop: drag the south-east handle of the result's crop rectangle inwards.
             let (w, h) = {
-                let ux = d.ctl.ux.lock().unwrap();
+                let ux = d.ctl.ux.guard();
                 (ux.doc.as_ref().unwrap().width as f64, ux.doc.as_ref().unwrap().height as f64)
             };
             let (x1, y1) = {
-                let ux = d.ctl.ux.lock().unwrap();
+                let ux = d.ctl.ux.guard();
                 openscissors::viewport::to_screen(&ux.view, w, h)
             };
             d.drag(1, (x1, y1), (x1 - 150.0, y1 - 90.0));
-            let crop = d.ctl.ux.lock().unwrap().doc.as_ref().unwrap().params.crop;
+            let crop = d.ctl.ux.guard().doc.as_ref().unwrap().params.crop;
             println!("crop after handle drag: {crop:?}");
             d.shot("30-cropped");
             d.ui(|c, _| c.set_crop(None));
@@ -233,7 +234,7 @@ fn main() {
             d.ui(|c, _| c.set_tool(Tool::Select));
             d.ui(|c, _| c.smart_add(openscissors_core::model::Prompt::Point { x: 450.0, y: 300.0, keep: true }));
             let t = Instant::now();
-            while d.ctl.ux.lock().unwrap().smart_busy || t.elapsed() < Duration::from_millis(500) {
+            while d.ctl.ux.guard().smart_busy || t.elapsed() < Duration::from_millis(500) {
                 std::thread::sleep(Duration::from_millis(100));
                 if t.elapsed() > Duration::from_secs(60) {
                     break;
@@ -242,8 +243,8 @@ fn main() {
             d.settle(500);
             println!(
                 "smart select: prompts {} selection {}",
-                d.ctl.ux.lock().unwrap().prompts.len(),
-                d.ctl.st.doc.lock().unwrap().as_ref().unwrap().has_selection()
+                d.ctl.ux.guard().prompts.len(),
+                d.ctl.st.doc.guard().as_ref().unwrap().has_selection()
             );
             d.shot("31-smart");
             d.ui(|c, _| c.smart_apply());
@@ -370,7 +371,7 @@ fn run_script(d: &Driver, path: &str) {
         } else if let Some(t) = step["say"].as_str() {
             println!("{t}");
         } else if let Some(t) = step["print"].as_str() {
-            let v = d.ctl.ux.lock().unwrap();
+            let v = d.ctl.ux.guard();
             match t {
                 "tool" => println!("tool {}", v.tool.as_str()),
                 "marker" => println!("marker {}", v.marker),

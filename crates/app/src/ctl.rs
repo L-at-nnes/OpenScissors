@@ -1,6 +1,7 @@
 //! The controller: owns the interface state that is not in the document, turns events into
 //! document operations and pushes the result into the Slint properties.
 
+use openscissors_core::sync::LockExt;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -212,10 +213,10 @@ fn file_name(path: &str) -> String {
 impl Ctl {
     pub fn new(ui: &MainWindow) -> Arc<Self> {
         let st = Arc::new(AppState::new());
-        let locale = st.settings.lock().expect("settings lock").locale.clone();
+        let locale = st.settings.guard().locale.clone();
         let code = i18n::apply(&locale);
         let _ = slint::select_bundled_translation(code);
-        let marker = st.settings.lock().expect("settings lock").marker_size;
+        let marker = st.settings.guard().marker_size;
         let current_doc = Arc::new(AtomicU64::new(0));
         let weak = ui.as_weak();
         let alive = current_doc.clone();
@@ -299,7 +300,7 @@ impl Ctl {
         let epoch = self.status_epoch.fetch_add(1, Ordering::Relaxed) + 1;
         let shown_for = std::time::Duration::from_secs(if error { 10 } else { 4 });
         let fades = !text.is_empty();
-        self.ux.lock().expect("ux lock").status = (text, error);
+        self.ux.guard().status = (text, error);
         self.refresh(R_MAIN);
         if fades {
             // The timer lives on the interface thread: no thread per message.
@@ -307,7 +308,7 @@ impl Ctl {
                 let me = me.clone();
                 slint::Timer::single_shot(shown_for, move || {
                     if me.status_epoch.load(Ordering::Relaxed) == epoch {
-                        me.ux.lock().expect("ux lock").status = (String::new(), false);
+                        me.ux.guard().status = (String::new(), false);
                         me.refresh(R_MAIN);
                     }
                 });
@@ -317,7 +318,7 @@ impl Ctl {
 
     pub fn sync(self: &Arc<Self>, ui: &MainWindow, bits: u32) {
         {
-            let mut ux = self.ux.lock().expect("ux lock");
+            let mut ux = self.ux.guard();
             let dpr = ui.window().scale_factor() as f64;
             if (dpr - ux.dpr).abs() > 1e-6 {
                 ux.dpr = dpr;
@@ -344,12 +345,12 @@ impl Ctl {
     fn sync_main(self: &Arc<Self>, ui: &MainWindow) {
         let b = ui.global::<Backend>();
         let (status, active_name) = {
-            let s = self.st.model_status.lock().expect("status lock").clone();
+            let s = self.st.model_status.guard().clone();
             let name = s.active.as_ref().and_then(|id| self.st.models().into_iter().find(|m| &m.id == id)).map(|m| m.name);
             (s, name)
         };
         let any_ready = self.st.models().iter().any(|m| m.kind == ModelKind::Segmenter && self.st.is_ready(m));
-        let ux = self.ux.lock().expect("ux lock");
+        let ux = self.ux.guard();
         let doc = ux.doc.as_ref();
         b.set_has_doc(doc.is_some());
         let title = match doc {
@@ -407,8 +408,8 @@ impl Ctl {
 
     fn sync_models(self: &Arc<Self>, ui: &MainWindow) {
         let b = ui.global::<Backend>();
-        let status = self.st.model_status.lock().expect("status lock").clone();
-        let downloads = self.ux.lock().expect("ux lock").downloads.clone();
+        let status = self.st.model_status.guard().clone();
+        let downloads = self.ux.guard().downloads.clone();
         let rows: Vec<ModelRow> = self
             .st
             .models()
@@ -457,7 +458,7 @@ impl Ctl {
             .collect();
         b.set_models(ModelRc::new(VecModel::from(rows)));
         b.set_model_error(status.error.clone().unwrap_or_default().into());
-        let s = self.st.settings.lock().expect("settings lock");
+        let s = self.st.settings.guard();
         b.set_accel_index(match s.accelerator {
             openscissors_core::model::Accelerator::Cpu => 0,
             openscissors_core::model::Accelerator::Gpu => 1,
@@ -475,7 +476,7 @@ impl Ctl {
 
     fn sync_menu(self: &Arc<Self>, ui: &MainWindow) {
         let b = ui.global::<Backend>();
-        let s = self.st.settings.lock().expect("settings lock").clone();
+        let s = self.st.settings.guard().clone();
         b.set_jpeg_quality(s.jpeg_quality as i32);
         b.set_export16(s.export_16bit);
         let mut langs = vec![t("System default")];
@@ -489,7 +490,7 @@ impl Ctl {
         b.set_recent(strings(s.recent.iter().take(5).map(|r| file_name(r))));
         let plugins = self.plugin_rows();
         b.set_plugins(ModelRc::new(VecModel::from(plugins)));
-        b.set_can_run_plugin(self.ux.lock().expect("ux lock").last_saved.is_some());
+        b.set_can_run_plugin(self.ux.guard().last_saved.is_some());
         b.set_about_version(env!("CARGO_PKG_VERSION").into());
         b.set_root_path(self.st.paths.root.display().to_string().into());
     }
@@ -497,11 +498,11 @@ impl Ctl {
     fn sync_batch(self: &Arc<Self>, ui: &MainWindow) {
         let b = ui.global::<Backend>();
         let (src, dst) = {
-            let s = self.st.settings.lock().expect("settings lock");
+            let s = self.st.settings.guard();
             (s.batch_src.clone().unwrap_or_default(), s.batch_dst.clone().unwrap_or_default())
         };
-        let ready = self.st.model_status.lock().expect("status lock").ready;
-        let ux = self.ux.lock().expect("ux lock");
+        let ready = self.st.model_status.guard().ready;
+        let ux = self.ux.guard();
         b.set_batch_src(src.clone().into());
         b.set_batch_dst(dst.clone().into());
         b.set_batch_format(ux.batch.format);
@@ -515,7 +516,7 @@ impl Ctl {
     }
 
     fn plugin_rows(&self) -> Vec<PluginRow> {
-        let enabled = self.st.settings.lock().expect("settings lock").plugins_enabled.clone();
+        let enabled = self.st.settings.guard().plugins_enabled.clone();
         openscissors_core::plugin::discover(&self.st.paths.plugins)
             .into_iter()
             .map(|d| match d.plugin {
@@ -533,7 +534,7 @@ impl Ctl {
     /// Pan, zoom and everything drawn over the views; also asks for new pixels when they changed.
     pub fn sync_view(self: &Arc<Self>, ui: &MainWindow) {
         let b = ui.global::<Backend>();
-        let mut ux = self.ux.lock().expect("ux lock");
+        let mut ux = self.ux.guard();
         let v = ux.view;
         b.set_view_scale(v.scale as f32);
         b.set_view_tx(v.tx as f32);
@@ -684,7 +685,7 @@ impl Ctl {
     // -- helpers shared by the operations
 
     pub fn fit(&self) {
-        let mut ux = self.ux.lock().expect("ux lock");
+        let mut ux = self.ux.guard();
         if let Some(d) = &ux.doc {
             if ux.pane.0 > 0.0 {
                 ux.view = fit_view((d.width as f64, d.height as f64), ux.pane, 24.0);
@@ -694,8 +695,8 @@ impl Ctl {
 
     /// Read the document state into the interface state.
     pub fn refresh_doc(self: &Arc<Self>) {
-        let st = self.st.doc.lock().expect("doc lock").as_mut().map(|d| d.state());
-        self.ux.lock().expect("ux lock").doc = st;
+        let st = self.st.doc.guard().as_mut().map(|d| d.state());
+        self.ux.guard().doc = st;
         self.refresh(R_MAIN | R_VIEW);
     }
 }

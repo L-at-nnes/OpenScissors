@@ -15,6 +15,7 @@ pub mod plugin;
 pub mod project;
 pub mod render;
 pub mod settings;
+pub mod sync;
 pub mod sysmem;
 pub mod types;
 
