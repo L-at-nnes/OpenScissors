@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use openscissors_core::document::{DocState, SelectionMode};
 use openscissors_core::mask::StrokeKind;
 use openscissors_core::model::{ModelKind, Prompt};
-use openscissors_core::params::{BgMode, FilterKind, FilterSpec, Params, ASPECT_RATIOS};
+use openscissors_core::params::{BgMode, FilterKind, FilterSpec, Params, ASPECT_RATIOS, OUTPUT_WIDTHS, PRESETS};
 use openscissors_core::types::Rect;
 use slint::{ComponentHandle, ModelRc, SharedPixelBuffer, SharedString, VecModel};
 
@@ -200,6 +200,8 @@ pub fn params_v(p: &Params) -> ParamsV {
         sh_blur: p.shadow.blur_radius as i32,
         sh_color: rgb(p.shadow.color),
         has_crop: p.crop.is_some(),
+        preset: PRESETS.iter().position(|q| q.matches(p)).map_or(0, |i| i as i32 + 1),
+        out_width: OUTPUT_WIDTHS.iter().position(|&w| w == p.background.output_width).unwrap_or(0) as i32,
     }
 }
 
@@ -365,6 +367,14 @@ impl Ctl {
             b.set_p(params_v(&d.params));
         }
         b.set_ratio_options(strings(ASPECT_RATIOS.iter().map(|(k, _)| if *k == "free" { t("Unconstrained") } else { k.to_string() })));
+        b.set_preset_options(strings([
+            t("Custom"),
+            t("Marketplace 1000 px"),
+            t("Marketplace 2000 px"),
+            t("Thumbnail 500 px"),
+            t("Banner 16:9"),
+        ]));
+        b.set_width_options(strings(OUTPUT_WIDTHS.iter().map(|&w| if w == 0 { t("Original size") } else { format!("{w} px") })));
         b.set_tool(ux.tool.as_str().into());
         b.set_marker_size(ux.marker as i32);
         b.set_smart_count(ux.prompts.len() as i32);

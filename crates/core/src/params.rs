@@ -74,6 +74,8 @@ pub struct BackgroundParams {
     pub aspect_ratio: String,
     pub fit_to_result: bool,
     pub padding: u32,
+    /// Width of the exported picture in pixels, 0 = keep the size of the cropped result. The height follows.
+    pub output_width: u32,
     pub filter: FilterSpec,
 }
 
@@ -87,6 +89,7 @@ impl Default for BackgroundParams {
             aspect_ratio: "free".into(),
             fit_to_result: false,
             padding: 5,
+            output_width: 0,
             filter: FilterSpec::default(),
         }
     }
@@ -129,6 +132,7 @@ impl Params {
             f.strength = f.strength.min(100);
         }
         self.background.padding = self.background.padding.min(100);
+        self.background.output_width = self.background.output_width.min(16_000);
         self.shadow.opacity = self.shadow.opacity.min(100);
         self.shadow.blur_radius = self.shadow.blur_radius.min(100);
     }
@@ -159,6 +163,57 @@ pub const ASPECT_RATIOS: &[(&str, Option<(u32, u32)>)] = &[
     ("24:19", Some((24, 19))),
 ];
 
+/// Widths offered by the "Output width" list (0 = keep the size).
+pub const OUTPUT_WIDTHS: &[u32] = &[0, 500, 800, 1000, 1080, 1200, 1500, 1920, 2000, 3000, 4000];
+
+/// A ready-made result for a common destination: crop to the subject with a margin, a ratio, a background
+/// and an output width. It only touches the background tab; the foreground and the shadow are left as they are.
+pub struct Preset {
+    pub id: &'static str,
+    pub ratio: &'static str,
+    pub padding: u32,
+    pub width: u32,
+    /// Background colour, `None` for a transparent background.
+    pub color: Option<[u8; 3]>,
+}
+
+pub const PRESETS: &[Preset] = &[
+    Preset { id: "marketplace", ratio: "1:1", padding: 10, width: 1000, color: Some([255, 255, 255]) },
+    Preset { id: "marketplace-large", ratio: "1:1", padding: 10, width: 2000, color: Some([255, 255, 255]) },
+    Preset { id: "thumbnail", ratio: "1:1", padding: 5, width: 500, color: None },
+    Preset { id: "banner", ratio: "16:9", padding: 10, width: 1920, color: Some([255, 255, 255]) },
+];
+
+impl Preset {
+    pub fn apply(&self, params: &mut Params) {
+        let b = &mut params.background;
+        b.mode = if self.color.is_some() { BgMode::Color } else { BgMode::Transparent };
+        if let Some(c) = self.color {
+            b.color = c;
+        }
+        b.aspect_ratio = self.ratio.into();
+        b.fit_to_result = true;
+        b.padding = self.padding;
+        b.output_width = self.width;
+        params.crop = None;
+    }
+
+    /// Whether `params` is exactly what [`Preset::apply`] produces (on the settings it controls).
+    pub fn matches(&self, params: &Params) -> bool {
+        let b = &params.background;
+        let background = match self.color {
+            Some(c) => b.mode == BgMode::Color && b.color == c,
+            None => b.mode == BgMode::Transparent,
+        };
+        background
+            && b.aspect_ratio == self.ratio
+            && b.fit_to_result
+            && b.padding == self.padding
+            && b.output_width == self.width
+            && params.crop.is_none()
+    }
+}
+
 /// Parse an aspect-ratio key ("free", "16:9") to `(w, h)`.
 pub fn parse_ratio(key: &str) -> Option<(u32, u32)> {
     let (a, b) = key.split_once(':')?;
@@ -185,6 +240,22 @@ mod tests {
         let p: Params = serde_json::from_str(r#"{"shadow":{"enabled":true}}"#).unwrap();
         assert!(p.shadow.enabled);
         assert_eq!(p.shadow.opacity, 75);
+    }
+
+    #[test]
+    fn presets_are_valid_and_recognised_once_applied() {
+        for (i, preset) in PRESETS.iter().enumerate() {
+            assert!(ASPECT_RATIOS.iter().any(|(k, _)| *k == preset.ratio), "{}", preset.id);
+            assert!(OUTPUT_WIDTHS.contains(&preset.width), "{}", preset.id);
+            let mut p = Params { crop: Some(Rect::new(1.0, 1.0, 2.0, 2.0)), ..Params::default() };
+            assert!(!preset.matches(&p));
+            preset.apply(&mut p);
+            let mut sane = p.clone();
+            sane.sanitize();
+            assert_eq!(p, sane, "{} stays inside the allowed ranges", preset.id);
+            let found: Vec<usize> = PRESETS.iter().enumerate().filter(|(_, q)| q.matches(&p)).map(|(j, _)| j).collect();
+            assert_eq!(found, [i]);
+        }
     }
 
     #[test]

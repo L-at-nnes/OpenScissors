@@ -235,6 +235,14 @@ export component Dock inherits Rectangle {
                 if Backend.has-doc && Backend.tab == 1: Section {
                     title: @tr("Crop");
                     SelectRow {
+                        label: @tr("Preset");
+                        options: Backend.preset-options;
+                        current: Backend.p.preset;
+                        selected(i) => {
+                            Backend.apply-preset(i);
+                        }
+                    }
+                    SelectRow {
                         label: @tr("Aspect ratio");
                         options: Backend.ratio-options;
                         current: Backend.p.ratio;
@@ -257,6 +265,14 @@ export component Dock inherits Rectangle {
                         enabled: Backend.p.fit;
                         changed(v) => {
                             Backend.set-int("background.padding", v);
+                        }
+                    }
+                    SelectRow {
+                        label: @tr("Output width");
+                        options: Backend.width-options;
+                        current: Backend.p.out-width;
+                        selected(i) => {
+                            Backend.set-index("background.output_width", i);
                         }
                     }
                     HorizontalLayout {

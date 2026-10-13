@@ -7,7 +7,7 @@ use std::sync::Arc;
 use openscissors_core::document::Document;
 use openscissors_core::io::{self, Format};
 use openscissors_core::mask::Stroke;
-use openscissors_core::params::{Params, ASPECT_RATIOS};
+use openscissors_core::params::{Params, ASPECT_RATIOS, OUTPUT_WIDTHS, PRESETS};
 use openscissors_core::project::{self, ModelRef};
 use openscissors_core::types::Rect;
 use serde_json::{json, Value};
@@ -420,12 +420,28 @@ impl Ctl {
             MODE_KEYS.get(i).map(|k| json!(k))
         } else if path == "background.aspect_ratio" {
             ASPECT_RATIOS.get(i).map(|(k, _)| json!(k))
+        } else if path == "background.output_width" {
+            OUTPUT_WIDTHS.get(i).map(|w| json!(w))
         } else {
             None
         };
         if let Some(v) = value {
             self.set_param(path, v);
         }
+    }
+
+    /// Apply preset `i` of the list (0 is "Custom": nothing to do) as one undoable change.
+    pub fn apply_preset(self: &Arc<Self>, i: i32) {
+        let Some(preset) = usize::try_from(i - 1).ok().and_then(|n| PRESETS.get(n)) else { return };
+        {
+            let mut g = self.st.doc.guard();
+            let Some(d) = g.as_mut() else { return };
+            let mut p = d.params().clone();
+            preset.apply(&mut p);
+            d.set_params(p);
+        }
+        self.refresh_doc();
+        self.kick_alpha();
     }
 
     pub fn set_crop(self: &Arc<Self>, rect: Option<Rect>) {

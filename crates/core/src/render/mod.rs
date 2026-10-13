@@ -12,7 +12,7 @@ use rayon::prelude::*;
 
 use crate::imaging::filter::{box_blur_u8, gaussian_blur_u8};
 use crate::imaging::morph::{morph_ellipse, MorphOp};
-use crate::imaging::resize::{crop_resize_image, crop_resize_mask, Interp};
+use crate::imaging::resize::{crop_resize_image, crop_resize_mask, resize_rgba, Interp};
 use crate::params::{BgMode, Params};
 use crate::types::{Image, Image16, Mask, Rect, Rgba, Rgba16};
 use filters::{apply_filter, filter_margin};
@@ -219,20 +219,37 @@ pub fn export_rgba(scene: &Scene) -> Rgba {
     let y0 = (r.y0.round() as usize).min(h - 1);
     let cw = (r.width().round() as usize).clamp(1, w - x0);
     let ch = (r.height().round() as usize).clamp(1, h - y0);
-    if (x0, y0, cw, ch) == (0, 0, w, h) {
-        return full;
+    let cropped = if (x0, y0, cw, ch) == (0, 0, w, h) {
+        full
+    } else {
+        let mut data = Vec::with_capacity(cw * ch * 4);
+        for y in y0..y0 + ch {
+            data.extend_from_slice(&full.data[(y * w + x0) * 4..(y * w + x0 + cw) * 4]);
+        }
+        Rgba { w: cw, h: ch, data }
+    };
+    resize_to_output_width(cropped, scene.params.background.output_width as usize)
+}
+
+/// Longest side of an exported picture; a very tall crop at a large width cannot ask for more.
+const MAX_OUTPUT_SIDE: usize = 20_000;
+
+/// Scale the result to `width` pixels wide (0 = leave it), keeping its proportions.
+fn resize_to_output_width(img: Rgba, width: usize) -> Rgba {
+    if width == 0 || width == img.w {
+        return img;
     }
-    let mut data = Vec::with_capacity(cw * ch * 4);
-    for y in y0..y0 + ch {
-        data.extend_from_slice(&full.data[(y * w + x0) * 4..(y * w + x0 + cw) * 4]);
-    }
-    Rgba { w: cw, h: ch, data }
+    let k = (width as f64 / img.w as f64).min(MAX_OUTPUT_SIDE as f64 / img.w.max(img.h) as f64);
+    let (dw, dh) = (((img.w as f64 * k).round() as usize).max(1), ((img.h as f64 * k).round() as usize).max(1));
+    resize_rgba(&img, dw, dh, if k < 1.0 { Interp::Area } else { Interp::Bicubic })
 }
 
 /// Why a 16-bit export is not possible with the current settings, if it is not.
 pub fn deep_blocker(params: &Params) -> Option<&'static str> {
     if !matches!(params.background.mode, BgMode::Transparent | BgMode::Color) {
         Some("the background is a picture or the original")
+    } else if params.background.output_width > 0 {
+        Some("a fixed output width is set")
     } else if params.foreground.defringe > 0 {
         Some("the edge clean-up is on")
     } else if params.foreground.filter.kind != crate::params::FilterKind::None {
@@ -437,6 +454,24 @@ mod tests {
         let on = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
         assert_eq!(&on.data[halo * 4..halo * 4 + 3], &[200, 0, 0]);
         assert_eq!(on.data[halo * 4 + 3], 128, "the transparency is untouched");
+        assert!(deep_blocker(&params).is_some());
+    }
+
+    #[test]
+    fn export_scales_to_the_output_width_and_a_preset_gives_the_exact_size() {
+        let (img, alpha) = scene_parts();
+        let mut params = Params::default();
+        let size = |p: &Params| {
+            let o = export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None });
+            (o.w, o.h, o.data.len())
+        };
+        assert_eq!(size(&params), (80, 60, 80 * 60 * 4));
+        params.background.output_width = 40;
+        assert_eq!(size(&params), (40, 30, 40 * 30 * 4));
+        params.background.output_width = 160;
+        assert_eq!(size(&params), (160, 120, 160 * 120 * 4));
+        crate::params::PRESETS[0].apply(&mut params);
+        assert_eq!(size(&params), (1000, 1000, 1000 * 1000 * 4));
         assert!(deep_blocker(&params).is_some());
     }
 
