@@ -69,7 +69,7 @@ fs.writeFileSync(
     '',
     `Run ${win ? 'OpenScissors.exe' : 'OpenScissors'}. Everything lives in this folder: move it, copy it, put it on a USB stick.`,
     '',
-    '  openscissors-cli.exe   the same engine from a terminal: openscissors-cli --help',
+    `  ${cli}   the same engine from a terminal: ${cli} --help`,
     '  models/    the AI models you download (top bar, model chip)',
     '  data/      your settings, window position and saved defaults',
     '  temp/      scratch files, cleaned up automatically (created when the app runs)',

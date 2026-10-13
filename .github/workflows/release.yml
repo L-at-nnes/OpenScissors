@@ -1,0 +1,72 @@
+name: release
+
+# Push a tag such as v1.1.0 (it must match the version in Cargo.toml) and this workflow builds the portable
+# archives on each system and publishes them as a GitHub release. "Run workflow" builds the archives only.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows-x64 }
+          - { os: ubuntu-latest, name: linux-x64 }
+          - { os: macos-latest, name: macos-arm64 }
+          - { os: macos-15-intel, name: macos-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag matches the version in Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "${tag%%-*}" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $version"; exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev zip
+      - run: cargo test --workspace --release
+      - run: node scripts/package-portable.mjs --build --zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openscissors-${{ matrix.name }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: openscissors-*
+          merge-multiple: true
+          path: out
+      - name: Checksums
+        working-directory: out
+        run: sha256sum *.zip > SHA256SUMS.txt
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --repo "$GITHUB_REPOSITORY" --title "OpenScissors ${GITHUB_REF_NAME#v}" --generate-notes $flags
