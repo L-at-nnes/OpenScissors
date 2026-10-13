@@ -143,6 +143,29 @@ pub fn save_project(doc: &Document, model: Option<ModelRef>, marker_size: u32, p
     Ok(())
 }
 
+/// A file can be edited by hand or damaged: keep only strokes the brush could have made (width 1 to 300, finite points).
+fn clean_strokes(strokes: Vec<Stroke>) -> Vec<Stroke> {
+    strokes
+        .into_iter()
+        .filter_map(|mut s| {
+            s.points.retain(|p| p[0].is_finite() && p[1].is_finite());
+            s.width = s.width.clamp(1, 300);
+            (!s.points.is_empty()).then_some(s)
+        })
+        .collect()
+}
+
+/// A crop must be a real rectangle inside the image; anything else means "no manual crop".
+fn clean_crop(crop: Option<Rect>, w: usize, h: usize) -> Option<Rect> {
+    let r = crop?;
+    if ![r.x0, r.y0, r.x1, r.y1].iter().all(|v| v.is_finite()) {
+        return None;
+    }
+    let (x0, y0) = (r.x0.clamp(0.0, w as f64), r.y0.clamp(0.0, h as f64));
+    let (x1, y1) = (r.x1.clamp(0.0, w as f64), r.y1.clamp(0.0, h as f64));
+    (x1 - x0 >= 1.0 && y1 - y0 >= 1.0).then(|| Rect::new(x0, y0, x1, y1))
+}
+
 pub fn load_project(path: &Path) -> Result<LoadedProject> {
     if std::fs::metadata(path)?.len() > MAX_PROJECT_BYTES {
         return Err(Error::msg("project file is too large"));
@@ -169,7 +192,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject> {
         foreground: file.layers.foreground,
         background: file.layers.background,
         shadow: file.layers.shadow,
-        crop: file.crop,
+        crop: clean_crop(file.crop, image.w, image.h),
     };
     params.sanitize();
     let warning = (file.version > PROJECT_VERSION)
@@ -178,7 +201,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject> {
         image,
         orig_path: file.image.orig_path,
         predicted,
-        strokes: file.strokes,
+        strokes: clean_strokes(file.strokes),
         params,
         model: file.model,
         marker_size: file.ui.marker_size.clamp(1, 300),
@@ -341,6 +364,29 @@ mod tests {
             std::fs::read(dir.join("b.osproj")).unwrap(),
             "same bytes after a round trip"
         );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_damaged_project_cannot_ask_for_absurd_strokes_or_crops() {
+        let dir = tmp("bad");
+        let d = Document::new(1, Image::filled(40, 30, [1, 2, 3]), None);
+        save_project(&d, None, 30, &dir.join("p.osproj")).unwrap();
+        let mut v: Value = serde_json::from_slice(&std::fs::read(dir.join("p.osproj")).unwrap()).unwrap();
+        v["strokes"] = json!([
+            { "kind": "keep", "width": 4_000_000_000u64, "points": [[5.0, 5.0], [1e60, 2.0]] },
+            { "kind": "keep", "width": 5, "points": [[1e60, 2.0]] }
+        ]);
+        v["crop"] = json!({ "x0": -50.0, "y0": -5.0, "x1": 9999.0, "y1": 12.0 });
+        std::fs::write(dir.join("q.osproj"), v.to_string()).unwrap();
+        let l = load_project(&dir.join("q.osproj")).unwrap();
+        assert_eq!(l.strokes.len(), 1, "the stroke with no usable point is dropped");
+        assert_eq!(l.strokes[0].width, 300);
+        assert_eq!(l.strokes[0].points, vec![[5.0, 5.0]]);
+        assert_eq!(l.params.crop, Some(Rect::new(0.0, 0.0, 40.0, 12.0)), "the crop is brought inside the image");
+        v["crop"] = json!({ "x0": 10.0, "y0": 10.0, "x1": 10.0, "y1": 20.0 });
+        std::fs::write(dir.join("r.osproj"), v.to_string()).unwrap();
+        assert_eq!(load_project(&dir.join("r.osproj")).unwrap().params.crop, None, "an empty crop means no crop");
         std::fs::remove_dir_all(dir).ok();
     }
 

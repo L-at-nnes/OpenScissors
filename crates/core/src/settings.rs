@@ -73,7 +73,20 @@ impl Default for Settings {
 
 impl Settings {
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+        let mut s: Self = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        s.sanitize();
+        s
+    }
+
+    /// A settings file can be edited by hand: bring every value back into the range the interface allows.
+    pub fn sanitize(&mut self) {
+        self.marker_size = self.marker_size.clamp(1, 300);
+        self.jpeg_quality = self.jpeg_quality.clamp(10, 100);
+        if !matches!(self.ram_percent, 25 | 50) {
+            self.ram_percent = 25;
+        }
+        self.defaults.sanitize();
+        self.recent.truncate(10);
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
@@ -111,6 +124,18 @@ mod tests {
         assert_eq!(back.recent, vec!["a.png", "b.png"]);
         std::fs::write(&file, "{ not json").unwrap();
         assert_eq!(Settings::load(&file).locale, "en", "broken file gives defaults");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn out_of_range_values_are_brought_back_when_loading() {
+        let dir = std::env::temp_dir().join(format!("osc-settings-range-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("settings.json");
+        std::fs::write(&file, r#"{"marker_size":99999,"jpeg_quality":0,"ram_percent":77,"defaults":{"shadow":{"opacity":900}}}"#).unwrap();
+        let s = Settings::load(&file);
+        assert_eq!((s.marker_size, s.jpeg_quality, s.ram_percent), (300, 10, 25));
+        assert_eq!(s.defaults.shadow.opacity, 100);
         std::fs::remove_dir_all(dir).ok();
     }
 
