@@ -47,6 +47,14 @@ pub fn budget_mb() -> Option<u64> {
     total_memory_mb().map(|t| t * budget_percent() / 100)
 }
 
+/// Resident memory in MB from the text of `/proc/<pid>/status` (`VmRSS:  12345 kB`). The size is given in kB, so
+/// the page size of the machine (4, 16 or 64 kB) does not matter.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn vm_rss_mb(status: &str) -> Option<u64> {
+    let kb: u64 = status.lines().find_map(|l| l.strip_prefix("VmRSS:"))?.trim().trim_end_matches("kB").trim().parse().ok()?;
+    Some(kb / 1024)
+}
+
 #[cfg(windows)]
 mod imp {
     use windows_sys::Win32::Foundation::FILETIME;
@@ -105,14 +113,13 @@ mod imp {
     }
 
     pub fn process() -> Option<u64> {
-        let text = std::fs::read_to_string("/proc/self/statm").ok()?;
-        let pages: u64 = text.split_whitespace().nth(1)?.parse().ok()?;
-        Some(pages * 4096 / (1024 * 1024))
+        super::vm_rss_mb(&std::fs::read_to_string("/proc/self/status").ok()?)
     }
 
     pub fn cpu_ms() -> Option<u64> {
         let text = std::fs::read_to_string("/proc/self/stat").ok()?;
-        // Fields after the parenthesised name: utime and stime are the 12th and 13th (clock ticks, 100 per second).
+        // Fields after the parenthesised name: utime and stime are the 12th and 13th. /proc counts them in USER_HZ,
+        // which is 100 on every mainstream architecture whatever the kernel's own tick rate.
         let rest = text.rsplit_once(')')?.1;
         let mut f = rest.split_whitespace().skip(11);
         let (u, k): (u64, u64) = (f.next()?.parse().ok()?, f.next()?.parse().ok()?);
@@ -138,6 +145,24 @@ mod imp {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resident_memory_is_read_in_kilobytes_whatever_the_page_size() {
+        let status = "Name:	openscissors
+VmPeak:	 9999999 kB
+VmRSS:	  524288 kB
+Threads:	12
+";
+        assert_eq!(super::vm_rss_mb(status), Some(512));
+        assert_eq!(
+            super::vm_rss_mb(
+                "Name:	x
+"
+            ),
+            None
+        );
+        assert_eq!(super::vm_rss_mb("VmRSS: nonsense kB"), None);
+    }
+
     #[test]
     fn reports_a_plausible_amount_on_supported_platforms() {
         if cfg!(any(windows, target_os = "linux")) {
