@@ -112,7 +112,7 @@ mod tests {
             m.data[600 * 1200 + x] = 255;
         }
         let small = shrink_marks(&m, 600, 450);
-        assert!(small.data.iter().any(|&v| v == 255), "the line is still there");
+        assert!(small.data.contains(&255), "the line is still there");
         assert!(small.data[225 * 600 + 300] == 255 && small.data[300 * 600 + 300] == 255);
         assert_eq!(small.data[100 * 600 + 300], 0, "nothing is marked elsewhere");
     }
