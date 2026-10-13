@@ -68,7 +68,8 @@ pub fn effective_crop(params: &Params, finished_alpha: Option<&Mask>, canvas: (f
                 None => fit_inside(padded, canvas),
             };
         }
-        return full;
+        // Nothing to fit to (no subject yet): keep the requested ratio on the whole picture.
+        return ratio.map_or(full, |r| largest_ratio_rect(canvas, r));
     }
     match (params.crop, ratio) {
         (Some(c), Some(r)) => constrain_ratio(c, r, canvas),
@@ -84,6 +85,16 @@ mod tests {
 
     fn ratio_of(r: Rect) -> f64 {
         r.width() / r.height()
+    }
+
+    #[test]
+    fn fit_to_result_without_a_subject_still_honours_the_ratio() {
+        let mut p = Params::default();
+        p.background.fit_to_result = true;
+        let empty = Mask::new(200, 100);
+        assert_eq!(effective_crop(&p, Some(&empty), (200.0, 100.0)), Rect::new(0.0, 0.0, 200.0, 100.0));
+        p.background.aspect_ratio = "1:1".into();
+        assert_eq!(effective_crop(&p, Some(&empty), (200.0, 100.0)), Rect::new(50.0, 0.0, 150.0, 100.0));
     }
 
     #[test]
