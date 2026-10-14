@@ -163,7 +163,7 @@ More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PERF.md](docs/PER
 
 ## Known limits
 
-- Windows is the platform I test. The code is portable, the Linux and macOS builds are untested.
+- Windows is the platform I test. The code is portable, the Linux and macOS (Apple Silicon) builds are untested. There is no macOS Intel build: ONNX Runtime provides no binary for it.
 - The GPU mode (DirectML) works but didn't make anything faster on the card I tried, so it stays optional.
 - Moving the crop with the keyboard isn't there yet; the handles need a pointer.
 - Error messages coming from the Rust side are in English only.

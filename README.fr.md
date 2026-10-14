@@ -133,7 +133,7 @@ Détails dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) et [docs/PERF.md](doc
 
 ## Limites connues
 
-- Windows est la plateforme testée. Le code est portable, les builds Linux et macOS ne sont pas testés.
+- Windows est la plateforme testée. Le code est portable, les builds Linux et macOS (Apple Silicon) ne sont pas testés. Il n'y a pas de build macOS Intel : ONNX Runtime n'en fournit pas.
 - Le mode GPU (DirectML) fonctionne mais n'a rien accéléré sur la carte essayée ; il reste optionnel.
 - Le recadrage au clavier n'existe pas encore ; les poignées demandent un pointeur.
 - Les messages d'erreur venant de Rust sont en anglais uniquement.
