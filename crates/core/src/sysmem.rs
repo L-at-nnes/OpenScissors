@@ -127,7 +127,65 @@ mod imp {
     }
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+// `libc` marks the two mach port getters deprecated in favour of `mach2`; one small module is not worth a crate.
+#[cfg(target_os = "macos")]
+#[allow(deprecated)]
+mod imp {
+    use std::mem::{size_of, MaybeUninit};
+
+    const MB: u64 = 1024 * 1024;
+
+    pub fn total() -> Option<u64> {
+        let mut bytes: u64 = 0;
+        let mut len = size_of::<u64>();
+        // SAFETY: `bytes` and `len` describe a valid 8-byte buffer, the name is a NUL-terminated string.
+        let r = unsafe { libc::sysctlbyname(c"hw.memsize".as_ptr(), (&raw mut bytes).cast(), &mut len, std::ptr::null_mut(), 0) };
+        (r == 0).then_some(bytes / MB)
+    }
+
+    /// Free plus inactive pages: what the system can hand out without swapping.
+    pub fn available() -> Option<u64> {
+        let mut info = MaybeUninit::<libc::vm_statistics64>::zeroed();
+        let mut count = (size_of::<libc::vm_statistics64>() / size_of::<libc::integer_t>()) as libc::mach_msg_type_number_t;
+        // SAFETY: `info` is large enough for HOST_VM_INFO64 and `count` is its size in integers.
+        let r = unsafe { libc::host_statistics64(libc::mach_host_self(), libc::HOST_VM_INFO64, info.as_mut_ptr().cast(), &mut count) };
+        if r != libc::KERN_SUCCESS {
+            return None;
+        }
+        // SAFETY: the call succeeded, so the structure is filled in.
+        let info = unsafe { info.assume_init() };
+        // SAFETY: sysconf has no preconditions.
+        let page = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).ok()?;
+        Some((info.free_count as u64 + info.inactive_count as u64) * page / MB)
+    }
+
+    /// Resident memory of this process.
+    pub fn process() -> Option<u64> {
+        let mut info = MaybeUninit::<libc::mach_task_basic_info>::zeroed();
+        let mut count = (size_of::<libc::mach_task_basic_info>() / size_of::<libc::natural_t>()) as libc::mach_msg_type_number_t;
+        // SAFETY: `info` is large enough for MACH_TASK_BASIC_INFO and `count` is its size in natural_t units.
+        let r = unsafe { libc::task_info(libc::mach_task_self(), libc::MACH_TASK_BASIC_INFO, info.as_mut_ptr().cast(), &mut count) };
+        if r != libc::KERN_SUCCESS {
+            return None;
+        }
+        // SAFETY: the call succeeded, so the structure is filled in.
+        Some(unsafe { info.assume_init() }.resident_size / MB)
+    }
+
+    pub fn cpu_ms() -> Option<u64> {
+        let mut usage = MaybeUninit::<libc::rusage>::zeroed();
+        // SAFETY: `usage` is a valid rusage to fill in.
+        if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
+            return None;
+        }
+        // SAFETY: the call succeeded.
+        let u = unsafe { usage.assume_init() };
+        let ms = |t: libc::timeval| t.tv_sec as u64 * 1000 + t.tv_usec as u64 / 1000;
+        Some(ms(u.ru_utime) + ms(u.ru_stime))
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod imp {
     pub fn available() -> Option<u64> {
         None
@@ -165,7 +223,7 @@ Threads:	12
 
     #[test]
     fn reports_a_plausible_amount_on_supported_platforms() {
-        if cfg!(any(windows, target_os = "linux")) {
+        if cfg!(any(windows, target_os = "linux", target_os = "macos")) {
             let free = super::available_memory_mb().expect("supported platform");
             let total = super::total_memory_mb().expect("supported platform");
             let mine = super::process_memory_mb().expect("supported platform");

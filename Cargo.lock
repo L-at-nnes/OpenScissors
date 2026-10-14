@@ -3616,6 +3616,7 @@ dependencies = [
  "fast_image_resize",
  "hex",
  "image",
+ "libc",
  "ort",
  "rayon",
  "serde",

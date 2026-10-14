@@ -21,6 +21,9 @@ hex = "0.4"
 base64 = "0.22"
 ureq = { version = "3", features = ["rustls"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = ["Win32_System_SystemInformation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "copy-dylibs", "tls-native", "directml"] }
