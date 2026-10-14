@@ -133,7 +133,7 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
         slint::CloseRequestResponse::KeepWindowShown
     });
 
-    // Files dropped on the window open like the Open dialog (unsaved changes are asked about first).
+    // Files dropped on the window open like the Open dialog (unsaved changes are asked about first); a folder starts a batch.
     {
         use slint::winit_030::{winit::event::WindowEvent, EventResult, WinitWindowAccessor};
         let c = ctl.clone();
@@ -149,6 +149,8 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
                     });
                     if ok {
                         c.open_path(path.clone());
+                    } else if path.is_dir() {
+                        c.batch_from_folder(path.clone());
                     }
                 }
                 _ => {}

@@ -274,7 +274,7 @@ fn main() {
 
 /// A scenario written as JSON: a list of steps such as
 /// `{"click":[x,y]}`, `{"rclick":[x,y]}`, `{"drag":[x0,y0,x1,y1]}`, `{"key":"z","ctrl":true}`,
-/// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"tab":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
+/// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"drop_folder":"dir"}`, `{"tab":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
 fn run_script(d: &Driver, path: &str) {
     use slint::platform::{Key, PointerEventButton, WindowEvent};
     let steps: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(path).expect("script")).expect("json");
@@ -354,6 +354,9 @@ fn run_script(d: &Driver, path: &str) {
             let (path, value) = (a[0].as_str().unwrap_or("").to_string(), a[1].clone());
             d.ui(move |c, _| c.set_param(&path, value));
             d.settle(300);
+        } else if let Some(dir) = step["drop_folder"].as_str() {
+            d.ctl.batch_from_folder(std::path::PathBuf::from(dir));
+            d.settle(500);
         } else if let Some(i) = step["preset"].as_i64() {
             d.ui(move |c, _| c.apply_preset(i as i32));
             d.settle(400);

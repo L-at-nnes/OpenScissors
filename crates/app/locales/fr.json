@@ -33,6 +33,7 @@
   "Current settings saved as defaults": "Réglages actuels enregistrés comme valeurs par défaut",
   "Cut out every image of a folder with the same settings. Markers are not used.": "Détoure toutes les images d'un dossier avec les mêmes réglages. Les marqueurs ne sont pas utilisés.",
   "4. Settings": "4. Réglages",
+  "A batch is already running.": "Un traitement par lot est déjà en cours.",
   "Saved defaults": "Réglages par défaut enregistrés",
   "Image being edited": "Image en cours",
   "Delete from disk": "Supprimer du disque",

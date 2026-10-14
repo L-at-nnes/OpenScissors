@@ -33,6 +33,7 @@
   "Current settings saved as defaults": "Текущие настройки сохранены как значения по умолчанию",
   "Cut out every image of a folder with the same settings. Markers are not used.": "Вырезает все изображения папки с одинаковыми настройками. Маркеры не используются.",
   "4. Settings": "4. Настройки",
+  "A batch is already running.": "Пакетная обработка уже выполняется.",
   "Saved defaults": "Сохранённые по умолчанию",
   "Image being edited": "Текущее изображение",
   "Delete from disk": "Удалить с диска",

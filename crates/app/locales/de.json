@@ -33,6 +33,7 @@
   "Current settings saved as defaults": "Aktuelle Einstellungen als Standard gespeichert",
   "Cut out every image of a folder with the same settings. Markers are not used.": "Stellt alle Bilder eines Ordners mit denselben Einstellungen frei. Markierungen werden nicht verwendet.",
   "4. Settings": "4. Einstellungen",
+  "A batch is already running.": "Ein Stapel wird bereits verarbeitet.",
   "Saved defaults": "Gespeicherte Standardeinstellungen",
   "Image being edited": "Aktuelles Bild",
   "Delete from disk": "Von der Festplatte löschen",

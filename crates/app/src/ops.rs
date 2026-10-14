@@ -567,6 +567,26 @@ impl Ctl {
         });
     }
 
+    /// A folder dropped on the window becomes the source of a batch: the panel opens with it filled in. The
+    /// destination is kept when it is already chosen and differs from the source, otherwise it is `<folder>/cutouts`.
+    pub fn batch_from_folder(self: &Arc<Self>, dir: PathBuf) {
+        if self.st.batch.guard().is_some() {
+            return self.say(t("A batch is already running."), true);
+        }
+        {
+            let mut s = self.st.settings.guard();
+            let keep = s.batch_dst.as_deref().filter(|d| !d.is_empty() && Path::new(d) != dir);
+            s.batch_dst = Some(keep.map_or_else(|| dir.join("cutouts"), PathBuf::from).display().to_string());
+            s.batch_src = Some(dir.display().to_string());
+        }
+        self.save_settings();
+        self.with_ui(|me, ui| {
+            use slint::ComponentHandle;
+            ui.global::<crate::Backend>().set_popover(3);
+            me.refresh(crate::ctl::R_BATCH);
+        });
+    }
+
     pub fn run_batch(self: &Arc<Self>) {
         use openscissors_core::batch::{self, BatchOptions};
         let Some(model) = self.st.model.guard().clone() else {
@@ -590,7 +610,7 @@ impl Ctl {
         {
             let mut running = self.st.batch.guard();
             if running.is_some() {
-                return self.say("A batch is already running.", true);
+                return self.say(t("A batch is already running."), true);
             }
             *running = Some(cancel.clone());
         }
