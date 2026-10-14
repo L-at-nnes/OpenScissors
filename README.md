@@ -49,10 +49,10 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 
 ## Get it
 
-Windows 10/11, 64-bit.
+Windows 10/11 (64-bit) is the tested platform. The Releases page also has a Linux x64 build and a macOS Apple Silicon build, untested.
 
-1. Download the latest `OpenScissors-…-portable-win-x64.zip` from the Releases page and unzip it anywhere.
-2. Run `OpenScissors.exe`.
+1. Download the latest zip for your system from the Releases page (`OpenScissors-…-portable-win-x64.zip`, `…-linux-x64.zip` or `…-darwin-arm64.zip`) and unzip it anywhere.
+2. Run `OpenScissors.exe` (`OpenScissors` on Linux and macOS).
 3. Open an image (the button, <kbd>Ctrl</kbd>+<kbd>O</kbd>, drag and drop, or `OpenScissors.exe photo.jpg`).
 
 The first time, no AI model is installed (they are not bundled). Click the chip at the top, pick one, press **Download**. The file is checked against a SHA-256 before it is used.

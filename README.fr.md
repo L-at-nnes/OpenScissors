@@ -49,10 +49,10 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 
 ## Obtenir l'appli
 
-Windows 10/11, 64 bits.
+Windows 10/11 (64 bits) est la plateforme testée. La page Releases propose aussi un build Linux x64 et un build macOS Apple Silicon, non testés.
 
-1. Téléchargez le dernier `OpenScissors-…-portable-win-x64.zip` depuis la page Releases et décompressez-le où vous voulez.
-2. Lancez `OpenScissors.exe`.
+1. Téléchargez le dernier zip pour votre système depuis la page Releases (`OpenScissors-…-portable-win-x64.zip`, `…-linux-x64.zip` ou `…-darwin-arm64.zip`) et décompressez-le où vous voulez.
+2. Lancez `OpenScissors.exe` (`OpenScissors` sous Linux et macOS).
 3. Ouvrez une image (le bouton, <kbd>Ctrl</kbd>+<kbd>O</kbd>, glisser-déposer, ou `OpenScissors.exe photo.jpg`).
 
 Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fournis). Cliquez sur la pastille en haut, choisissez-en un, **Télécharger**. Le fichier est vérifié par SHA-256 avant usage.
