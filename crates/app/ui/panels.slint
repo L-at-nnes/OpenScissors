@@ -445,7 +445,7 @@ export component BatchPanel inherits Frame {
                 text: @tr("3. Result format");
             }
             SelectRow {
-                options: ["PNG", "JPG"];
+                options: ["PNG", "JPG", "WebP"];
                 current: Backend.batch-format;
                 enabled: !Backend.batch-running;
                 selected(i) => {
