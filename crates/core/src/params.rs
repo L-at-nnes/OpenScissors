@@ -102,11 +102,14 @@ pub struct ShadowParams {
     pub opacity: u32,
     pub blur_radius: u32,
     pub color: [u8; 3],
+    /// Shift of the shadow in pixels (right and down are positive).
+    pub offset_x: i32,
+    pub offset_y: i32,
 }
 
 impl Default for ShadowParams {
     fn default() -> Self {
-        Self { enabled: false, opacity: 75, blur_radius: 10, color: [0, 0, 0] }
+        Self { enabled: false, opacity: 75, blur_radius: 10, color: [0, 0, 0], offset_x: 0, offset_y: 0 }
     }
 }
 
@@ -135,6 +138,8 @@ impl Params {
         self.background.output_width = self.background.output_width.min(16_000);
         self.shadow.opacity = self.shadow.opacity.min(100);
         self.shadow.blur_radius = self.shadow.blur_radius.min(100);
+        self.shadow.offset_x = self.shadow.offset_x.clamp(-100, 100);
+        self.shadow.offset_y = self.shadow.offset_y.clamp(-100, 100);
     }
 }
 

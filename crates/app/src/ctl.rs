@@ -201,6 +201,8 @@ pub fn params_v(p: &Params) -> ParamsV {
         sh_opacity: p.shadow.opacity as i32,
         sh_blur: p.shadow.blur_radius as i32,
         sh_color: rgb(p.shadow.color),
+        sh_dx: p.shadow.offset_x,
+        sh_dy: p.shadow.offset_y,
         has_crop: p.crop.is_some(),
         preset: PRESETS.iter().position(|q| q.matches(p)).map_or(0, |i| i as i32 + 1),
         out_width: OUTPUT_WIDTHS.iter().position(|&w| w == p.background.output_width).unwrap_or(0) as i32,

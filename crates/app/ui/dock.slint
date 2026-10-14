@@ -314,6 +314,28 @@ export component Dock inherits Rectangle {
                             Backend.set-int("shadow.blur_radius", v);
                         }
                     }
+                    SliderRow {
+                        label: @tr("Offset right");
+                        value: Backend.p.sh-dx;
+                        minimum: -100;
+                        maximum: 100;
+                        unit: "px";
+                        enabled: Backend.p.sh-on;
+                        changed(v) => {
+                            Backend.set-int("shadow.offset_x", v);
+                        }
+                    }
+                    SliderRow {
+                        label: @tr("Offset down");
+                        value: Backend.p.sh-dy;
+                        minimum: -100;
+                        maximum: 100;
+                        unit: "px";
+                        enabled: Backend.p.sh-on;
+                        changed(v) => {
+                            Backend.set-int("shadow.offset_y", v);
+                        }
+                    }
                     ColorRow {
                         label: @tr("Color");
                         value: Backend.p.sh-color;

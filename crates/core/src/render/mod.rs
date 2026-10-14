@@ -65,7 +65,7 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
     let margin = (if p.mask.offset != 0 { ((p.mask.offset.unsigned_abs() + 2) as f64 * scale / 2.0).ceil() as usize + 1 } else { 0 })
         + (p.foreground.feather as f64 * scale).ceil() as usize
         + (p.foreground.defringe as f64 * scale).ceil() as usize
-        + if p.shadow.enabled { (3.0 * shadow_sigma).ceil() as usize } else { 0 }
+        + if p.shadow.enabled { (3.0 * shadow_sigma + p.shadow.offset_x.abs().max(p.shadow.offset_y.abs()) as f64 * scale).ceil() as usize } else { 0 }
         + filter_margin(&p.foreground.filter, scale).max(filter_margin(&p.background.filter, scale));
     let m = margin.min(512);
     let pl = m.min((region.x0.max(0.0) * scale).floor() as usize);
@@ -111,13 +111,14 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
         }
     };
 
-    // Shadow: blurred subject mask, no offset.
+    // Shadow: blurred subject mask, shifted by the offset.
     let shadow: Option<Vec<u8>> = p.shadow.enabled.then(|| {
         let blurred = gaussian_blur_u8(&a.data, ew, eh, 1, shadow_sigma);
         let k = p.shadow.opacity.min(100);
         blurred.iter().map(|&v| ((v as u32 * k + 50) / 100) as u8).collect()
     });
     let sc = p.shadow.color;
+    let shift = ((p.shadow.offset_x as f64 * scale).round() as isize, (p.shadow.offset_y as f64 * scale).round() as isize);
 
     // Composite: background, shadow, subject; only the requested window is written out.
     let mut out = vec![0u8; out_w * out_h * 4];
@@ -128,7 +129,10 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
             let mut col = [bg.data[i * 3] as f32, bg.data[i * 3 + 1] as f32, bg.data[i * 3 + 2] as f32];
             let mut alpha = if bg_opaque { 1.0f32 } else { 0.0 };
             if let Some(s) = &shadow {
-                let sa = s[i] as f32 / 255.0;
+                // The shadow at this pixel is the blurred mask `shift` further back; nothing comes from outside the window.
+                let (sx, sy) = ((x + pl) as isize - shift.0, ey as isize - shift.1);
+                let inside = (0..ew as isize).contains(&sx) && (0..eh as isize).contains(&sy);
+                let sa = if inside { s[sy as usize * ew + sx as usize] as f32 / 255.0 } else { 0.0 };
                 let na = sa + alpha * (1.0 - sa);
                 if na > 0.0 {
                     for c in 0..3 {
@@ -384,6 +388,23 @@ mod tests {
     }
 
     #[test]
+    fn the_shadow_follows_its_offset() {
+        let (img, alpha) = scene_parts(); // the subject spans x 30..55, y 20..40
+        let mut params = Params::default();
+        params.shadow.enabled = true;
+        let at = |p: &Params, x: usize, y: usize| full(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None }).data[(y * 80 + x) * 4 + 3];
+        // 5 px right of the subject and 5 px left of it, in the middle of its height.
+        let (right, left) = ((60, 30), (25, 30));
+        assert!(at(&params, left.0, left.1) >= at(&params, right.0, right.1) - 2, "centred shadow: both sides alike");
+        params.shadow.offset_x = 10;
+        assert!(at(&params, right.0, right.1) > at(&params, left.0, left.1) + 30, "pushed to the right");
+        params.shadow.offset_x = 0;
+        params.shadow.offset_y = 10;
+        let (below, above) = ((42, 45), (42, 15));
+        assert!(at(&params, below.0, below.1) > at(&params, above.0, above.1) + 30, "pushed down");
+    }
+
+    #[test]
     fn viewport_tile_matches_the_full_render() {
         let (img, alpha) = scene_parts();
         let mut params = Params::default();
@@ -393,6 +414,8 @@ mod tests {
         params.mask.offset = 2;
         params.shadow.enabled = true;
         params.shadow.blur_radius = 6;
+        params.shadow.offset_x = 4;
+        params.shadow.offset_y = -3;
         params.foreground.filter = FilterSpec { kind: FilterKind::Blur, radius: 4, ..Default::default() };
         let scene = Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None };
         let whole = full(&scene);

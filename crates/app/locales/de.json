@@ -16,6 +16,8 @@
   "Batch processing…": "Stapelverarbeitung…",
   "Blur": "Weichzeichnen",
   "Blur radius": "Weichzeichnungsradius",
+  "Offset right": "Versatz nach rechts",
+  "Offset down": "Versatz nach unten",
   "Boundary": "Kontur",
   "Browse…": "Durchsuchen…",
   "CPU (reference, always works)": "CPU (Referenz, funktioniert immer)",

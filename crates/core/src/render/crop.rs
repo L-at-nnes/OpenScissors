@@ -61,6 +61,14 @@ pub fn effective_crop(params: &Params, finished_alpha: Option<&Mask>, canvas: (f
     let ratio = parse_ratio(&params.background.aspect_ratio);
     if params.background.fit_to_result {
         if let Some(bb) = finished_alpha.and_then(alpha_bbox) {
+            // A visible shadow is part of the result: keep it inside the crop.
+            let bb = if params.shadow.enabled {
+                let (dx, dy, r) = (params.shadow.offset_x as f64, params.shadow.offset_y as f64, params.shadow.blur_radius as f64);
+                let s = Rect::new(bb.x0 + dx - r, bb.y0 + dy - r, bb.x1 + dx + r, bb.y1 + dy + r);
+                Rect::new(bb.x0.min(s.x0), bb.y0.min(s.y0), bb.x1.max(s.x1), bb.y1.max(s.y1))
+            } else {
+                bb
+            };
             let p = params.background.padding as f64 / 100.0;
             let padded = Rect::new(bb.x0 - bb.width() * p, bb.y0 - bb.height() * p, bb.x1 + bb.width() * p, bb.y1 + bb.height() * p);
             return match ratio {
@@ -95,6 +103,27 @@ mod tests {
         assert_eq!(effective_crop(&p, Some(&empty), (200.0, 100.0)), Rect::new(0.0, 0.0, 200.0, 100.0));
         p.background.aspect_ratio = "1:1".into();
         assert_eq!(effective_crop(&p, Some(&empty), (200.0, 100.0)), Rect::new(50.0, 0.0, 150.0, 100.0));
+    }
+
+    #[test]
+    fn fit_to_result_keeps_the_shadow_inside() {
+        let mut p = Params::default();
+        p.background.fit_to_result = true;
+        p.background.padding = 0;
+        let mut alpha = Mask::new(200, 100);
+        for y in 40..60 {
+            for x in 80..100 {
+                alpha.data[y * 200 + x] = 255;
+            }
+        }
+        let plain = effective_crop(&p, Some(&alpha), (200.0, 100.0));
+        assert_eq!(plain, Rect::new(80.0, 40.0, 100.0, 60.0));
+        p.shadow.enabled = true;
+        p.shadow.blur_radius = 5;
+        p.shadow.offset_x = 20;
+        p.shadow.offset_y = 0;
+        let with = effective_crop(&p, Some(&alpha), (200.0, 100.0));
+        assert_eq!(with, Rect::new(80.0, 35.0, 125.0, 65.0), "the box grows right by the offset plus the blur, up and down by the blur");
     }
 
     #[test]

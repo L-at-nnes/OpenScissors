@@ -16,6 +16,8 @@
   "Batch processing…": "Пакетная обработка…",
   "Blur": "Размытие",
   "Blur radius": "Радиус размытия",
+  "Offset right": "Сдвиг вправо",
+  "Offset down": "Сдвиг вниз",
   "Boundary": "Граница",
   "Browse…": "Обзор…",
   "CPU (reference, always works)": "CPU (эталон, работает всегда)",
