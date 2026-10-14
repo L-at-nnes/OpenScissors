@@ -19,7 +19,7 @@ jobs:
           - { os: windows-latest, name: windows-x64 }
           - { os: ubuntu-latest, name: linux-x64 }
           - { os: macos-latest, name: macos-arm64 }
-          - { os: macos-15-intel, name: macos-x64 }
+          # No macOS Intel build: ONNX Runtime ships no prebuilt binary for x86_64-apple-darwin.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
