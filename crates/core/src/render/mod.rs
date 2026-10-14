@@ -15,7 +15,7 @@ use crate::imaging::morph::{morph_ellipse, MorphOp};
 use crate::imaging::resize::{crop_resize_image, crop_resize_mask, resize_rgba, Interp};
 use crate::params::{BgMode, Params};
 use crate::types::{Image, Image16, Mask, Rect, Rgba, Rgba16};
-use filters::{apply_filter, filter_margin};
+use filters::{adjust_colors, apply_filter, filter_margin};
 
 pub struct Scene<'a> {
     pub image: &'a Image,
@@ -86,6 +86,7 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
     let a = finish_alpha_scaled(crop_resize_mask(scene.alpha, exp, ew, eh, interp), p.mask.offset, p.foreground.feather, scale);
     let mut fg = crop_resize_image(scene.image, exp, ew, eh, interp);
     defringe::defringe(&mut fg, &a, (p.foreground.defringe as f64 * scale).round() as usize);
+    adjust_colors(&mut fg, p.foreground.brightness, p.foreground.saturation, p.foreground.warmth);
     apply_filter(&mut fg, &p.foreground.filter, scale, origin);
 
     // Background layer: colours plus whether it is opaque.
@@ -254,6 +255,8 @@ pub fn deep_blocker(params: &Params) -> Option<&'static str> {
         Some("the background is a picture or the original")
     } else if params.background.output_width > 0 {
         Some("a fixed output width is set")
+    } else if (params.foreground.brightness, params.foreground.saturation, params.foreground.warmth) != (0, 0, 0) {
+        Some("the colour adjustments are on")
     } else if params.foreground.defringe > 0 {
         Some("the edge clean-up is on")
     } else if params.foreground.filter.kind != crate::params::FilterKind::None {
@@ -411,6 +414,8 @@ mod tests {
         params.background.mode = BgMode::Color;
         params.foreground.feather = 2;
         params.foreground.defringe = 3;
+        params.foreground.brightness = 20;
+        params.foreground.warmth = -30;
         params.mask.offset = 2;
         params.shadow.enabled = true;
         params.shadow.blur_radius = 6;
@@ -495,6 +500,25 @@ mod tests {
         assert_eq!(size(&params), (160, 120, 160 * 120 * 4));
         crate::params::PRESETS[0].apply(&mut params);
         assert_eq!(size(&params), (1000, 1000, 1000 * 1000 * 4));
+        assert!(deep_blocker(&params).is_some());
+    }
+
+    #[test]
+    fn colour_adjustments_change_the_subject_and_never_the_background() {
+        let (img, alpha) = scene_parts();
+        let mut params = Params::default();
+        params.background.mode = BgMode::Color;
+        params.background.color = [10, 20, 30];
+        let inside = (30 * 80 + 40) * 4;
+        let render = |p: &Params| export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None });
+        let plain = render(&params);
+        params.foreground.brightness = 50;
+        params.foreground.saturation = -100;
+        let adjusted = render(&params);
+        assert_eq!(&adjusted.data[..4], &plain.data[..4], "the background keeps its colour");
+        assert_ne!(&adjusted.data[inside..inside + 3], &plain.data[inside..inside + 3]);
+        let px = &adjusted.data[inside..inside + 3];
+        assert!(px[0].abs_diff(px[1]) <= 1 && px[1].abs_diff(px[2]) <= 1, "fully desaturated: {px:?}");
         assert!(deep_blocker(&params).is_some());
     }
 

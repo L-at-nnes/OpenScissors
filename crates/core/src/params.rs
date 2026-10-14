@@ -60,6 +60,11 @@ pub struct ForegroundParams {
     pub feather: u32,
     /// Edge clean-up reach in pixels, 0 = off: soft edges take the colour of the subject next to them.
     pub defringe: u32,
+    /// Colour adjustments of the subject only, each -100 to 100 (0 = untouched).
+    pub brightness: i32,
+    pub saturation: i32,
+    /// Positive warms (more red, less blue), negative cools.
+    pub warmth: i32,
     pub filter: FilterSpec,
 }
 
@@ -130,6 +135,9 @@ impl Params {
         self.mask.offset = self.mask.offset.clamp(-100, 100);
         self.foreground.feather = self.foreground.feather.min(50);
         self.foreground.defringe = self.foreground.defringe.min(20);
+        self.foreground.brightness = self.foreground.brightness.clamp(-100, 100);
+        self.foreground.saturation = self.foreground.saturation.clamp(-100, 100);
+        self.foreground.warmth = self.foreground.warmth.clamp(-100, 100);
         for f in [&mut self.foreground.filter, &mut self.background.filter] {
             f.radius = f.radius.min(100);
             f.strength = f.strength.min(100);

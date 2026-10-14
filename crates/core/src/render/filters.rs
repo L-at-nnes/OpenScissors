@@ -31,6 +31,31 @@ pub fn apply_filter(img: &mut Image, f: &FilterSpec, scale: f64, origin: (f64, f
     }
 }
 
+/// Brightness, saturation and warmth of the subject, each -100 to 100. Brightening pulls the colours towards white and
+/// darkening towards black, so nothing clips; saturation moves each colour away from (or towards) its grey; warmth
+/// shifts red up and blue down by up to 15 % at full strength.
+pub fn adjust_colors(img: &mut Image, brightness: i32, saturation: i32, warmth: i32) {
+    if (brightness, saturation, warmth) == (0, 0, 0) {
+        return;
+    }
+    let b = brightness.clamp(-100, 100) as f32 / 100.0;
+    let sat = 1.0 + saturation.clamp(-100, 100) as f32 / 100.0;
+    let w = warmth.clamp(-100, 100) as f32 / 100.0 * 0.15;
+    img.data.par_chunks_exact_mut(3).for_each(|p| {
+        let mut c = [p[0] as f32, p[1] as f32, p[2] as f32];
+        let grey = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+        for v in &mut c {
+            *v = (grey + (*v - grey) * sat).clamp(0.0, 255.0);
+            *v = if b >= 0.0 { *v + (255.0 - *v) * b } else { *v * (1.0 + b) };
+        }
+        c[0] *= 1.0 + w;
+        c[2] *= 1.0 - w;
+        for (o, v) in p.iter_mut().zip(c) {
+            *o = v.round().clamp(0.0, 255.0) as u8;
+        }
+    });
+}
+
 /// Tint the luminance towards `color` (overlay blend), mixed with the original by `strength`.
 fn colorize(img: &mut Image, color: [u8; 3], strength: f32) {
     img.data.par_chunks_exact_mut(3).for_each(|p| {
@@ -146,5 +171,32 @@ mod tests {
         assert_eq!(a, orig);
         apply_filter(&mut a, &spec(FilterKind::Blur), 1.0, (0.0, 0.0));
         assert_eq!(a, orig);
+    }
+
+    #[test]
+    fn adjustments_do_nothing_at_zero_and_move_the_colours_the_right_way() {
+        let base = Image::filled(2, 2, [120, 80, 40]);
+        let mut same = base.clone();
+        adjust_colors(&mut same, 0, 0, 0);
+        assert_eq!(same.data, base.data);
+
+        let (mut up, mut down) = (base.clone(), base.clone());
+        adjust_colors(&mut up, 100, 0, 0);
+        adjust_colors(&mut down, -100, 0, 0);
+        assert_eq!(&up.data[..3], &[255, 255, 255]);
+        assert_eq!(&down.data[..3], &[0, 0, 0]);
+
+        let mut grey = base.clone();
+        adjust_colors(&mut grey, 0, -100, 0);
+        assert!(grey.data[..3].iter().all(|&v| v.abs_diff(grey.data[0]) <= 1), "{:?}", &grey.data[..3]);
+        let mut vivid = base.clone();
+        adjust_colors(&mut vivid, 0, 100, 0);
+        assert!(vivid.data[0] > 120 && vivid.data[2] < 40, "{:?}", &vivid.data[..3]);
+
+        let (mut warm, mut cool) = (base.clone(), base.clone());
+        adjust_colors(&mut warm, 0, 0, 100);
+        adjust_colors(&mut cool, 0, 0, -100);
+        assert!(warm.data[0] > 120 && warm.data[2] < 40 && warm.data[1] == 80);
+        assert!(cool.data[0] < 120 && cool.data[2] > 40);
     }
 }

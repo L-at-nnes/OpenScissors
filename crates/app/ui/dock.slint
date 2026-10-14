@@ -175,6 +175,36 @@ export component Dock inherits Rectangle {
                     }
                 }
                 if Backend.has-doc && Backend.tab == 0: Section {
+                    title: @tr("Adjust the colours");
+                    SliderRow {
+                        label: @tr("Brightness");
+                        value: Backend.p.adj-brightness;
+                        minimum: -100;
+                        maximum: 100;
+                        changed(v) => {
+                            Backend.set-int("foreground.brightness", v);
+                        }
+                    }
+                    SliderRow {
+                        label: @tr("Saturation");
+                        value: Backend.p.adj-saturation;
+                        minimum: -100;
+                        maximum: 100;
+                        changed(v) => {
+                            Backend.set-int("foreground.saturation", v);
+                        }
+                    }
+                    SliderRow {
+                        label: @tr("Warmth");
+                        value: Backend.p.adj-warmth;
+                        minimum: -100;
+                        maximum: 100;
+                        changed(v) => {
+                            Backend.set-int("foreground.warmth", v);
+                        }
+                    }
+                }
+                if Backend.has-doc && Backend.tab == 0: Section {
                     title: @tr("Effect");
                     FilterFields {
                         path: "foreground.filter";
