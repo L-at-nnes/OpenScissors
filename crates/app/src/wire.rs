@@ -101,6 +101,10 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
         c.ux.guard().batch.format = i;
         c.refresh(R_BATCH);
     });
+    cb!(b, ctl, on_set_batch_settings, |c, i| {
+        c.ux.guard().batch.settings = i;
+        c.refresh(R_BATCH);
+    });
     cb!(b, ctl, on_run_batch, |c| c.run_batch());
     cb!(b, ctl, on_stop_batch, |c| c.stop_batch());
 

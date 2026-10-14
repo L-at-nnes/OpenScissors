@@ -358,7 +358,7 @@ export component BatchPanel inherits Frame {
             title: @tr("Batch processing");
         }
         Note {
-            text: @tr("Cut out every image of a folder with your saved defaults. Markers are not used.");
+            text: @tr("Cut out every image of a folder with the same settings. Markers are not used.");
         }
         if !Backend.batch-ready: HorizontalLayout {
             spacing: 6px;
@@ -454,6 +454,20 @@ export component BatchPanel inherits Frame {
             }
             if Backend.batch-format == 1: Note {
                 text: @tr("JPEG has no transparency: the background is filled with white.");
+            }
+        }
+        VerticalLayout {
+            spacing: 4px;
+            Heading {
+                text: @tr("4. Settings");
+            }
+            SelectRow {
+                options: [@tr("Saved defaults"), @tr("Image being edited")];
+                current: Backend.has-doc ? Backend.batch-settings : 0;
+                enabled: !Backend.batch-running && Backend.has-doc;
+                selected(i) => {
+                    Backend.set-batch-settings(i);
+                }
             }
         }
         if Backend.batch-running: VerticalLayout {

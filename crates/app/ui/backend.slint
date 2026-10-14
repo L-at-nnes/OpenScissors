@@ -166,6 +166,8 @@ export global Backend {
     in property <string> batch-src;
     in property <string> batch-dst;
     in property <int> batch-format;
+    // 0 saved defaults, 1 the settings of the image being edited.
+    in property <int> batch-settings;
     in property <bool> batch-running;
     in property <int> batch-done;
     in property <int> batch-total;
@@ -235,6 +237,7 @@ export global Backend {
     callback plugin-run(int);
     callback pick-folder(bool);
     callback set-batch-format(int);
+    callback set-batch-settings(int);
     callback run-batch();
     callback stop-batch();
 }

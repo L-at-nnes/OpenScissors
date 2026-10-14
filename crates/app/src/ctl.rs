@@ -106,6 +106,8 @@ pub struct BatchUx {
     pub file: Option<String>,
     pub report: String,
     pub format: i32,
+    /// 0 = the saved defaults, 1 = the settings of the open image.
+    pub settings: i32,
 }
 
 /// What the interface needs besides the document itself.
@@ -517,6 +519,7 @@ impl Ctl {
         b.set_batch_src(src.clone().into());
         b.set_batch_dst(dst.clone().into());
         b.set_batch_format(ux.batch.format);
+        b.set_batch_settings(ux.batch.settings);
         b.set_batch_running(ux.batch.running);
         b.set_batch_done(ux.batch.done as i32);
         b.set_batch_total(ux.batch.total as i32);

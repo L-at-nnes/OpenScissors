@@ -573,10 +573,13 @@ impl Ctl {
             self.say(t("No AI model is ready. Choose and download a model first."), true);
             return;
         };
-        let (src, dst, params, quality) = {
+        let (src, dst, defaults, quality) = {
             let s = self.st.settings.guard();
             (s.batch_src.clone().unwrap_or_default(), s.batch_dst.clone().unwrap_or_default(), s.defaults.clone(), s.jpeg_quality)
         };
+        // The look of the image being edited, when asked for and there is one; otherwise the saved defaults.
+        let open_params = if self.ux.guard().batch.settings == 1 { self.st.doc.guard().as_ref().map(|d| d.params().clone()) } else { None };
+        let params = open_params.unwrap_or(defaults);
         let format = if self.ux.guard().batch.format == 1 { Format::Jpeg } else { Format::Png };
         let (src, dst) = (PathBuf::from(src), PathBuf::from(dst));
         let files = match batch::validate(&src, &dst) {
