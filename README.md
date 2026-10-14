@@ -35,8 +35,10 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 - **Group by color** (green and red marks) when the AI struggles: whole areas of similar colour follow your strokes.
 - **Smart select**: click what you want, right-click what you don't, or drag a box (needs the small SAM 2 model).
 - **Backgrounds**: transparent, solid colour, any picture, or the original with the subject filled in. Blur, grayscale, negative, pixelate or colourize either layer.
+- **Clean up the edges**: soft edges (hair, feathering) lose the colour of the old background, so no halo shows on the new one.
 - **Shadow, crop to a ratio, padding**, then export to PNG, JPEG, WebP, TIFF or BMP. 16-bit sources can stay 16-bit.
-- **Batch mode** for a whole folder, with your saved settings.
+- **Output width and presets** (marketplace 1000 or 2000 px, thumbnail, 16:9 banner): the result comes out at the exact size, centred, on white or transparent.
+- **Batch mode** for a whole folder: drop the folder on the window, use your saved settings or those of the image you are editing, save as PNG, JPEG or WebP.
 - **4 languages**: English (default), Français, Deutsch, Русский.
 - **Plug-ins** (optional, off until you turn them on): small programs that run on the file you just saved.
 

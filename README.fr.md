@@ -35,8 +35,10 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 - **Grouper par couleur** (traits verts et rouges) quand l'IA hésite : les zones de couleur proche suivent vos traits.
 - **Sélection intelligente** : cliquez ce que vous voulez, clic droit ce que vous ne voulez pas, ou tracez un cadre (modèle SAM 2, léger).
 - **Fonds** : transparent, couleur unie, une image, ou l'original avec le sujet comblé. Flou, niveaux de gris, négatif, pixellisation ou coloration sur l'une ou l'autre couche.
+- **Nettoyage des bords** : les bords doux (cheveux, adoucissement) perdent la couleur de l'ancien fond, donc aucun halo sur le nouveau.
 - **Ombre, recadrage à un ratio, marge**, puis export en PNG, JPEG, WebP, TIFF ou BMP. Les sources 16 bits peuvent rester en 16 bits.
-- **Traitement par lot** d'un dossier entier avec vos réglages enregistrés.
+- **Largeur de sortie et préréglages** (marketplace 1000 ou 2000 px, miniature, bannière 16:9) : le résultat sort à la taille exacte, centré, sur fond blanc ou transparent.
+- **Traitement par lot** d'un dossier entier : déposez le dossier sur la fenêtre, avec vos réglages enregistrés ou ceux de l'image en cours, en PNG, JPEG ou WebP.
 - **4 langues** : English (par défaut), Français, Deutsch, Русский.
 - **Plug-ins** (optionnels, désactivés tant que vous ne les activez pas) : de petits programmes lancés sur le fichier que vous venez d'enregistrer.
 
