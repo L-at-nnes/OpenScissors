@@ -36,14 +36,20 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 - **Sélection intelligente** : cliquez ce que vous voulez, clic droit ce que vous ne voulez pas, ou tracez un cadre (modèle SAM 2, léger).
 - **Fonds** : transparent, couleur unie, une image, ou l'original avec le sujet comblé. Flou, niveaux de gris, négatif, pixellisation ou coloration sur l'une ou l'autre couche.
 - **Nettoyage des bords** : les bords doux (cheveux, adoucissement) perdent la couleur de l'ancien fond, donc aucun halo sur le nouveau.
-- **Ombre, recadrage à un ratio, marge**, puis export en PNG, JPEG, WebP, TIFF ou BMP. Les sources 16 bits peuvent rester en 16 bits.
+- **Réglage des couleurs** du sujet seul (luminosité, saturation, chaleur) pour qu'il s'accorde à son nouveau fond.
+- **Ombre** (flou, opacité, couleur, décalage vers la droite et le bas), **recadrage à un ratio, marge**, puis export en PNG, JPEG, WebP, TIFF ou BMP. Les sources 16 bits peuvent rester en 16 bits.
 - **Largeur de sortie et préréglages** (marketplace 1000 ou 2000 px, miniature, bannière 16:9) : le résultat sort à la taille exacte, centré, sur fond blanc ou transparent.
+- **Copier-coller** : <kbd>Ctrl</kbd>+<kbd>V</kbd> ouvre l'image du presse-papiers (ou un fichier image copié dans l'explorateur) ; un clic, ou <kbd>Ctrl</kbd>+<kbd>C</kbd>, copie le résultat avec sa transparence.
 - **Traitement par lot** d'un dossier entier : déposez le dossier sur la fenêtre, avec vos réglages enregistrés ou ceux de l'image en cours, en PNG, JPEG ou WebP.
 - **4 langues** : English (par défaut), Français, Deutsch, Русский.
 - **Plug-ins** (optionnels, désactivés tant que vous ne les activez pas) : de petits programmes lancés sur le fichier que vous venez d'enregistrer.
 
 <p align="center">
-  <img src="docs/images/smart-select.png" alt="Sélection intelligente sur la tasse" width="440">
+  <img src="docs/images/smart-select.png" alt="Sélection intelligente sur la tasse, avec les réglages de contour, de couleurs et d'effet" width="440">
+  <img src="docs/images/shadow.png" alt="L'onglet Ombre : opacité, flou, décalage et couleur" width="440">
+</p>
+<p align="center">
+  <img src="docs/images/batch.png" alt="Le panneau du traitement par lot" width="440">
   <img src="docs/images/models.png" alt="Le panneau des modèles" width="440">
 </p>
 
@@ -53,7 +59,7 @@ Windows 10/11 (64 bits) est la plateforme testée. La page Releases propose auss
 
 1. Téléchargez le dernier zip pour votre système depuis la page Releases (`OpenScissors-…-portable-win-x64.zip`, `…-linux-x64.zip` ou `…-darwin-arm64.zip`) et décompressez-le où vous voulez.
 2. Lancez `OpenScissors.exe` (`OpenScissors` sous Linux et macOS).
-3. Ouvrez une image (le bouton, <kbd>Ctrl</kbd>+<kbd>O</kbd>, glisser-déposer, ou `OpenScissors.exe photo.jpg`).
+3. Ouvrez une image (le bouton, <kbd>Ctrl</kbd>+<kbd>O</kbd>, glisser-déposer, coller avec <kbd>Ctrl</kbd>+<kbd>V</kbd>, ou `OpenScissors.exe photo.jpg`).
 
 Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fournis). Cliquez sur la pastille en haut, choisissez-en un, **Télécharger**. Le fichier est vérifié par SHA-256 avant usage.
 
@@ -98,6 +104,7 @@ Supprimez `data/` pour repartir de zéro, `models/` pour libérer de la place. R
 | <kbd>F</kbd> garder · <kbd>B</kbd> supprimer (en *Grouper par couleur*) · <kbd>E</kbd> gomme | <kbd>S</kbd> sélection intelligente · <kbd>H</kbd> cheveux · <kbd>Maj</kbd>+<kbd>H</kbd> gomme cheveux |
 | <kbd>M</kbd> déplacer · <kbd>Espace</kbd> maintenu pour faire glisser | <kbd>[</kbd> <kbd>]</kbd> taille du pinceau |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir · <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer · <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>S</kbd> enregistrer sous | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> annuler / rétablir |
+| <kbd>Ctrl</kbd>+<kbd>V</kbd> coller une image | <kbd>Ctrl</kbd>+<kbd>C</kbd> copier le résultat |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> ajuster · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | molette : déplacer, <kbd>Ctrl</kbd>+molette : zoomer |
 | <kbd>Entrée</kbd> appliquer une sélection · <kbd>Retour arrière</kbd> retirer le dernier clic · <kbd>Échap</kbd> annuler | |
 
@@ -136,6 +143,7 @@ Détails dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) et [docs/PERF.md](doc
 - Windows est la plateforme testée. Le code est portable, les builds Linux et macOS (Apple Silicon) ne sont pas testés. Il n'y a pas de build macOS Intel : ONNX Runtime n'en fournit pas.
 - Le mode GPU (DirectML) fonctionne mais n'a rien accéléré sur la carte essayée ; il reste optionnel.
 - Le recadrage au clavier n'existe pas encore ; les poignées demandent un pointeur.
+- Les images sont limitées à 100 mégapixels (environ 11 000 × 9 000) et 32 768 pixels de côté, et l'historique d'annulation ne garde qu'environ 384 Mo : les plus anciennes étapes sont oubliées en premier.
 - Les messages d'erreur venant de Rust sont en anglais uniquement.
 - Les traductions n'ont pas été relues par des locuteurs natifs. Les corrections sont les bienvenues.
 

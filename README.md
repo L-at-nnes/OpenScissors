@@ -36,14 +36,20 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 - **Smart select**: click what you want, right-click what you don't, or drag a box (needs the small SAM 2 model).
 - **Backgrounds**: transparent, solid colour, any picture, or the original with the subject filled in. Blur, grayscale, negative, pixelate or colourize either layer.
 - **Clean up the edges**: soft edges (hair, feathering) lose the colour of the old background, so no halo shows on the new one.
-- **Shadow, crop to a ratio, padding**, then export to PNG, JPEG, WebP, TIFF or BMP. 16-bit sources can stay 16-bit.
+- **Adjust the colours** of the subject alone (brightness, saturation, warmth) so it sits right on its new background.
+- **Shadow** (blur, opacity, colour, offset right and down), **crop to a ratio, padding**, then export to PNG, JPEG, WebP, TIFF or BMP. 16-bit sources can stay 16-bit.
 - **Output width and presets** (marketplace 1000 or 2000 px, thumbnail, 16:9 banner): the result comes out at the exact size, centred, on white or transparent.
+- **Copy and paste**: <kbd>Ctrl</kbd>+<kbd>V</kbd> opens the picture on the clipboard (or an image file copied in your file manager); one click, or <kbd>Ctrl</kbd>+<kbd>C</kbd>, copies the result with its transparency.
 - **Batch mode** for a whole folder: drop the folder on the window, use your saved settings or those of the image you are editing, save as PNG, JPEG or WebP.
 - **4 languages**: English (default), Français, Deutsch, Русский.
 - **Plug-ins** (optional, off until you turn them on): small programs that run on the file you just saved.
 
 <p align="center">
-  <img src="docs/images/smart-select.png" alt="Smart select on the mug" width="440">
+  <img src="docs/images/smart-select.png" alt="Smart select on the mug, with the boundary, colour and effect settings" width="440">
+  <img src="docs/images/shadow.png" alt="The shadow tab: opacity, blur, offset and colour" width="440">
+</p>
+<p align="center">
+  <img src="docs/images/batch.png" alt="The batch panel" width="440">
   <img src="docs/images/models.png" alt="The models panel" width="440">
 </p>
 
@@ -53,7 +59,7 @@ Windows 10/11 (64-bit) is the tested platform. The Releases page also has a Linu
 
 1. Download the latest zip for your system from the Releases page (`OpenScissors-…-portable-win-x64.zip`, `…-linux-x64.zip` or `…-darwin-arm64.zip`) and unzip it anywhere.
 2. Run `OpenScissors.exe` (`OpenScissors` on Linux and macOS).
-3. Open an image (the button, <kbd>Ctrl</kbd>+<kbd>O</kbd>, drag and drop, or `OpenScissors.exe photo.jpg`).
+3. Open an image (the button, <kbd>Ctrl</kbd>+<kbd>O</kbd>, drag and drop, paste with <kbd>Ctrl</kbd>+<kbd>V</kbd>, or `OpenScissors.exe photo.jpg`).
 
 The first time, no AI model is installed (they are not bundled). Click the chip at the top, pick one, press **Download**. The file is checked against a SHA-256 before it is used.
 
@@ -98,6 +104,7 @@ Delete `data/` to start over, delete `models/` to free space. Nothing is written
 | <kbd>F</kbd> keep · <kbd>B</kbd> remove (in *Group by color*) · <kbd>E</kbd> erase | <kbd>S</kbd> smart select · <kbd>H</kbd> hair · <kbd>Shift</kbd>+<kbd>H</kbd> erase hair |
 | <kbd>M</kbd> move · hold <kbd>Space</kbd> to pan | <kbd>[</kbd> <kbd>]</kbd> brush size |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> open · <kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> save as | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> undo / redo |
+| <kbd>Ctrl</kbd>+<kbd>V</kbd> paste an image | <kbd>Ctrl</kbd>+<kbd>C</kbd> copy the result |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> fit · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | wheel pans, <kbd>Ctrl</kbd>+wheel zooms |
 | <kbd>Enter</kbd> apply a smart selection · <kbd>Backspace</kbd> remove the last click · <kbd>Esc</kbd> cancel | |
 
@@ -166,6 +173,7 @@ More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PERF.md](docs/PER
 - Windows is the platform I test. The code is portable, the Linux and macOS (Apple Silicon) builds are untested. There is no macOS Intel build: ONNX Runtime provides no binary for it.
 - The GPU mode (DirectML) works but didn't make anything faster on the card I tried, so it stays optional.
 - Moving the crop with the keyboard isn't there yet; the handles need a pointer.
+- Pictures are limited to 100 megapixels (about 11 000 × 9 000) and 32 768 pixels on a side, and the undo history keeps at most about 384 MB: the oldest steps are forgotten first.
 - Error messages coming from the Rust side are in English only.
 - The translations haven't been reviewed by native speakers. Corrections are welcome.
 
