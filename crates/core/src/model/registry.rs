@@ -383,9 +383,12 @@ impl ModelRegistry {
 
     fn download_file(&self, id: &str, file: &ModelFile, dest: &Path, progress: Progress, cancel: &AtomicBool) -> Result<()> {
         let part = dest.with_extension("part");
-        let resp = ureq::get(&file.url).call().map_err(|e| Error::Download(e.to_string()))?;
+        let resp = download_agent().get(&file.url).call().map_err(|e| Error::Download(e.to_string()))?;
         let total =
             resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok()).unwrap_or(file.size_bytes);
+        if !within_expected(file.size_bytes, total) {
+            return Err(Error::Download(format!("the server announces {total} bytes for '{}', the catalogue says {}", file.name, file.size_bytes)));
+        }
         let mut reader = resp.into_body().into_reader();
         let mut out = fs::File::create(&part)?;
         let mut hasher = Sha256::new();
@@ -404,6 +407,11 @@ impl ModelRegistry {
             out.write_all(&buf[..n])?;
             hasher.update(&buf[..n]);
             done += n as u64;
+            if !within_expected(file.size_bytes, done) {
+                drop(out);
+                let _ = fs::remove_file(&part);
+                return Err(Error::Download(format!("'{}' is larger than the {} bytes the catalogue says", file.name, file.size_bytes)));
+            }
             progress(done, total);
         }
         out.flush()?;
@@ -417,9 +425,35 @@ impl ModelRegistry {
     }
 }
 
+/// A client that gives up on a server that does not answer, instead of waiting for ever. The body is not given a
+/// time limit: a model is up to 1 GB and the connection may be slow, the user can cancel.
+fn download_agent() -> ureq::Agent {
+    use std::time::Duration;
+    ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .timeout_connect(Some(Duration::from_secs(30)))
+            .timeout_recv_response(Some(Duration::from_secs(60)))
+            .build(),
+    )
+}
+
+/// Whether `received` bytes are no more than the catalogue says (`expected` 0 = size not recorded). A server that
+/// sends more is refused before it fills the disk.
+fn within_expected(expected: u64, received: u64) -> bool {
+    expected == 0 || received <= expected
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_download_may_not_exceed_the_catalogue_size() {
+        assert!(within_expected(1000, 1000));
+        assert!(within_expected(1000, 1));
+        assert!(!within_expected(1000, 1001));
+        assert!(within_expected(0, u64::MAX), "unknown size: no limit");
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("osc-{name}-{}", std::process::id()));
