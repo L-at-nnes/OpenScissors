@@ -12,6 +12,28 @@ use crate::types::{Image, Image16, Rgba, Rgba16};
 
 pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp"];
 
+/// Largest picture the application opens, in pixels (about 11 000 x 9 000). Opening one makes several copies of
+/// it, so a bigger one would end the program on out of memory instead of with a message.
+pub const MAX_PIXELS: u64 = 100_000_000;
+/// Longest side accepted; a very long strip of that many pixels is refused even under `MAX_PIXELS`.
+pub const MAX_SIDE: u64 = 32_768;
+/// Most memory the decoder may ask for (a 100-megapixel 16-bit picture needs about 0.8 GB).
+const MAX_DECODE_BYTES: u64 = 3 << 30;
+
+/// Refuse a picture that is too big, before anything is allocated for it.
+pub fn check_dimensions(w: u64, h: u64) -> Result<()> {
+    if w == 0 || h == 0 {
+        return Err(Error::msg("the picture is empty"));
+    }
+    if w > MAX_SIDE || h > MAX_SIDE || w * h > MAX_PIXELS {
+        return Err(Error::msg(format!(
+            "the picture is {w} x {h} pixels; the application accepts up to {} megapixels and {MAX_SIDE} pixels on a side",
+            MAX_PIXELS / 1_000_000
+        )));
+    }
+    Ok(())
+}
+
 /// An opened image: the 8-bit working copy, plus the 16-bit samples when the file has them.
 pub struct Loaded {
     pub image: Image,
@@ -43,7 +65,13 @@ pub fn load_image(path: &Path) -> Result<Image> {
 
 /// Like [`load_image`], and keeps the 16-bit samples of 16-bit PNG and TIFF files.
 pub fn load_image_deep(path: &Path) -> Result<Loaded> {
-    let mut decoder = ImageReader::open(path)?.with_guessed_format()?.into_decoder()?;
+    let mut reader = ImageReader::open(path)?.with_guessed_format()?;
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(MAX_DECODE_BYTES);
+    reader.limits(limits);
+    let mut decoder = reader.into_decoder()?;
+    let (w, h) = decoder.dimensions();
+    check_dimensions(w as u64, h as u64)?;
     let orientation = decoder.orientation()?;
     let mut img = DynamicImage::from_decoder(decoder)?;
     img.apply_orientation(orientation);
@@ -199,5 +227,43 @@ mod tests {
         // A folder that does not exist is an error, not a silent loss.
         assert!(write_atomic(&dir.join("missing").join("b.json"), b"x").is_err());
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn pictures_beyond_the_limits_are_refused_before_decoding() {
+        assert!(check_dimensions(8192, 4608).is_ok(), "8K stays supported");
+        assert!(check_dimensions(10_000, 10_000).is_ok());
+        assert!(check_dimensions(10_001, 10_000).is_err(), "over 100 megapixels");
+        assert!(check_dimensions(40_000, 10).is_err(), "too long on one side");
+        assert!(check_dimensions(0, 5).is_err());
+
+        // A PNG that only claims 20 000 x 20 000 pixels: its header is enough to be refused, nothing is allocated.
+        fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+            let mut crc = 0xFFFF_FFFFu32;
+            for &b in kind.iter().chain(data) {
+                crc ^= b as u32;
+                for _ in 0..8 {
+                    crc = if crc & 1 == 1 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+                }
+            }
+            let mut v = (data.len() as u32).to_be_bytes().to_vec();
+            v.extend_from_slice(kind);
+            v.extend_from_slice(data);
+            v.extend_from_slice(&(!crc).to_be_bytes());
+            v
+        }
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&20_000u32.to_be_bytes());
+        ihdr.extend_from_slice(&20_000u32.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 2, 0, 0, 0]); // 8 bits, RGB
+        let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        png.extend(chunk(b"IHDR", &ihdr));
+        png.extend(chunk(b"IDAT", &[0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]));
+        png.extend(chunk(b"IEND", &[]));
+        let file = std::env::temp_dir().join(format!("osc-huge-{}.png", std::process::id()));
+        std::fs::write(&file, png).unwrap();
+        let err = load_image_deep(&file).err().expect("refused").to_string();
+        std::fs::remove_file(&file).ok();
+        assert!(err.contains("20000 x 20000") && err.contains("megapixels"), "{err}");
     }
 }

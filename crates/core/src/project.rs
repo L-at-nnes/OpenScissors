@@ -9,7 +9,7 @@ use std::path::Path;
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
-use image::{ImageFormat, ImageReader};
+use image::{ImageDecoder, ImageFormat, ImageReader};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -106,7 +106,11 @@ fn decode(e: &EncodedImage) -> Result<image::DynamicImage> {
         return Err(Error::msg(format!("unsupported image encoding '{}'", e.encoding)));
     }
     let bytes = B64.decode(&e.data).map_err(|err| Error::msg(format!("corrupt image data: {err}")))?;
-    Ok(ImageReader::with_format(Cursor::new(bytes), ImageFormat::Png).decode()?)
+    // The size is read from the header first: a small file can claim a huge picture.
+    let decoder = ImageReader::with_format(Cursor::new(bytes), ImageFormat::Png).into_decoder()?;
+    let (w, h) = decoder.dimensions();
+    crate::io::check_dimensions(w as u64, h as u64)?;
+    Ok(image::DynamicImage::from_decoder(decoder)?)
 }
 
 /// Write `doc` as a project. `model` records which model produced the prediction.

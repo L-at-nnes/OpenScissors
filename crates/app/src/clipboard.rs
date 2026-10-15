@@ -50,11 +50,19 @@ fn with<R>(f: impl FnOnce(&mut Clipboard) -> Result<R, Error>) -> Result<R, Clip
 
 /// The picture on the clipboard, drawn over white where it is transparent; or the files copied in a file manager.
 pub fn read() -> Result<Pasted, ClipboardError> {
-    with(|cb| match cb.get_image() {
-        Ok(img) => Ok(Pasted::Image(from_rgba(img.width, img.height, &img.bytes).map_err(|_| Error::ConversionFailure)?)),
-        Err(Error::ContentNotAvailable) => cb.get().file_list().map(Pasted::Files),
+    enum Found {
+        Rgba(usize, usize, Vec<u8>),
+        Files(Vec<PathBuf>),
+    }
+    let found = with(|cb| match cb.get_image() {
+        Ok(img) => Ok(Found::Rgba(img.width, img.height, img.bytes.into_owned())),
+        Err(Error::ContentNotAvailable) => cb.get().file_list().map(Found::Files),
         Err(e) => Err(e),
-    })
+    })?;
+    match found {
+        Found::Rgba(w, h, bytes) => from_rgba(w, h, &bytes).map(Pasted::Image).map_err(ClipboardError::System),
+        Found::Files(files) => Ok(Pasted::Files(files)),
+    }
 }
 
 /// Put `img` (straight alpha) on the clipboard.
@@ -64,7 +72,8 @@ pub fn write(img: &Rgba) -> Result<(), ClipboardError> {
 
 /// An RGBA buffer (as the clipboard hands it out) as an opaque image.
 fn from_rgba(w: usize, h: usize, bytes: &[u8]) -> Result<Image, String> {
-    if w == 0 || h == 0 || bytes.len() != w * h * 4 {
+    openscissors_core::io::check_dimensions(w as u64, h as u64).map_err(|e| e.to_string())?;
+    if bytes.len() != w * h * 4 {
         return Err("the clipboard picture has an unexpected size".into());
     }
     Ok(flatten(&Rgba { w, h, data: bytes.to_vec() }, [255, 255, 255]))
