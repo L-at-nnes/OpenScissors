@@ -4,6 +4,7 @@ use openscissors_core::sync::LockExt;
 
 slint::include_modules!();
 
+pub mod clipboard;
 pub mod crash;
 pub mod cropmath;
 pub mod ctl;

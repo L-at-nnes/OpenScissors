@@ -204,6 +204,16 @@ component Topbar inherits Rectangle {
                 Backend.save();
             }
         }
+        IconBtn {
+            y: 8px;
+            d: Icons.copy;
+            label: @tr("Copy the result");
+            hint: @tr("Copy the result to the clipboard (Ctrl+C)");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.copy-result();
+            }
+        }
         Rectangle {
             width: 13px;
             Rectangle {
@@ -889,7 +899,7 @@ export component MainWindow inherits Window {
                     horizontal-alignment: center;
                 }
                 Text {
-                    text: @tr("Drop a photo here or press Ctrl+O. The AI proposes a cut-out; you refine it with the brush.");
+                    text: @tr("Drop a photo here, press Ctrl+O or paste one with Ctrl+V. The AI proposes a cut-out; you refine it with the brush.");
                     color: Theme.text-3;
                     font-size: Theme.fs-md;
                     horizontal-alignment: center;

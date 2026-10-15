@@ -258,6 +258,8 @@ impl Ctl {
             let k = if c.is_ascii_control() && (c as u8) < 27 { ((c as u8) + 96) as char } else { c.to_ascii_lowercase() };
             match k {
                 'o' => self.open_dialog(),
+                'v' => self.paste(),
+                'c' => self.copy_result(),
                 's' => {
                     if shift {
                         self.save_as()

@@ -12,6 +12,7 @@ use openscissors_core::project::{self, ModelRef};
 use openscissors_core::types::Rect;
 use serde_json::{json, Value};
 
+use crate::clipboard::{self, ClipboardError, Pasted};
 use crate::ctl::{Ctl, Prediction, Tool, KIND_KEYS, MODE_KEYS, R_ALL, R_MAIN, R_MENU, R_VIEW};
 use crate::dialogs::{self, Answer, IMAGE_EXT};
 use crate::i18n::{t, tf};
@@ -154,6 +155,59 @@ impl Ctl {
         self.save_settings();
         self.after_open(false);
         Ok(None)
+    }
+
+    /// Ctrl+V: open the picture on the clipboard, or the file copied in a file manager.
+    pub fn paste(self: &Arc<Self>) {
+        let me = self.clone();
+        std::thread::spawn(move || match clipboard::read() {
+            Ok(Pasted::Files(files)) => {
+                let ok = |p: &PathBuf| p.extension().and_then(|e| e.to_str()).is_some_and(|e| IMAGE_EXT.contains(&e.to_ascii_lowercase().as_str()) || e.eq_ignore_ascii_case("osproj"));
+                match files.into_iter().find(ok) {
+                    Some(path) => me.open_path(path),
+                    None => me.say(t("The clipboard holds no image."), true),
+                }
+            }
+            Ok(Pasted::Image(image)) => {
+                if me.confirm_discard_sync() {
+                    me.open_pasted(image);
+                }
+            }
+            Err(ClipboardError::Empty) => me.say(t("The clipboard holds no image."), true),
+            Err(ClipboardError::System(e)) => me.say(tf("Cannot use the clipboard: {error}", &[("error", &e)]), true),
+        });
+    }
+
+    /// A picture that comes from the clipboard has no file: it opens as an unnamed document.
+    fn open_pasted(self: &Arc<Self>, image: openscissors_core::types::Image) {
+        let id = self.st.next_doc_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let (mut defaults, group) = {
+            let s = self.st.settings.guard();
+            (s.defaults.clone(), s.group_by_color)
+        };
+        defaults.mask.graphcut = group;
+        *self.st.doc.guard() = Some(Document::new(id, image, None).with_params(defaults));
+        *self.st.sam_cache.guard() = None;
+        *self.st.predicted_doc.guard() = None;
+        self.after_open(false);
+        self.say(t("Pasted the image from the clipboard"), false);
+    }
+
+    /// Copy the result (with its transparency) to the clipboard.
+    pub fn copy_result(self: &Arc<Self>) {
+        if self.ux.guard().doc.is_none() {
+            return;
+        }
+        let me = self.clone();
+        std::thread::spawn(move || {
+            let exported = me.st.doc.guard().as_mut().map(|d| d.export());
+            let Some(img) = exported else { return };
+            match clipboard::write(&img) {
+                Ok(()) => me.say(t("Copied the result to the clipboard"), false),
+                Err(ClipboardError::Empty) => me.say(t("The clipboard holds no image."), true),
+                Err(ClipboardError::System(e)) => me.say(tf("Cannot use the clipboard: {error}", &[("error", &e)]), true),
+            }
+        });
     }
 
     fn open_project_sync(self: &Arc<Self>, path: &Path) -> Result<Option<String>, String> {
