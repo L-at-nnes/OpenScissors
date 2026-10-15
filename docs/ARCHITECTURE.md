@@ -38,7 +38,7 @@ src/i18n.rs      translations (keys are the English strings); .slint files use @
 
 **Pixels.** The window never holds the full image. It shows the last rendered region at the position the current pan and zoom give it (a Slint binding), and replaces it when the render thread delivers the next one.
 
-**Memory.** The budget (25 % of the RAM, 50 % optional) is checked before a model loads and before a prediction. ONNX Runtime's arena is off by default (it costs ~2.3x more); big images are filtered in bands. A picture over 100 megapixels is refused from its header, before anything is allocated (`io::check_dimensions`, also applied to projects and to the clipboard).
+**Memory.** The budget (25 % of the RAM, 50 % optional) is checked before a model loads and before a prediction. ONNX Runtime's arena is off by default (it costs ~2.3x more); big images are filtered in bands. A picture is judged from its header, before anything is allocated (`io::check_dimensions`, also applied to projects and to the clipboard): refused when its estimated cost (24 bytes per pixel) exceeds the budget or the free memory, and always above 500 megapixels.
 
 ## Testing the interface without a mouse
 

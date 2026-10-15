@@ -143,7 +143,7 @@ Détails dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) et [docs/PERF.md](doc
 - Windows est la plateforme testée. Le code est portable, les builds Linux et macOS (Apple Silicon) ne sont pas testés. Il n'y a pas de build macOS Intel : ONNX Runtime n'en fournit pas.
 - Le mode GPU (DirectML) fonctionne mais n'a rien accéléré sur la carte essayée ; il reste optionnel.
 - Le recadrage au clavier n'existe pas encore ; les poignées demandent un pointeur.
-- Les images sont limitées à 100 mégapixels (environ 11 000 × 9 000) et 32 768 pixels de côté, et l'historique d'annulation ne garde qu'environ 384 Mo : les plus anciennes étapes sont oubliées en premier.
+- Une image est refusée, avec un message, quand elle ne tiendrait pas dans le budget mémoire (environ 24 octets par pixel une fois ouverte : une photo 8K demande ~0,8 Go, 100 mégapixels ~2,3 Go) ou dépasse 500 mégapixels. L'historique d'annulation ne garde qu'environ 384 Mo : les plus anciennes étapes sont oubliées en premier.
 - Les messages d'erreur venant de Rust sont en anglais uniquement.
 - Les traductions n'ont pas été relues par des locuteurs natifs. Les corrections sont les bienvenues.
 

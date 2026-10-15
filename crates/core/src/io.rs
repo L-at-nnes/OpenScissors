@@ -12,26 +12,49 @@ use crate::types::{Image, Image16, Rgba, Rgba16};
 
 pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp"];
 
-/// Largest picture the application opens, in pixels (about 11 000 x 9 000). Opening one makes several copies of
-/// it, so a bigger one would end the program on out of memory instead of with a message.
-pub const MAX_PIXELS: u64 = 100_000_000;
-/// Longest side accepted; a very long strip of that many pixels is refused even under `MAX_PIXELS`.
-pub const MAX_SIDE: u64 = 32_768;
-/// Most memory the decoder may ask for (a 100-megapixel 16-bit picture needs about 0.8 GB).
-const MAX_DECODE_BYTES: u64 = 3 << 30;
+/// Largest picture ever accepted, in pixels (500 megapixels). It only guards against a header that lies about its
+/// size; what the machine can really hold is decided by [`check_dimensions`] from the memory budget.
+pub const MAX_PIXELS: u64 = 500_000_000;
+/// Memory one open picture costs per pixel, in bytes: the working copy, the masks, the rendering buffers and the
+/// copies the document keeps. Measured at about 20 on a 24-megapixel edit and export (docs/PERF.md), plus a margin
+/// for the decoder's own buffers.
+pub const OPEN_BYTES_PER_PIXEL: u64 = 24;
 
-/// Refuse a picture that is too big, before anything is allocated for it.
-pub fn check_dimensions(w: u64, h: u64) -> Result<()> {
+/// Memory in MB that a picture of `w` x `h` pixels needs once opened.
+pub fn open_cost_mb(w: u64, h: u64) -> u64 {
+    (w * h * OPEN_BYTES_PER_PIXEL) >> 20
+}
+
+/// The decision of [`check_dimensions`], from the numbers it looks at: the memory budget of the application and the
+/// memory still free, in MB (`None` when the platform does not tell).
+fn open_verdict(w: u64, h: u64, budget_mb: Option<u64>, free_mb: Option<u64>) -> Result<()> {
     if w == 0 || h == 0 {
         return Err(Error::msg("the picture is empty"));
     }
-    if w > MAX_SIDE || h > MAX_SIDE || w * h > MAX_PIXELS {
+    if w.saturating_mul(h) > MAX_PIXELS {
         return Err(Error::msg(format!(
-            "the picture is {w} x {h} pixels; the application accepts up to {} megapixels and {MAX_SIDE} pixels on a side",
+            "the picture is {w} x {h} pixels; the application accepts up to {} megapixels",
             MAX_PIXELS / 1_000_000
         )));
     }
+    let need = open_cost_mb(w, h);
+    if let Some(budget) = budget_mb.filter(|&b| need > b) {
+        return Err(Error::msg(format!(
+            "a {w} x {h} px picture needs about {need} MB, more than the {budget} MB the application may use (the memory limit in the settings can be raised)"
+        )));
+    }
+    if let Some(free) = free_mb.filter(|&f| need > f) {
+        return Err(Error::msg(format!(
+            "not enough free memory for a {w} x {h} px picture: about {need} MB are needed and {free} MB are free; close other applications"
+        )));
+    }
     Ok(())
+}
+
+/// Refuse a picture that would not fit, from its size alone and before anything is allocated for it: too big to be
+/// believable, over the memory budget of the application, or more than the memory that is free.
+pub fn check_dimensions(w: u64, h: u64) -> Result<()> {
+    open_verdict(w, h, crate::sysmem::budget_mb(), crate::sysmem::available_memory_mb())
 }
 
 /// An opened image: the 8-bit working copy, plus the 16-bit samples when the file has them.
@@ -66,8 +89,10 @@ pub fn load_image(path: &Path) -> Result<Image> {
 /// Like [`load_image`], and keeps the 16-bit samples of 16-bit PNG and TIFF files.
 pub fn load_image_deep(path: &Path) -> Result<Loaded> {
     let mut reader = ImageReader::open(path)?.with_guessed_format()?;
+    // The size is checked from the header ([`check_dimensions`]); the decoder's own default allocation limit is lifted
+    // so that a large 16-bit picture that fits the budget can be opened.
     let mut limits = image::Limits::default();
-    limits.max_alloc = Some(MAX_DECODE_BYTES);
+    limits.max_alloc = None;
     reader.limits(limits);
     let mut decoder = reader.into_decoder()?;
     let (w, h) = decoder.dimensions();
@@ -230,14 +255,27 @@ mod tests {
     }
 
     #[test]
-    fn pictures_beyond_the_limits_are_refused_before_decoding() {
-        assert!(check_dimensions(8192, 4608).is_ok(), "8K stays supported");
-        assert!(check_dimensions(10_000, 10_000).is_ok());
-        assert!(check_dimensions(10_001, 10_000).is_err(), "over 100 megapixels");
-        assert!(check_dimensions(40_000, 10).is_err(), "too long on one side");
-        assert!(check_dimensions(0, 5).is_err());
+    fn a_picture_is_accepted_only_if_it_fits_the_memory() {
+        let gb = 1024;
+        // 8K on a machine that allows 2 GB and has 6 GB free: about 760 MB.
+        assert!(open_verdict(7680, 4320, Some(2 * gb), Some(6 * gb)).is_ok());
+        // 100 megapixels need about 2.3 GB: over a 2 GB budget, fine under a 4 GB one.
+        let over = open_verdict(10_000, 10_000, Some(2 * gb), Some(32 * gb)).unwrap_err().to_string();
+        assert!(over.contains("2288 MB") && over.contains("2048 MB"), "{over}");
+        assert!(open_verdict(10_000, 10_000, Some(4 * gb), Some(32 * gb)).is_ok());
+        // Enough budget but not enough free memory.
+        let busy = open_verdict(7680, 4320, Some(8 * gb), Some(300)).unwrap_err().to_string();
+        assert!(busy.contains("free memory"), "{busy}");
+        // Nothing known about the machine: only the absolute limit applies.
+        assert!(open_verdict(20_000, 20_000, None, None).is_ok());
+        assert!(open_verdict(30_000, 30_000, None, None).is_err(), "900 megapixels is not believable");
+        assert!(open_verdict(0, 5, None, None).is_err());
+        assert_eq!(open_cost_mb(1000, 1000), 22);
+    }
 
-        // A PNG that only claims 20 000 x 20 000 pixels: its header is enough to be refused, nothing is allocated.
+    #[test]
+    fn a_header_that_claims_a_huge_picture_is_refused_before_decoding() {
+        // A PNG that only claims 30 000 x 30 000 pixels: its header is enough to be refused, nothing is allocated.
         fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
             let mut crc = 0xFFFF_FFFFu32;
             for &b in kind.iter().chain(data) {
@@ -253,8 +291,8 @@ mod tests {
             v
         }
         let mut ihdr = Vec::new();
-        ihdr.extend_from_slice(&20_000u32.to_be_bytes());
-        ihdr.extend_from_slice(&20_000u32.to_be_bytes());
+        ihdr.extend_from_slice(&30_000u32.to_be_bytes());
+        ihdr.extend_from_slice(&30_000u32.to_be_bytes());
         ihdr.extend_from_slice(&[8, 2, 0, 0, 0]); // 8 bits, RGB
         let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
         png.extend(chunk(b"IHDR", &ihdr));
@@ -264,6 +302,6 @@ mod tests {
         std::fs::write(&file, png).unwrap();
         let err = load_image_deep(&file).err().expect("refused").to_string();
         std::fs::remove_file(&file).ok();
-        assert!(err.contains("20000 x 20000") && err.contains("megapixels"), "{err}");
+        assert!(err.contains("30000 x 30000") && err.contains("megapixels"), "{err}");
     }
 }
