@@ -22,6 +22,10 @@ use crate::types::{Image, Image16, Mask, Rect, Rgba, Rgba16};
 /// Consecutive edits of the same property closer than this collapse into one undo step.
 const MERGE_WINDOW: Duration = Duration::from_millis(800);
 
+/// Most memory the undo history may hold. Each AI prediction or smart selection keeps a full-size mask; on a large
+/// photo a long session would otherwise grow without limit. The oldest steps are forgotten first.
+const UNDO_LIMIT_BYTES: usize = 384 << 20;
+
 enum Command {
     AddStroke(Stroke),
     SetPrediction {
@@ -75,6 +79,7 @@ pub struct Document {
     strokes: Vec<Stroke>,
     params: Params,
     undo: Vec<Command>,
+    undo_limit: usize,
     index: usize,
     clean: Option<usize>,
     /// Bumped on every visible change; the UI uses it to know when to re-fetch pixels.
@@ -115,6 +120,7 @@ impl Document {
             strokes: Vec::new(),
             params: Params::default(),
             undo: Vec::new(),
+            undo_limit: UNDO_LIMIT_BYTES,
             index: 0,
             clean: Some(0),
             rev: 0,
@@ -225,6 +231,45 @@ impl Document {
         self.apply(&cmd, true);
         self.undo.push(cmd);
         self.index += 1;
+        self.trim_history();
+    }
+
+    /// Memory held by the undo history. A mask shared by two steps (the "new" of one is the "old" of the next) counts once.
+    fn history_bytes(&self) -> usize {
+        let mut seen: Vec<*const Mask> = Vec::new();
+        let mut mask = |m: &Option<Arc<Mask>>| match m {
+            Some(m) if !seen.contains(&Arc::as_ptr(m)) => {
+                seen.push(Arc::as_ptr(m));
+                m.data.len()
+            }
+            _ => 0,
+        };
+        let strokes = |v: &[Stroke]| v.iter().map(|s| 32 + s.points.len() * 8).sum::<usize>();
+        let params = std::mem::size_of::<Params>() + 256;
+        self.undo
+            .iter()
+            .map(|c| match c {
+                Command::AddStroke(s) => strokes(std::slice::from_ref(s)),
+                Command::SetPrediction { old, new } => mask(old) + mask(new),
+                Command::SetParam { path, old, new, .. } => path.len() + 2 * std::mem::size_of::<Value>() + old.to_string().len() + new.to_string().len(),
+                Command::SetParams { .. } => 2 * params,
+                Command::SetStrokes { old, new } => strokes(old) + strokes(new),
+            })
+            .sum()
+    }
+
+    /// Forget the oldest steps while the history is over its memory limit. The newest step always stays, so the
+    /// last edit can still be undone.
+    fn trim_history(&mut self) {
+        while self.undo.len() > 1 && self.history_bytes() > self.undo_limit {
+            self.undo.remove(0);
+            self.index = self.index.saturating_sub(1);
+            // The saved state is the one before step `c`; once step 0 is gone, state 0 cannot be reached again.
+            self.clean = match self.clean {
+                Some(c) if c > 0 => Some(c - 1),
+                _ => None,
+            };
+        }
     }
 
     pub fn add_stroke(&mut self, stroke: Stroke) {
@@ -645,6 +690,44 @@ mod tests {
 
     fn keep(x: f32, y: f32, w: u32) -> Stroke {
         Stroke { kind: StrokeKind::Keep, width: w, points: vec![[x, y]] }
+    }
+
+    #[test]
+    fn the_undo_history_forgets_its_oldest_steps_when_it_gets_too_big() {
+        let mut d = Document::new(1, Image::filled(1000, 1000, [90, 90, 90]), None);
+        d.undo_limit = 3 << 20; // room for about three 1 MB masks
+        for level in 1..=10u8 {
+            d.set_prediction(Some(Mask::filled(1000, 1000, level * 20)));
+        }
+        assert!(d.undo.len() < 10 && d.undo.len() >= 2, "{} steps kept", d.undo.len());
+        assert!(d.history_bytes() <= 3 << 20 || d.undo.len() == 1);
+        assert!(!d.is_clean(), "the opened state is no longer reachable");
+        // What is left still works, back to the oldest kept step and forward again.
+        let kept = d.undo.len();
+        for _ in 0..kept {
+            d.undo();
+        }
+        assert!(!d.can_undo());
+        for _ in 0..kept {
+            d.redo();
+        }
+        assert_eq!(d.predicted().unwrap().data[0], 200);
+    }
+
+    #[test]
+    fn small_edits_are_never_trimmed_and_a_saved_state_survives_in_range() {
+        let mut d = doc();
+        for i in 0..200 {
+            d.add_stroke(keep(i as f32 % 40.0 + 0.5, 10.5, 3));
+        }
+        assert_eq!(d.undo.len(), 200, "strokes are small");
+        d.mark_clean();
+        d.undo_limit = 1; // everything is over the limit: only the newest step stays
+        d.add_stroke(keep(5.5, 5.5, 3));
+        assert_eq!(d.undo.len(), 1);
+        assert!(!d.is_clean() && d.can_undo());
+        d.undo();
+        assert!(d.is_clean(), "going back one step reaches the state that was saved");
     }
 
     #[test]
