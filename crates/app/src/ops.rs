@@ -136,7 +136,8 @@ impl Ctl {
     }
 
     fn open_image_sync(self: &Arc<Self>, path: &Path) -> Result<Option<String>, String> {
-        let loaded = io::load_image_deep(path).map_err(|e| format!("Cannot read file {}: {e}", file_label(path)))?;
+        let loaded = io::load_image_deep(path)
+            .map_err(|e| tf("Cannot read file {file}: {error}", &[("file", &file_label(path)), ("error", &e.to_string())]))?;
         let id = self.st.next_doc_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (mut defaults, group) = {
             let s = self.st.settings.guard();
@@ -162,7 +163,11 @@ impl Ctl {
         let me = self.clone();
         std::thread::spawn(move || match clipboard::read() {
             Ok(Pasted::Files(files)) => {
-                let ok = |p: &PathBuf| p.extension().and_then(|e| e.to_str()).is_some_and(|e| IMAGE_EXT.contains(&e.to_ascii_lowercase().as_str()) || e.eq_ignore_ascii_case("osproj"));
+                let ok = |p: &PathBuf| {
+                    p.extension()
+                        .and_then(|e| e.to_str())
+                        .is_some_and(|e| IMAGE_EXT.contains(&e.to_ascii_lowercase().as_str()) || e.eq_ignore_ascii_case("osproj"))
+                };
                 match files.into_iter().find(ok) {
                     Some(path) => me.open_path(path),
                     None => me.say(t("The clipboard holds no image."), true),
@@ -211,7 +216,7 @@ impl Ctl {
     }
 
     fn open_project_sync(self: &Arc<Self>, path: &Path) -> Result<Option<String>, String> {
-        let loaded = project::load_project(path).map_err(|e| format!("Cannot open project: {e}"))?;
+        let loaded = project::load_project(path).map_err(|e| tf("Cannot open project: {error}", &[("error", &e.to_string())]))?;
         let id = self.st.next_doc_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let image_path = loaded.orig_path.map(PathBuf::from);
         let predicted = loaded.predicted.is_some();
@@ -274,14 +279,14 @@ impl Ctl {
     }
 
     pub fn export_to(self: &Arc<Self>, target: &Path) -> Result<(), String> {
-        let format = Format::from_path(target).ok_or("unsupported file type; use png, jpg, webp, bmp or tiff")?;
+        let format = Format::from_path(target).ok_or_else(|| t("Unsupported file type: use png, jpg, webp, bmp or tiff."))?;
         let (quality, want16) = {
             let s = self.st.settings.guard();
             (s.jpeg_quality, s.export_16bit && matches!(format, Format::Png | Format::Tiff))
         };
         let (exported, why) = {
             let mut g = self.st.doc.guard();
-            let d = g.as_mut().ok_or("no image is open")?;
+            let d = g.as_mut().ok_or_else(|| t("No image is open."))?;
             if let Some(deep) = want16.then(|| d.export_deep()).flatten() {
                 (Exported::Bits16(deep), None)
             } else {
@@ -352,7 +357,7 @@ impl Ctl {
                 let mut g = me.st.doc.guard();
                 match g.as_mut() {
                     Some(d) => project::save_project(d, model, marker, &target).map(|_| d.mark_clean()).map_err(|e| e.to_string()),
-                    None => Err("no image is open".to_string()),
+                    None => Err(t("No image is open.")),
                 }
             };
             match result {
@@ -377,7 +382,7 @@ impl Ctl {
             let Some(p) = dialogs::open_file(me.last_dir().as_deref(), &t("Load marks…"), &[("Marks", &["psm"])]) else { return };
             let result = std::fs::read_to_string(&p).map_err(|e| e.to_string()).and_then(|text| {
                 let mut g = me.st.doc.guard();
-                let d = g.as_mut().ok_or("no image is open")?;
+                let d = g.as_mut().ok_or_else(|| t("No image is open."))?;
                 let strokes = project::marks_from_json(&text, d.image.w, d.image.h).map_err(|e| e.to_string())?;
                 d.load_marks(strokes);
                 Ok::<_, String>(())
@@ -409,7 +414,7 @@ impl Ctl {
                     Some(d) => {
                         std::fs::write(&target, project::marks_to_json(d.strokes(), d.image.w, d.image.h)).map_err(|e| e.to_string())
                     }
-                    None => Err("no image is open".to_string()),
+                    None => Err(t("No image is open.")),
                 }
             };
             match result {
@@ -763,7 +768,7 @@ impl Ctl {
             let found = openscissors_core::plugin::discover(&me.st.paths.plugins);
             let Some(Ok(p)) = found.into_iter().nth(index).map(|d| d.plugin) else { return };
             if !me.st.settings.guard().plugins_enabled.contains(&p.manifest.id) {
-                return me.say("This plug-in is not enabled.", true);
+                return me.say(t("This plug-in is not enabled."), true);
             }
             let name = p.manifest.name.clone();
             me.say(tf("Running {name}…", &[("name", &name)]), false);

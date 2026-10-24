@@ -19,23 +19,21 @@ pub fn check_memory(spec: &ModelSpec, fast: bool) -> Result<(), String> {
     let need = model_need_mb(spec, fast);
     if let Some(budget) = sysmem::budget_mb() {
         if need > budget {
-            return Err(format!(
-                "{} needs about {} MB, more than the {} MB ({}% of the memory) the application may use. Choose a lighter model.",
-                spec.name,
-                need,
-                budget,
-                sysmem::budget_percent()
-            ));
+            let (need, budget, percent) = (need.to_string(), budget.to_string(), sysmem::budget_percent().to_string());
+            let vars = [("model", spec.name.as_str()), ("need", need.as_str()), ("budget", budget.as_str()), ("percent", percent.as_str())];
+            return Err(tf("{model} needs about {need} MB, more than the {budget} MB ({percent}% of the memory) the application may use. Choose a lighter model.", &vars));
         }
     }
     match sysmem::available_memory_mb() {
-        Some(free) if need > 0 && free < need => Err(format!(
-            "Not enough free memory to run {}: about {} MB are needed and {} MB are free. Close other applications{}.",
-            spec.name,
-            need,
-            free,
-            if fast { ", turn off \"Use more memory for speed\"" } else { " or choose a lighter model" }
-        )),
+        Some(free) if need > 0 && free < need => {
+            let (need, free) = (need.to_string(), free.to_string());
+            let vars = [("model", spec.name.as_str()), ("need", need.as_str()), ("free", free.as_str())];
+            Err(if fast {
+                tf("Not enough free memory to run {model}: about {need} MB are needed and {free} MB are free. Close other applications or turn off \"Use more memory for speed\".", &vars)
+            } else {
+                tf("Not enough free memory to run {model}: about {need} MB are needed and {free} MB are free. Close other applications or choose a lighter model.", &vars)
+            })
+        }
         _ => Ok(()),
     }
 }
@@ -78,11 +76,17 @@ fn check_pipeline(model: &Predictor, w: usize, h: usize) -> Result<(), String> {
     let (Some(budget), Some(now)) = (sysmem::budget_mb(), sysmem::process_memory_mb()) else { return Ok(()) };
     let need = now + pipeline_mb(w, h) + model.spec().ram_mb as u64;
     if need > budget {
-        return Err(format!(
-            "A {w} x {h} px image needs about {need} MB with {}, more than the {budget} MB ({}% of the memory) the application may use. Choose a lighter model.",
-            model.spec().name,
-            sysmem::budget_percent()
-        ));
+        let (w, h, need, budget) = (w.to_string(), h.to_string(), need.to_string(), budget.to_string());
+        let percent = sysmem::budget_percent().to_string();
+        let vars = [
+            ("w", w.as_str()),
+            ("h", h.as_str()),
+            ("need", need.as_str()),
+            ("model", model.spec().name.as_str()),
+            ("budget", budget.as_str()),
+            ("percent", percent.as_str()),
+        ];
+        return Err(tf("A {w} x {h} px image needs about {need} MB with {model}, more than the {budget} MB ({percent}% of the memory) the application may use. Choose a lighter model.", &vars));
     }
     Ok(())
 }
@@ -152,10 +156,10 @@ impl Ctl {
         std::thread::spawn(move || {
             let state = &me.st;
             let result = (|| -> Result<Predictor, String> {
-                let spec = state.models().into_iter().find(|s| s.id == id).ok_or("unknown model")?;
+                let spec = state.models().into_iter().find(|s| s.id == id).ok_or_else(|| t("Unknown model."))?;
                 let path = state.model_path(&spec);
                 if !path.is_file() {
-                    return Err("model file is missing".into());
+                    return Err(t("The model file is missing."));
                 }
                 let (accel, fast) = {
                     let s = state.settings.guard();
@@ -187,10 +191,10 @@ impl Ctl {
     pub fn use_model(self: &Arc<Self>, id: &str) {
         let Some(spec) = self.st.models().into_iter().find(|s| s.id == id) else { return };
         if spec.kind != ModelKind::Segmenter {
-            return self.say("this model is used by Smart select, not as the cut-out model", true);
+            return self.say(t("This model is used by Smart select, not as the cut-out model."), true);
         }
         if !self.st.is_ready(&spec) {
-            return self.say("download this model first", true);
+            return self.say(t("Download this model first."), true);
         }
         self.st.settings.guard().chosen_model = Some(id.to_string());
         self.save_settings();

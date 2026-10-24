@@ -199,5 +199,18 @@
   "Fastest option (under a second on CPU). Good on clear subjects, softer on hair.": "Die schnellste Option (unter einer Sekunde auf der CPU). Gut bei klaren Motiven, weicher bei Haaren.",
   "Point at a subject to select it: click what to keep, right-click what to leave out, or drag a box. Used by the Smart select tool.": "Zeigen Sie auf ein Motiv, um es auszuwählen: Klick für Behalten, Rechtsklick für Weglassen oder einen Rahmen aufziehen. Wird vom Werkzeug Intelligente Auswahl verwendet.",
   "Cannot save the settings: {error}": "Die Einstellungen konnten nicht gespeichert werden: {error}",
-  "Cannot read the background picture: {file}": "Das Hintergrundbild kann nicht gelesen werden: {file}"
+  "Cannot read the background picture: {file}": "Das Hintergrundbild kann nicht gelesen werden: {file}",
+  "Cannot read file {file}: {error}": "Die Datei {file} kann nicht gelesen werden: {error}",
+  "Cannot open project: {error}": "Das Projekt kann nicht geöffnet werden: {error}",
+  "No image is open.": "Es ist kein Bild geöffnet.",
+  "This plug-in is not enabled.": "Dieses Plug-in ist nicht aktiviert.",
+  "Unsupported file type: use png, jpg, webp, bmp or tiff.": "Dateityp wird nicht unterstützt: Verwenden Sie png, jpg, webp, bmp oder tiff.",
+  "{model} needs about {need} MB, more than the {budget} MB ({percent}% of the memory) the application may use. Choose a lighter model.": "{model} benötigt etwa {need} MB, mehr als die {budget} MB ({percent} % des Speichers), die die Anwendung nutzen darf. Wählen Sie ein leichteres Modell.",
+  "Not enough free memory to run {model}: about {need} MB are needed and {free} MB are free. Close other applications or turn off \"Use more memory for speed\".": "Nicht genug freier Speicher für {model}: Etwa {need} MB werden benötigt, {free} MB sind frei. Schließen Sie andere Anwendungen oder deaktivieren Sie „Mehr Speicher für mehr Tempo verwenden“.",
+  "Not enough free memory to run {model}: about {need} MB are needed and {free} MB are free. Close other applications or choose a lighter model.": "Nicht genug freier Speicher für {model}: Etwa {need} MB werden benötigt, {free} MB sind frei. Schließen Sie andere Anwendungen oder wählen Sie ein leichteres Modell.",
+  "A {w} x {h} px image needs about {need} MB with {model}, more than the {budget} MB ({percent}% of the memory) the application may use. Choose a lighter model.": "Ein Bild mit {w} x {h} px benötigt mit {model} etwa {need} MB, mehr als die {budget} MB ({percent} % des Speichers), die die Anwendung nutzen darf. Wählen Sie ein leichteres Modell.",
+  "Unknown model.": "Unbekanntes Modell.",
+  "The model file is missing.": "Die Modelldatei fehlt.",
+  "This model is used by Smart select, not as the cut-out model.": "Dieses Modell wird für die intelligente Auswahl verwendet, nicht zum Freistellen.",
+  "Download this model first.": "Laden Sie dieses Modell zuerst herunter."
 }

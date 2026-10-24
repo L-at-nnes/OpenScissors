@@ -199,5 +199,18 @@
   "Fastest option (under a second on CPU). Good on clear subjects, softer on hair.": "Самый быстрый вариант (меньше секунды на процессоре). Хорош для чётких объектов, мягче на волосах.",
   "Point at a subject to select it: click what to keep, right-click what to leave out, or drag a box. Used by the Smart select tool.": "Укажите объект, чтобы выделить его: щелчок — оставить, правый щелчок — исключить, либо протяните рамку. Используется инструментом «Умное выделение».",
   "Cannot save the settings: {error}": "Не удалось сохранить настройки: {error}",
-  "Cannot read the background picture: {file}": "Не удаётся прочитать фоновое изображение: {file}"
+  "Cannot read the background picture: {file}": "Не удаётся прочитать фоновое изображение: {file}",
+  "Cannot read file {file}: {error}": "Не удаётся прочитать файл {file}: {error}",
+  "Cannot open project: {error}": "Не удаётся открыть проект: {error}",
+  "No image is open.": "Нет открытого изображения.",
+  "This plug-in is not enabled.": "Этот плагин не включён.",
+  "Unsupported file type: use png, jpg, webp, bmp or tiff.": "Тип файла не поддерживается: используйте png, jpg, webp, bmp или tiff.",
+  "{model} needs about {need} MB, more than the {budget} MB ({percent}% of the memory) the application may use. Choose a lighter model.": "Для {model} нужно около {need} МБ, больше, чем {budget} МБ ({percent} % памяти), доступных приложению. Выберите более лёгкую модель.",
+  "Not enough free memory to run {model}: about {need} MB are needed and {free} MB are free. Close other applications or turn off \"Use more memory for speed\".": "Недостаточно свободной памяти для {model}: нужно около {need} МБ, свободно {free} МБ. Закройте другие приложения или отключите «Использовать больше памяти ради скорости».",
+  "Not enough free memory to run {model}: about {need} MB are needed and {free} MB are free. Close other applications or choose a lighter model.": "Недостаточно свободной памяти для {model}: нужно около {need} МБ, свободно {free} МБ. Закройте другие приложения или выберите более лёгкую модель.",
+  "A {w} x {h} px image needs about {need} MB with {model}, more than the {budget} MB ({percent}% of the memory) the application may use. Choose a lighter model.": "Для изображения {w} x {h} px с {model} нужно около {need} МБ, больше, чем {budget} МБ ({percent} % памяти), доступных приложению. Выберите более лёгкую модель.",
+  "Unknown model.": "Неизвестная модель.",
+  "The model file is missing.": "Файл модели отсутствует.",
+  "This model is used by Smart select, not as the cut-out model.": "Эта модель используется для умного выделения, а не для удаления фона.",
+  "Download this model first.": "Сначала скачайте эту модель."
 }
