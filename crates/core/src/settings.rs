@@ -72,10 +72,47 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Read the settings file. A missing file gives the defaults. A value of the wrong type only resets that one
+    /// field (the rest of the file is kept); when anything had to be dropped, the original file is first copied to
+    /// `settings.json.bak` so nothing the user typed is lost for good.
     pub fn load(path: &Path) -> Self {
-        let mut s: Self = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        let Ok(text) = std::fs::read_to_string(path) else { return Self::default().sanitized() };
+        let (mut s, clean) = Self::from_json(&text);
+        if !clean {
+            let mut bak = path.as_os_str().to_owned();
+            bak.push(".bak");
+            match std::fs::copy(path, &bak) {
+                Ok(_) => eprintln!("OpenScissors: some settings were invalid; the original file is kept in {}", Path::new(&bak).display()),
+                Err(e) => eprintln!("OpenScissors: some settings were invalid and the backup failed: {e}"),
+            }
+        }
         s.sanitize();
         s
+    }
+
+    /// Parse `text` field by field, nested ones included. Returns the settings and whether every value was accepted.
+    fn from_json(text: &str) -> (Self, bool) {
+        let Ok(serde_json::Value::Object(file)) = serde_json::from_str(text) else { return (Self::default(), false) };
+        let mut root = serde_json::to_value(Self::default()).expect("settings serialize");
+        let mut clean = true;
+        let mut leaves = Vec::new();
+        collect_leaves(&root, &serde_json::Value::Object(file), &mut Vec::new(), &mut leaves);
+        for (path, value) in leaves {
+            let mut candidate = root.clone();
+            let slot = path.iter().fold(&mut candidate, |v, k| &mut v[k.as_str()]);
+            *slot = value;
+            if serde_json::from_value::<Self>(candidate.clone()).is_ok() {
+                root = candidate;
+            } else {
+                clean = false;
+            }
+        }
+        (serde_json::from_value(root).unwrap_or_default(), clean)
+    }
+
+    fn sanitized(mut self) -> Self {
+        self.sanitize();
+        self
     }
 
     /// A settings file can be edited by hand: bring every value back into the range the interface allows.
@@ -98,6 +135,22 @@ impl Settings {
         self.recent.retain(|p| p != path);
         self.recent.insert(0, path.to_string());
         self.recent.truncate(10);
+    }
+}
+
+/// The values of `file` that can be applied one by one over `base`: it descends into the objects both have, and
+/// stops at anything else (a number, a list, an unknown key is a single value).
+fn collect_leaves(base: &serde_json::Value, file: &serde_json::Value, path: &mut Vec<String>, out: &mut Vec<(Vec<String>, serde_json::Value)>) {
+    let (serde_json::Value::Object(b), serde_json::Value::Object(f)) = (base, file) else { return };
+    for (key, value) in f {
+        let Some(base_value) = b.get(key) else { continue };
+        path.push(key.clone());
+        if base_value.is_object() && value.is_object() {
+            collect_leaves(base_value, value, path, out);
+        } else {
+            out.push((path.clone(), value.clone()));
+        }
+        path.pop();
     }
 }
 
@@ -136,6 +189,31 @@ mod tests {
         let s = Settings::load(&file);
         assert_eq!((s.marker_size, s.jpeg_quality, s.ram_percent), (300, 10, 25));
         assert_eq!(s.defaults.shadow.opacity, 100);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn one_wrong_value_only_resets_that_field_and_the_file_is_backed_up() {
+        let dir = std::env::temp_dir().join(format!("osc-settings-bak-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("settings.json");
+        let text = r#"{"locale":"fr","marker_size":"big","jpeg_quality":80,"recent":["a.png"],"unknown":1,
+            "defaults":{"shadow":{"enabled":true,"opacity":"x"},"background":7}}"#;
+        std::fs::write(&file, text).unwrap();
+        let s = Settings::load(&file);
+        assert_eq!((s.locale.as_str(), s.jpeg_quality, s.recent.len()), ("fr", 80, 1));
+        assert_eq!(s.marker_size, 30, "the wrong value falls back to its default");
+        assert!(s.defaults.shadow.enabled, "a good value next to a bad one is kept");
+        assert_eq!(s.defaults.shadow.opacity, Params::default().shadow.opacity);
+        assert_eq!(std::fs::read_to_string(dir.join("settings.json.bak")).unwrap(), text, "the original is saved");
+        // A clean file leaves no backup, a file that is not JSON at all is also saved.
+        let clean = dir.join("clean.json");
+        std::fs::write(&clean, r#"{"locale":"de"}"#).unwrap();
+        assert_eq!(Settings::load(&clean).locale, "de");
+        assert!(!dir.join("clean.json.bak").exists());
+        std::fs::write(&clean, "{ not json").unwrap();
+        assert_eq!(Settings::load(&clean).locale, "en");
+        assert_eq!(std::fs::read_to_string(dir.join("clean.json.bak")).unwrap(), "{ not json");
         std::fs::remove_dir_all(dir).ok();
     }
 
