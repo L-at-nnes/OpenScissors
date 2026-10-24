@@ -1,6 +1,6 @@
 //! Image file input/output.
 
-use std::io::BufWriter;
+use std::io::Cursor;
 use std::path::Path;
 
 use image::codecs::jpeg::JpegEncoder;
@@ -161,45 +161,40 @@ pub fn flatten(rgba: &Rgba, bg: [u8; 3]) -> Image {
 
 /// Save `rgba` in `format`. Formats without alpha are flattened on `flatten_color`.
 /// `quality` (10-100) only applies to JPEG; WebP is written lossless.
+/// The file is encoded in memory first and written with [`write_atomic`], so a failure never leaves a truncated file.
 pub fn save_rgba(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_color: [u8; 3]) -> Result<()> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
+    let mut out = Cursor::new(Vec::new());
     if format.supports_alpha() {
         let buf = image::RgbaImage::from_raw(w, h, rgba.data.clone()).ok_or_else(|| Error::msg("bad RGBA buffer"))?;
         match format {
-            Format::Png => {
-                let f = BufWriter::new(std::fs::File::create(path)?);
-                image::codecs::png::PngEncoder::new(f).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?;
-            }
-            Format::Webp => {
-                let f = BufWriter::new(std::fs::File::create(path)?);
-                image::codecs::webp::WebPEncoder::new_lossless(f).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?;
-            }
-            _ => DynamicImage::ImageRgba8(buf).save_with_format(path, image::ImageFormat::Tiff)?,
+            Format::Png => image::codecs::png::PngEncoder::new(&mut out).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?,
+            Format::Webp => image::codecs::webp::WebPEncoder::new_lossless(&mut out).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?,
+            _ => DynamicImage::ImageRgba8(buf).write_to(&mut out, image::ImageFormat::Tiff)?,
         }
     } else {
         let flat = flatten(rgba, flatten_color);
         let buf = image::RgbImage::from_raw(w, h, flat.data).ok_or_else(|| Error::msg("bad RGB buffer"))?;
         match format {
-            Format::Jpeg => {
-                let f = BufWriter::new(std::fs::File::create(path)?);
-                JpegEncoder::new_with_quality(f, quality.clamp(10, 100)).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgb8)?;
-            }
-            _ => DynamicImage::ImageRgb8(buf).save_with_format(path, image::ImageFormat::Bmp)?,
+            Format::Jpeg => JpegEncoder::new_with_quality(&mut out, quality.clamp(10, 100)).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgb8)?,
+            _ => DynamicImage::ImageRgb8(buf).write_to(&mut out, image::ImageFormat::Bmp)?,
         }
     }
+    write_atomic(path, &out.into_inner())?;
     Ok(())
 }
 
-/// Save 16-bit RGBA as PNG or TIFF.
+/// Save 16-bit RGBA as PNG or TIFF (atomically, like [`save_rgba`]).
 pub fn save_rgba16(path: &Path, rgba: &Rgba16, format: Format) -> Result<()> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
     let bytes: Vec<u8> = rgba.data.iter().flat_map(|v| v.to_ne_bytes()).collect();
-    let file = BufWriter::new(std::fs::File::create(path)?);
+    let mut out = Cursor::new(Vec::new());
     match format {
-        Format::Png => image::codecs::png::PngEncoder::new(file).write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?,
-        Format::Tiff => image::codecs::tiff::TiffEncoder::new(file).write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?,
+        Format::Png => image::codecs::png::PngEncoder::new(&mut out).write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?,
+        Format::Tiff => image::codecs::tiff::TiffEncoder::new(&mut out).write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?,
         _ => return Err(Error::msg("16-bit output needs PNG or TIFF")),
     }
+    write_atomic(path, &out.into_inner())?;
     Ok(())
 }
 
@@ -251,6 +246,32 @@ mod tests {
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file is left");
         // A folder that does not exist is an error, not a silent loss.
         assert!(write_atomic(&dir.join("missing").join("b.json"), b"x").is_err());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_failed_export_keeps_the_previous_file_and_leaves_no_temporary_file() {
+        let dir = std::env::temp_dir().join(format!("osc-save-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("out.png");
+        std::fs::write(&file, b"previous export").unwrap();
+        // A buffer whose length does not match its size cannot be encoded.
+        let broken = Rgba { w: 4, h: 4, data: vec![0; 3] };
+        assert!(save_rgba(&file, &broken, Format::Png, 95, [255; 3]).is_err());
+        assert!(save_rgba(&file, &broken, Format::Jpeg, 95, [255; 3]).is_err());
+        assert_eq!(std::fs::read(&file).unwrap(), b"previous export", "the old file is untouched");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file is left");
+        // A good export replaces it, in every format that is written.
+        let ok = Rgba::new(3, 3);
+        for (name, f) in [("a.png", Format::Png), ("a.webp", Format::Webp), ("a.tiff", Format::Tiff), ("a.jpg", Format::Jpeg), ("a.bmp", Format::Bmp)] {
+            save_rgba(&dir.join(name), &ok, f, 90, [255; 3]).unwrap();
+            assert_eq!(load_image(&dir.join(name)).unwrap().w, 3, "{name}");
+        }
+        let deep = Rgba16 { w: 2, h: 2, data: vec![40_000; 16] };
+        save_rgba16(&dir.join("d.png"), &deep, Format::Png).unwrap();
+        assert!(load_image_deep(&dir.join("d.png")).unwrap().deep.is_some());
+        assert!(save_rgba16(&dir.join("d.bmp"), &deep, Format::Bmp).is_err());
+        assert!(!dir.join("d.bmp").exists());
         std::fs::remove_dir_all(dir).ok();
     }
 
