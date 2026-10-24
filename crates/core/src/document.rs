@@ -257,7 +257,9 @@ impl Document {
             .map(|c| match c {
                 Command::AddStroke(s) => strokes(std::slice::from_ref(s)),
                 Command::SetPrediction { old, new } => mask(old) + mask(new),
-                Command::SetParam { path, old, new, .. } => path.len() + 2 * std::mem::size_of::<Value>() + old.to_string().len() + new.to_string().len(),
+                Command::SetParam { path, old, new, .. } => {
+                    path.len() + 2 * std::mem::size_of::<Value>() + old.to_string().len() + new.to_string().len()
+                }
                 Command::SetParams { .. } => 2 * params,
                 Command::SetStrokes { old, new } => strokes(old) + strokes(new),
             })

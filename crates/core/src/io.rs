@@ -168,15 +168,24 @@ pub fn save_rgba(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_
     if format.supports_alpha() {
         let buf = image::RgbaImage::from_raw(w, h, rgba.data.clone()).ok_or_else(|| Error::msg("bad RGBA buffer"))?;
         match format {
-            Format::Png => image::codecs::png::PngEncoder::new(&mut out).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?,
-            Format::Webp => image::codecs::webp::WebPEncoder::new_lossless(&mut out).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?,
+            Format::Png => {
+                image::codecs::png::PngEncoder::new(&mut out).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?
+            }
+            Format::Webp => {
+                image::codecs::webp::WebPEncoder::new_lossless(&mut out).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?
+            }
             _ => DynamicImage::ImageRgba8(buf).write_to(&mut out, image::ImageFormat::Tiff)?,
         }
     } else {
         let flat = flatten(rgba, flatten_color);
         let buf = image::RgbImage::from_raw(w, h, flat.data).ok_or_else(|| Error::msg("bad RGB buffer"))?;
         match format {
-            Format::Jpeg => JpegEncoder::new_with_quality(&mut out, quality.clamp(10, 100)).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgb8)?,
+            Format::Jpeg => JpegEncoder::new_with_quality(&mut out, quality.clamp(10, 100)).write_image(
+                buf.as_raw(),
+                w,
+                h,
+                image::ExtendedColorType::Rgb8,
+            )?,
             _ => DynamicImage::ImageRgb8(buf).write_to(&mut out, image::ImageFormat::Bmp)?,
         }
     }
@@ -263,7 +272,9 @@ mod tests {
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file is left");
         // A good export replaces it, in every format that is written.
         let ok = Rgba::new(3, 3);
-        for (name, f) in [("a.png", Format::Png), ("a.webp", Format::Webp), ("a.tiff", Format::Tiff), ("a.jpg", Format::Jpeg), ("a.bmp", Format::Bmp)] {
+        for (name, f) in
+            [("a.png", Format::Png), ("a.webp", Format::Webp), ("a.tiff", Format::Tiff), ("a.jpg", Format::Jpeg), ("a.bmp", Format::Bmp)]
+        {
             save_rgba(&dir.join(name), &ok, f, 90, [255; 3]).unwrap();
             assert_eq!(load_image(&dir.join(name)).unwrap().w, 3, "{name}");
         }

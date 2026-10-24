@@ -289,7 +289,8 @@ impl ProcessTree {
     }
 
     fn kill(&self, child: &mut Child) {
-        let _ = Command::new("kill").args(["-KILL", "--", &format!("-{}", self.group)]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+        let _ =
+            Command::new("kill").args(["-KILL", "--", &format!("-{}", self.group)]).stdout(Stdio::null()).stderr(Stdio::null()).status();
         let _ = child.kill();
     }
 }

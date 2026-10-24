@@ -140,7 +140,12 @@ impl Settings {
 
 /// The values of `file` that can be applied one by one over `base`: it descends into the objects both have, and
 /// stops at anything else (a number, a list, an unknown key is a single value).
-fn collect_leaves(base: &serde_json::Value, file: &serde_json::Value, path: &mut Vec<String>, out: &mut Vec<(Vec<String>, serde_json::Value)>) {
+fn collect_leaves(
+    base: &serde_json::Value,
+    file: &serde_json::Value,
+    path: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, serde_json::Value)>,
+) {
     let (serde_json::Value::Object(b), serde_json::Value::Object(f)) = (base, file) else { return };
     for (key, value) in f {
         let Some(base_value) = b.get(key) else { continue };
