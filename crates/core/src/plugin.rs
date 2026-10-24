@@ -10,19 +10,25 @@
 //! `command` is a file inside the plug-in folder (never a path outside it, never a shell string); `args` may use
 //! `{input}` (the exported file) and `{dir}` (its folder). A plug-in is never run automatically: the user turns it
 //! on, then clicks *Run* on the last saved file. It runs with the plug-in folder as working directory, is killed
-//! after 60 seconds, and the last lines of its output are shown. Plug-ins are code the user installed: OpenScissors
+//! after 60 seconds (with everything it started), and the last lines of its output are shown. Plug-ins are code the user installed: OpenScissors
 //! grants them nothing, and says so when one is enabled.
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::sync::LockExt;
 
 pub const RUN_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long the output pipes may stay open after the plug-in itself has finished. A program it started and left
+/// running keeps them open; past this delay that program is stopped instead of freezing the application.
+const PIPE_GRACE: Duration = Duration::from_secs(2);
 const OUTPUT_TAIL: usize = 2000;
 
 fn default_args() -> Vec<String> {
@@ -161,14 +167,22 @@ pub fn run(plugin: &Plugin, input: &Path, timeout: Duration) -> Result<RunOutput
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    let mut child = cmd.spawn()?;
-    // Drain both pipes on threads so a chatty program cannot block on a full pipe.
-    let mut readers = Vec::new();
-    if let Some(mut s) = child.stdout.take() {
-        readers.push(std::thread::spawn(move || read_all(&mut s)));
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0); // its own group, so that the whole tree can be stopped
     }
-    if let Some(mut s) = child.stderr.take() {
-        readers.push(std::thread::spawn(move || read_all(&mut s)));
+    let mut child = cmd.spawn()?;
+    let tree = ProcessTree::attach(&child);
+    // Drain both pipes on threads so a chatty program cannot block on a full pipe. They append to one shared buffer, so
+    // what was printed so far is still there if a pipe never closes.
+    let printed = Arc::new(Mutex::new(Vec::new()));
+    let mut readers: Vec<JoinHandle<()>> = Vec::new();
+    if let Some(s) = child.stdout.take() {
+        readers.push(drain(s, printed.clone()));
+    }
+    if let Some(s) = child.stderr.take() {
+        readers.push(drain(s, printed.clone()));
     }
     let start = Instant::now();
     let status = loop {
@@ -176,25 +190,108 @@ pub fn run(plugin: &Plugin, input: &Path, timeout: Duration) -> Result<RunOutput
             break s;
         }
         if start.elapsed() > timeout {
-            let _ = child.kill();
+            tree.kill(&mut child);
             let _ = child.wait();
             return Err(Error::msg(format!("the plug-in did not finish within {} seconds and was stopped", timeout.as_secs())));
         }
         std::thread::sleep(Duration::from_millis(25));
     };
-    let mut output = String::new();
-    for r in readers {
-        output.push_str(&r.join().unwrap_or_default());
+    if !wait_finished(&readers, PIPE_GRACE) {
+        eprintln!("OpenScissors: plug-in '{}' left a program running after it finished; stopping it", plugin.manifest.id);
+        tree.kill(&mut child);
+        wait_finished(&readers, PIPE_GRACE);
     }
+    let output = String::from_utf8_lossy(&printed.guard()).into_owned();
     let output = output.trim();
     let tail: String = output.chars().rev().take(OUTPUT_TAIL).collect::<Vec<_>>().into_iter().rev().collect();
     Ok(RunOutput { success: status.success(), output: tail })
 }
 
-fn read_all(r: &mut impl Read) -> String {
-    let mut buf = Vec::new();
-    let _ = r.read_to_end(&mut buf);
-    String::from_utf8_lossy(&buf).into_owned()
+/// Copy everything `r` produces into `into`, as it comes.
+fn drain(mut r: impl Read + Send + 'static, into: Arc<Mutex<Vec<u8>>>) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut chunk = [0u8; 4096];
+        while let Ok(n) = r.read(&mut chunk) {
+            if n == 0 {
+                break;
+            }
+            into.guard().extend_from_slice(&chunk[..n]);
+        }
+    })
+}
+
+/// Wait up to `limit` for every reader to end; false if one is still going.
+fn wait_finished(readers: &[JoinHandle<()>], limit: Duration) -> bool {
+    let start = Instant::now();
+    while !readers.iter().all(JoinHandle::is_finished) {
+        if start.elapsed() >= limit {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    true
+}
+
+/// A way to stop a program together with everything it started (a script usually runs other programs).
+/// Windows: a job object that also kills its members when closed. Unix: the process group the plug-in leads.
+struct ProcessTree {
+    #[cfg(windows)]
+    job: windows_sys::Win32::Foundation::HANDLE,
+    #[cfg(unix)]
+    group: u32,
+}
+
+#[cfg(windows)]
+impl ProcessTree {
+    fn attach(child: &Child) -> Self {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::*;
+        // SAFETY: plain Win32 calls on handles owned here; the limit structure is plain data, zero is a valid start.
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if !job.is_null() {
+                let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let size = std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32;
+                let set = SetInformationJobObject(job, JobObjectExtendedLimitInformation, std::ptr::addr_of!(limits).cast(), size);
+                if set == 0 || AssignProcessToJobObject(job, child.as_raw_handle() as _) == 0 {
+                    windows_sys::Win32::Foundation::CloseHandle(job);
+                    return Self { job: std::ptr::null_mut() };
+                }
+            }
+            Self { job }
+        }
+    }
+
+    fn kill(&self, child: &mut Child) {
+        if !self.job.is_null() {
+            // SAFETY: `job` is a live job object handle.
+            unsafe { windows_sys::Win32::System::JobObjects::TerminateJobObject(self.job, 1) };
+        }
+        let _ = child.kill();
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ProcessTree {
+    fn drop(&mut self) {
+        if !self.job.is_null() {
+            // SAFETY: closing the handle also ends whatever is still in the job.
+            unsafe { windows_sys::Win32::Foundation::CloseHandle(self.job) };
+        }
+    }
+}
+
+#[cfg(unix)]
+impl ProcessTree {
+    fn attach(child: &Child) -> Self {
+        Self { group: child.id() }
+    }
+
+    fn kill(&self, child: &mut Child) {
+        let _ = Command::new("kill").args(["-KILL", "--", &format!("-{}", self.group)]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+        let _ = child.kill();
+    }
 }
 
 #[cfg(test)]
@@ -300,6 +397,27 @@ mod tests {
         let started = Instant::now();
         let err = run(&get("slow"), &file, Duration::from_millis(500)).unwrap_err();
         assert!(err.to_string().contains("did not finish") && started.elapsed() < Duration::from_secs(5));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_program_left_running_by_a_plugin_does_not_freeze_the_wait() {
+        let root = tmp("stray");
+        // The script ends at once, but the program it started keeps the output pipes open for 30 seconds.
+        install(
+            &root,
+            "stray",
+            serde_json::json!({ "id": "stray", "name": "S" }),
+            "start /b ping -n 30 127.0.0.1\r\necho finished",
+            "sleep 30 &\necho finished",
+        );
+        let file = root.join("f.png");
+        std::fs::write(&file, b"x").unwrap();
+        let plugin = discover(&root).into_iter().next().unwrap().plugin.unwrap();
+        let started = Instant::now();
+        let out = run(&plugin, &file, Duration::from_secs(20)).unwrap();
+        assert!(out.success && out.output.contains("finished"), "{out:?}");
+        assert!(started.elapsed() < Duration::from_secs(10), "returned after {:?}", started.elapsed());
         std::fs::remove_dir_all(root).ok();
     }
 
