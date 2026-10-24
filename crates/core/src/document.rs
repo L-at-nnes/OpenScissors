@@ -104,6 +104,8 @@ pub struct Document {
     /// Path of a background picture that failed to load, so that `prepare()` does not try again at every call.
     bg_failed: Option<String>,
     filled: Option<(FillKey, Image)>,
+    /// The canvas of the result (the crop) for `rev`, kept while a background picture has to cover it.
+    frame: Option<(u64, Rect)>,
 }
 
 type FillKey = (u64, i32, u32);
@@ -140,6 +142,7 @@ impl Document {
             bg: None,
             bg_failed: None,
             filled: None,
+            frame: None,
         }
     }
 
@@ -555,6 +558,11 @@ impl Document {
                 self.filled = Some((key, inpaint::fill_hole(&self.image, &hole)));
             }
         }
+        if self.params.background.mode == BgMode::Image && self.frame.as_ref().map(|(r, _)| *r) != Some(self.rev) {
+            let alpha = self.alpha.as_ref().expect("alpha ready");
+            let finished = self.params.background.fit_to_result.then(|| render::finished_alpha(alpha, &self.params));
+            self.frame = Some((self.rev, crop::effective_crop(&self.params, finished.as_ref(), (w as f64, h as f64))));
+        }
     }
 
     fn scene(&self) -> Scene<'_> {
@@ -564,6 +572,7 @@ impl Document {
             params: &self.params,
             bg_image: self.bg.as_ref().map(|(_, i)| i),
             filled: self.filled.as_ref().map(|(_, i)| i),
+            frame: self.frame.filter(|_| self.params.background.mode == BgMode::Image).map(|(_, r)| r),
         }
     }
 

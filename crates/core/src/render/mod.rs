@@ -27,6 +27,9 @@ pub struct Scene<'a> {
     pub bg_image: Option<&'a Image>,
     /// Original with the subject filled in, when `fill_hole` is on.
     pub filled: Option<&'a Image>,
+    /// The canvas that is exported (the crop, in image coordinates, possibly past the picture). A background picture
+    /// covers this frame, not the picture. `None` = the whole picture.
+    pub frame: Option<Rect>,
 }
 
 /// Margin, in output pixels, that the preview gives a tile for the blurs, the boundary offset and the shadow to find
@@ -159,8 +162,10 @@ fn render_region_with(scene: &Scene, region: Rect, out_w: usize, out_h: usize, m
         BgMode::Color => (Image::filled(ew, eh, p.background.color), true),
         BgMode::Image => match scene.bg_image {
             Some(pic) => {
-                let sc = (iw / pic.w as f64).max(ih / pic.h as f64);
-                let (ox, oy) = ((iw - pic.w as f64 * sc) / 2.0, (ih - pic.h as f64 * sc) / 2.0);
+                let frame = scene.frame.unwrap_or(Rect::new(0.0, 0.0, iw, ih));
+                let sc = (frame.width() / pic.w as f64).max(frame.height() / pic.h as f64);
+                let ox = (frame.x0 + frame.x1 - pic.w as f64 * sc) / 2.0;
+                let oy = (frame.y0 + frame.y1 - pic.h as f64 * sc) / 2.0;
                 let r = Rect::new((exp.x0 - ox) / sc, (exp.y0 - oy) / sc, (exp.x1 - ox) / sc, (exp.y1 - oy) / sc);
                 let mut b = sample_image(pic, r, ew, eh, interp_for(scale * sc), true);
                 apply_filter(&mut b, &p.background.filter, scale, origin);
@@ -293,7 +298,7 @@ pub fn export_rgba(scene: &Scene) -> Rgba {
     let r = crop::effective_crop(scene.params, finished.as_ref(), (w as f64, h as f64));
     let (x0, y0, cw, ch) = crop_pixels(r);
     let region = Rect::new(x0 as f64, y0 as f64, (x0 + cw as i64) as f64, (y0 + ch as i64) as f64);
-    let cropped = render_region_with(scene, region, cw, ch, usize::MAX);
+    let cropped = render_region_with(&Scene { frame: Some(region), ..*scene }, region, cw, ch, usize::MAX);
     resize_to_output_width(cropped, scene.params.background.output_width as usize)
 }
 
@@ -401,7 +406,7 @@ mod tests {
     fn transparent_background_gives_mask_as_alpha_and_image_colours() {
         let (img, alpha) = scene_parts();
         let params = Params::default();
-        let out = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let out = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         for i in 0..80 * 60 {
             assert_eq!(out.data[i * 4 + 3], alpha.data[i]);
         }
@@ -415,7 +420,7 @@ mod tests {
         let mut params = Params::default();
         params.background.mode = BgMode::Color;
         params.background.color = [10, 20, 30];
-        let out = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let out = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert!(out.data.chunks_exact(4).all(|p| p[3] == 255));
         assert_eq!(&out.data[..3], &[10, 20, 30]);
     }
@@ -426,7 +431,7 @@ mod tests {
         let mut params = Params::default();
         params.background.mode = BgMode::Original;
         params.background.filter = FilterSpec { kind: FilterKind::Negative, ..Default::default() };
-        let out = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let out = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert_eq!(out.data[0], 255 - img.data[0]); // background negated, subject (inside mask) not
         let i = 30 * 80 + 40;
         assert_eq!(out.data[i * 4], img.data[i * 3]);
@@ -434,7 +439,7 @@ mod tests {
         let pic = Image::filled(40, 40, [9, 9, 9]);
         params.background.mode = BgMode::Image;
         params.background.filter = FilterSpec::default();
-        let out = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: Some(&pic), filled: None });
+        let out = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: Some(&pic), filled: None, frame: None });
         assert_eq!(&out.data[..4], &[9, 9, 9, 255]);
     }
 
@@ -443,10 +448,10 @@ mod tests {
         let (img, alpha) = scene_parts();
         let mut params = Params::default();
         let outside = (30 * 80 + 27) * 4 + 3; // 3 px left of the subject
-        let off = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let off = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert_eq!(off.data[outside], 0);
         params.shadow.enabled = true;
-        let on = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let on = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert!(on.data[outside] > 0 && (on.data[outside] as u32) < 255 * 75 / 100 + 1);
         assert_eq!(&on.data[outside - 3..outside], &[0, 0, 0]); // shadow colour
     }
@@ -457,7 +462,7 @@ mod tests {
         let mut params = Params::default();
         params.shadow.enabled = true;
         let at = |p: &Params, x: usize, y: usize| {
-            full(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None }).data[(y * 80 + x) * 4 + 3]
+            full(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None }).data[(y * 80 + x) * 4 + 3]
         };
         // 5 px right of the subject and 5 px left of it, in the middle of its height.
         let (right, left) = ((60, 30), (25, 30));
@@ -485,7 +490,7 @@ mod tests {
         params.shadow.offset_x = 4;
         params.shadow.offset_y = -3;
         params.foreground.filter = FilterSpec { kind: FilterKind::Blur, radius: 4, ..Default::default() };
-        let scene = Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None };
+        let scene = Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None };
         let whole = full(&scene);
         let tile = render_region(&scene, Rect::new(20.0, 10.0, 60.0, 50.0), 40, 40);
         let mut worst = 0i32;
@@ -513,9 +518,9 @@ mod tests {
         params.shadow.offset_x = 6;
         params.shadow.offset_y = 4;
         params.foreground.filter = FilterSpec { kind: FilterKind::Blur, radius: 5, ..Default::default() };
-        let whole = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let whole = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         params.crop = Some(Rect::new(22.0, 12.0, 62.0, 46.0));
-        let out = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let out = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert_eq!((out.w, out.h), (40, 34));
         let worst = (0..34)
             .flat_map(|y| (0..40).flat_map(move |x| (0..4).map(move |c| (x, y, c))))
@@ -541,8 +546,9 @@ mod tests {
             let i = (((y + 10) * 120 + x + 20) * 4) as usize;
             [o.data[i], o.data[i + 1], o.data[i + 2], o.data[i + 3]]
         };
-        let scene =
-            |p: &Params| render_region(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None }, region, 120, 80);
+        let scene = |p: &Params| {
+            render_region(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None }, region, 120, 80)
+        };
 
         // Transparent: nothing outside the picture, the picture itself as usual.
         let t = scene(&params);
@@ -573,11 +579,35 @@ mod tests {
     }
 
     #[test]
+    fn a_background_picture_covers_the_exported_frame_not_the_whole_picture() {
+        let (img, alpha) = scene_parts(); // 80 x 60, the subject spans x 30..55, y 20..40
+        let mut pic = Image::filled(40, 20, [200, 0, 0]);
+        for y in 0..20 {
+            for x in 20..40 {
+                pic.data[(y * 40 + x) * 3..(y * 40 + x) * 3 + 3].copy_from_slice(&[0, 0, 200]);
+            }
+        }
+        let mut params = Params::default();
+        params.background.mode = BgMode::Image;
+        let export =
+            |p: &Params| export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: Some(&pic), filled: None, frame: None });
+        // Uncropped, the picture is stretched over the whole 80 x 60 picture: red on the left half, blue on the right.
+        let whole = export(&params);
+        assert_eq!((&whole.data[(5 * 80 + 5) * 4..][..3], &whole.data[(5 * 80 + 75) * 4..][..3]), (&[200, 0, 0][..], &[0, 0, 200][..]));
+        // Cropped to the top-left 40 x 30 corner, the picture is scaled to that frame: both halves are visible in it.
+        params.crop = Some(Rect::new(0.0, 0.0, 40.0, 30.0));
+        let corner = export(&params);
+        assert_eq!((corner.w, corner.h), (40, 30));
+        assert_eq!(&corner.data[(5 * 40 + 5) * 4..][..3], &[200, 0, 0]);
+        assert_eq!(&corner.data[(5 * 40 + 35) * 4..][..3], &[0, 0, 200], "the right half of the picture reaches the frame");
+    }
+
+    #[test]
     fn downscaled_preview_has_requested_size_and_similar_mean() {
         let (img, alpha) = scene_parts();
         let mut params = Params::default();
         params.background.mode = BgMode::Color;
-        let scene = Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None };
+        let scene = Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None };
         let small = render_region(&scene, Rect::new(0.0, 0.0, 80.0, 60.0), 40, 30);
         assert_eq!((small.w, small.h, small.data.len()), (40, 30, 40 * 30 * 4));
     }
@@ -609,11 +639,11 @@ mod tests {
         img.data[halo * 3..halo * 3 + 3].copy_from_slice(&[255, 255, 255]);
         alpha.data[halo] = 128;
         let mut params = Params::default();
-        let off = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let off = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert_eq!(&off.data[halo * 4..halo * 4 + 3], &[255, 255, 255]);
         assert!(deep_blocker(&params).is_none());
         params.foreground.defringe = 2;
-        let on = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let on = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert_eq!(&on.data[halo * 4..halo * 4 + 3], &[200, 0, 0]);
         assert_eq!(on.data[halo * 4 + 3], 128, "the transparency is untouched");
         assert!(deep_blocker(&params).is_some());
@@ -624,7 +654,7 @@ mod tests {
         let (img, alpha) = scene_parts();
         let mut params = Params::default();
         let size = |p: &Params| {
-            let o = export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None });
+            let o = export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None });
             (o.w, o.h, o.data.len())
         };
         assert_eq!(size(&params), (80, 60, 80 * 60 * 4));
@@ -644,7 +674,7 @@ mod tests {
         params.background.mode = BgMode::Color;
         params.background.color = [10, 20, 30];
         let inside = (30 * 80 + 40) * 4;
-        let render = |p: &Params| export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None });
+        let render = |p: &Params| export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None });
         let plain = render(&params);
         params.foreground.brightness = 50;
         params.foreground.saturation = -100;
@@ -660,12 +690,12 @@ mod tests {
     fn export_applies_the_crop() {
         let (img, alpha) = scene_parts();
         let mut params = Params { crop: Some(Rect::new(10.0, 5.0, 50.0, 45.0)), ..Params::default() };
-        let out = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let out = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert_eq!((out.w, out.h), (40, 40));
         params.crop = None;
         params.background.fit_to_result = true;
         params.background.padding = 0;
-        let out = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        let out = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert_eq!((out.w, out.h), (25, 20));
     }
 }
