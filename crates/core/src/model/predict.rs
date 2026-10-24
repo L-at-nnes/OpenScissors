@@ -13,6 +13,7 @@ use super::registry::{ModelSpec, OutputNorm};
 use crate::error::{Error, Result};
 use crate::imaging::guided::guided_filter;
 use crate::imaging::resize::{resize_image, resize_mask, Interp};
+use crate::sync::LockExt;
 use crate::types::{Image, Mask};
 
 const UPSAMPLE_R: usize = 1;
@@ -175,7 +176,7 @@ impl Predictor {
             });
         }
         let tensor = Tensor::from_array(([1usize, 3, in_h, in_w], x))?;
-        let mut session = self.session.lock().map_err(|_| Error::msg("model session poisoned"))?;
+        let mut session = self.session.guard();
         let outputs = session.run(ort::inputs![self.input.as_str() => tensor])?;
         let out = match &self.spec.output_name {
             Some(n) => outputs.get(n.as_str()).ok_or_else(|| Error::msg(format!("model has no output '{n}'")))?,

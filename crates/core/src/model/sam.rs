@@ -19,6 +19,7 @@ use serde::Deserialize;
 use super::predict::{cpu_session, upsample_guided};
 use crate::error::{Error, Result};
 use crate::imaging::resize::{resize_image, Interp};
+use crate::sync::LockExt;
 use crate::types::{Image, Mask};
 
 /// Network frame: images are stretched to this square.
@@ -118,7 +119,7 @@ impl Sam2 {
             );
         }
         let tensor = Tensor::from_array(([1usize, 3, FRAME, FRAME], x))?;
-        let mut session = self.encoder.lock().map_err(|_| Error::msg("SAM 2 encoder poisoned"))?;
+        let mut session = self.encoder.guard();
         let out = session.run(ort::inputs!["pixel_values" => tensor])?;
         let take = |i: usize| -> Result<Vec<f32>> { Ok(out[i].try_extract_tensor::<f32>()?.1.to_vec()) };
         Ok(Embeddings { e0: take(0)?, e1: take(1)?, e2: take(2)? })
@@ -129,7 +130,7 @@ impl Sam2 {
     pub fn select(&self, emb: &Embeddings, prompts: &[Prompt], img: &Image) -> Result<Mask> {
         let (points, labels, boxes) = prompt_tensors(prompts, img.w, img.h)?;
         let (np, nb) = (labels.len(), boxes.len() / 4);
-        let mut session = self.decoder.lock().map_err(|_| Error::msg("SAM 2 decoder poisoned"))?;
+        let mut session = self.decoder.guard();
         let out = session.run(ort::inputs![
             "input_points" => Tensor::from_array(([1usize, 1, np, 2], points))?,
             "input_labels" => Tensor::from_array(([1usize, 1, np], labels))?,
