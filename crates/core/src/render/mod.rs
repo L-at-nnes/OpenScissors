@@ -12,11 +12,12 @@ use rayon::prelude::*;
 
 use crate::imaging::filter::{box_blur_u8, gaussian_blur_u8};
 use crate::imaging::morph::{morph_ellipse, MorphOp};
-use crate::imaging::resize::{crop_resize_image, crop_resize_mask, resize_rgba, Interp};
+use crate::imaging::resize::{crop_resize_image, crop_resize_mask, resize_raw, resize_rgba, Interp};
 use crate::params::{BgMode, Params};
 use crate::types::{Image, Image16, Mask, Rect, Rgba, Rgba16};
 use filters::{adjust_colors, apply_filter, filter_margin};
 
+#[derive(Clone, Copy)]
 pub struct Scene<'a> {
     pub image: &'a Image,
     /// Composed mask before boundary offset and feathering.
@@ -27,6 +28,10 @@ pub struct Scene<'a> {
     /// Original with the subject filled in, when `fill_hole` is on.
     pub filled: Option<&'a Image>,
 }
+
+/// Margin, in output pixels, that the preview gives a tile for the blurs, the boundary offset and the shadow to find
+/// their context. It bounds the memory of a zoomed-in tile; the export does not use it.
+const PREVIEW_MARGIN_CAP: usize = 512;
 
 fn interp_for(scale: f64) -> Interp {
     if scale < 1.0 {
@@ -53,9 +58,64 @@ fn finish_alpha_scaled(mut a: Mask, offset: i32, feather: u32, scale: f64) -> Ma
     a
 }
 
-/// Render `region` (image coordinates, inside the image) into an `out_w` x `out_h` RGBA
-/// buffer with straight alpha. Transparent areas keep alpha 0.
+/// `src` (`ch` interleaved channels, `sw` x `sh`) seen through `exp`, resampled to `dw` x `dh`. The part of `exp`
+/// outside the picture is zero, or with `edge` the nearest edge pixel.
+#[allow(clippy::too_many_arguments)]
+fn sample(src: &[u8], sw: usize, sh: usize, ch: usize, exp: Rect, dw: usize, dh: usize, interp: Interp, edge: bool) -> Vec<u8> {
+    let inter = Rect::new(exp.x0.max(0.0), exp.y0.max(0.0), exp.x1.min(sw as f64), exp.y1.min(sh as f64));
+    if inter == exp {
+        return resize_raw(src, sw, sh, ch, Some(exp), dw, dh, interp);
+    }
+    let mut out = vec![0u8; dw * dh * ch];
+    let (kx, ky) = (dw as f64 / exp.width(), dh as f64 / exp.height());
+    let cell = |v: f64, max: usize| (v.round().max(0.0) as usize).min(max);
+    let (dx0, dx1) = (cell((inter.x0 - exp.x0) * kx, dw), cell((inter.x1 - exp.x0) * kx, dw));
+    let (dy0, dy1) = (cell((inter.y0 - exp.y0) * ky, dh), cell((inter.y1 - exp.y0) * ky, dh));
+    if inter.width() <= 0.0 || inter.height() <= 0.0 || dx1 <= dx0 || dy1 <= dy0 {
+        if edge && sw > 0 && sh > 0 {
+            // Nothing of the picture is in view: every pixel is the edge pixel nearest to the window.
+            let px = ((exp.x0 + exp.x1) / 2.0).clamp(0.0, sw as f64 - 1.0) as usize;
+            let py = ((exp.y0 + exp.y1) / 2.0).clamp(0.0, sh as f64 - 1.0) as usize;
+            let pixel = &src[(py * sw + px) * ch..(py * sw + px + 1) * ch];
+            out.chunks_exact_mut(ch).for_each(|o| o.copy_from_slice(pixel));
+        }
+        return out;
+    }
+    let part = resize_raw(src, sw, sh, ch, Some(inter), dx1 - dx0, dy1 - dy0, interp);
+    for y in dy0..dy1 {
+        let row = &part[(y - dy0) * (dx1 - dx0) * ch..(y - dy0 + 1) * (dx1 - dx0) * ch];
+        out[(y * dw + dx0) * ch..(y * dw + dx1) * ch].copy_from_slice(row);
+    }
+    if edge {
+        for y in dy0..dy1 {
+            let (first, last) = (((y * dw + dx0) * ch), ((y * dw + dx1 - 1) * ch));
+            let (left, right) = (out[first..first + ch].to_vec(), out[last..last + ch].to_vec());
+            out[y * dw * ch..first].chunks_exact_mut(ch).for_each(|o| o.copy_from_slice(&left));
+            out[last + ch..(y + 1) * dw * ch].chunks_exact_mut(ch).for_each(|o| o.copy_from_slice(&right));
+        }
+        let (top, bottom) = (out[dy0 * dw * ch..(dy0 + 1) * dw * ch].to_vec(), out[(dy1 - 1) * dw * ch..dy1 * dw * ch].to_vec());
+        out[..dy0 * dw * ch].chunks_exact_mut(dw * ch).for_each(|o| o.copy_from_slice(&top));
+        out[dy1 * dw * ch..].chunks_exact_mut(dw * ch).for_each(|o| o.copy_from_slice(&bottom));
+    }
+    out
+}
+
+fn sample_image(src: &Image, exp: Rect, dw: usize, dh: usize, interp: Interp, edge: bool) -> Image {
+    Image { w: dw, h: dh, data: sample(&src.data, src.w, src.h, 3, exp, dw, dh, interp, edge) }
+}
+
+fn sample_mask(src: &Mask, exp: Rect, dw: usize, dh: usize, interp: Interp) -> Mask {
+    Mask { w: dw, h: dh, data: sample(&src.data, src.w, src.h, 1, exp, dw, dh, interp, false) }
+}
+
+/// Render `region` (image coordinates) into an `out_w` x `out_h` RGBA buffer with straight alpha. Transparent areas
+/// keep alpha 0. The region may reach past the picture (a canvas extended by the crop): what is there is the
+/// background, with the shadow of the subject if it spills over.
 pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) -> Rgba {
+    render_region_with(scene, region, out_w, out_h, PREVIEW_MARGIN_CAP)
+}
+
+fn render_region_with(scene: &Scene, region: Rect, out_w: usize, out_h: usize, margin_cap: usize) -> Rgba {
     let p = scene.params;
     let (iw, ih) = (scene.image.w as f64, scene.image.h as f64);
     let scale = out_w as f64 / region.width();
@@ -65,13 +125,17 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
     let margin = (if p.mask.offset != 0 { ((p.mask.offset.unsigned_abs() + 2) as f64 * scale / 2.0).ceil() as usize + 1 } else { 0 })
         + (p.foreground.feather as f64 * scale).ceil() as usize
         + (p.foreground.defringe as f64 * scale).ceil() as usize
-        + if p.shadow.enabled { (3.0 * shadow_sigma + p.shadow.offset_x.abs().max(p.shadow.offset_y.abs()) as f64 * scale).ceil() as usize } else { 0 }
+        + if p.shadow.enabled {
+            (3.0 * shadow_sigma + p.shadow.offset_x.abs().max(p.shadow.offset_y.abs()) as f64 * scale).ceil() as usize
+        } else {
+            0
+        }
         + filter_margin(&p.foreground.filter, scale).max(filter_margin(&p.background.filter, scale));
-    let m = margin.min(512);
-    let pl = m.min((region.x0.max(0.0) * scale).floor() as usize);
-    let pt = m.min((region.y0.max(0.0) * scale).floor() as usize);
-    let pr = m.min(((iw - region.x1).max(0.0) * scale).floor() as usize);
-    let pb = m.min(((ih - region.y1).max(0.0) * scale).floor() as usize);
+    let m = margin.min(margin_cap);
+    // Towards the inside of the picture the context stops at its edge; past the edge there is nothing to stop it.
+    let before = |v: f64| if v < 0.0 { m } else { m.min((v * scale).floor() as usize) };
+    let after = |v: f64, size: f64| if v > size { m } else { m.min(((size - v) * scale).floor() as usize) };
+    let (pl, pt, pr, pb) = (before(region.x0), before(region.y0), after(region.x1, iw), after(region.y1, ih));
     let (ew, eh) = (out_w + pl + pr, out_h + pt + pb);
     let exp = Rect::new(
         region.x0 - pl as f64 / scale,
@@ -83,8 +147,8 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
     let interp = interp_for(scale);
 
     // Subject mask and colours.
-    let a = finish_alpha_scaled(crop_resize_mask(scene.alpha, exp, ew, eh, interp), p.mask.offset, p.foreground.feather, scale);
-    let mut fg = crop_resize_image(scene.image, exp, ew, eh, interp);
+    let a = finish_alpha_scaled(sample_mask(scene.alpha, exp, ew, eh, interp), p.mask.offset, p.foreground.feather, scale);
+    let mut fg = sample_image(scene.image, exp, ew, eh, interp, false);
     defringe::defringe(&mut fg, &a, (p.foreground.defringe as f64 * scale).round() as usize);
     adjust_colors(&mut fg, p.foreground.brightness, p.foreground.saturation, p.foreground.warmth);
     apply_filter(&mut fg, &p.foreground.filter, scale, origin);
@@ -98,7 +162,7 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
                 let sc = (iw / pic.w as f64).max(ih / pic.h as f64);
                 let (ox, oy) = ((iw - pic.w as f64 * sc) / 2.0, (ih - pic.h as f64 * sc) / 2.0);
                 let r = Rect::new((exp.x0 - ox) / sc, (exp.y0 - oy) / sc, (exp.x1 - ox) / sc, (exp.y1 - oy) / sc);
-                let mut b = crop_resize_image(pic, r, ew, eh, interp_for(scale * sc));
+                let mut b = sample_image(pic, r, ew, eh, interp_for(scale * sc), true);
                 apply_filter(&mut b, &p.background.filter, scale, origin);
                 (b, true)
             }
@@ -106,7 +170,7 @@ pub fn render_region(scene: &Scene, region: Rect, out_w: usize, out_h: usize) ->
         },
         BgMode::Original => {
             let base = if p.background.fill_hole { scene.filled.unwrap_or(scene.image) } else { scene.image };
-            let mut b = crop_resize_image(base, exp, ew, eh, interp);
+            let mut b = sample_image(base, exp, ew, eh, interp, true);
             apply_filter(&mut b, &p.background.filter, scale, origin);
             (b, true)
         }
@@ -210,29 +274,26 @@ pub fn render_source_view(image: &Image, layers: &SourceLayers, region: Rect, ou
     Rgba { w: out_w, h: out_h, data: out }
 }
 
-/// Full-resolution result with the crop applied (what gets exported).
+/// The crop as whole pixels: first column and row (negative when the canvas is extended past the picture) and size.
+/// Both edges are rounded, so a crop inside the picture never reaches a pixel past it.
+fn crop_pixels(r: Rect) -> (i64, i64, usize, usize) {
+    let (x0, y0) = (r.x0.round() as i64, r.y0.round() as i64);
+    let (x1, y1) = (r.x1.round() as i64, r.y1.round() as i64);
+    (x0, y0, (x1 - x0).max(1) as usize, (y1 - y0).max(1) as usize)
+}
+
+/// Full-resolution result with the crop applied (what gets exported). Only the cropped region is rendered.
 pub fn export_rgba(scene: &Scene) -> Rgba {
     let (w, h) = (scene.image.w, scene.image.h);
-    let full = render_region(scene, Rect::new(0.0, 0.0, w as f64, h as f64), w, h);
     let finished = scene
         .params
         .background
         .fit_to_result
         .then(|| finish_alpha_scaled(scene.alpha.clone(), scene.params.mask.offset, scene.params.foreground.feather, 1.0));
     let r = crop::effective_crop(scene.params, finished.as_ref(), (w as f64, h as f64));
-    let x0 = (r.x0.round() as usize).min(w - 1);
-    let y0 = (r.y0.round() as usize).min(h - 1);
-    let cw = (r.width().round() as usize).clamp(1, w - x0);
-    let ch = (r.height().round() as usize).clamp(1, h - y0);
-    let cropped = if (x0, y0, cw, ch) == (0, 0, w, h) {
-        full
-    } else {
-        let mut data = Vec::with_capacity(cw * ch * 4);
-        for y in y0..y0 + ch {
-            data.extend_from_slice(&full.data[(y * w + x0) * 4..(y * w + x0 + cw) * 4]);
-        }
-        Rgba { w: cw, h: ch, data }
-    };
+    let (x0, y0, cw, ch) = crop_pixels(r);
+    let region = Rect::new(x0 as f64, y0 as f64, (x0 + cw as i64) as f64, (y0 + ch as i64) as f64);
+    let cropped = render_region_with(scene, region, cw, ch, usize::MAX);
     resize_to_output_width(cropped, scene.params.background.output_width as usize)
 }
 
@@ -395,7 +456,9 @@ mod tests {
         let (img, alpha) = scene_parts(); // the subject spans x 30..55, y 20..40
         let mut params = Params::default();
         params.shadow.enabled = true;
-        let at = |p: &Params, x: usize, y: usize| full(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None }).data[(y * 80 + x) * 4 + 3];
+        let at = |p: &Params, x: usize, y: usize| {
+            full(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None }).data[(y * 80 + x) * 4 + 3]
+        };
         // 5 px right of the subject and 5 px left of it, in the middle of its height.
         let (right, left) = ((60, 30), (25, 30));
         assert!(at(&params, left.0, left.1) >= at(&params, right.0, right.1) - 2, "centred shadow: both sides alike");
@@ -436,6 +499,77 @@ mod tests {
             }
         }
         assert!(worst <= 3, "tile differs from the full render by {worst}");
+    }
+
+    #[test]
+    fn the_export_of_a_crop_equals_that_crop_of_the_whole_render() {
+        let (img, alpha) = scene_parts();
+        let mut params = Params::default();
+        params.background.mode = BgMode::Color;
+        params.foreground.feather = 3;
+        params.mask.offset = 2;
+        params.shadow.enabled = true;
+        params.shadow.blur_radius = 10;
+        params.shadow.offset_x = 6;
+        params.shadow.offset_y = 4;
+        params.foreground.filter = FilterSpec { kind: FilterKind::Blur, radius: 5, ..Default::default() };
+        let whole = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        params.crop = Some(Rect::new(22.0, 12.0, 62.0, 46.0));
+        let out = export_rgba(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None });
+        assert_eq!((out.w, out.h), (40, 34));
+        let worst = (0..34)
+            .flat_map(|y| (0..40).flat_map(move |x| (0..4).map(move |c| (x, y, c))))
+            .map(|(x, y, c)| (out.data[(y * 40 + x) * 4 + c] as i32 - whole.data[((y + 12) * 80 + x + 22) * 4 + c] as i32).abs())
+            .max()
+            .unwrap();
+        assert!(worst <= 2, "the cropped export differs from the whole render by {worst}");
+    }
+
+    #[test]
+    fn a_region_past_the_picture_shows_the_background_and_the_shadow_spilling_over() {
+        let (img, mut alpha) = scene_parts();
+        // The subject touches the left edge of the picture.
+        alpha.data.iter_mut().for_each(|v| *v = 0);
+        for y in 20..40 {
+            for x in 0..10 {
+                alpha.data[y * 80 + x] = 255;
+            }
+        }
+        let region = Rect::new(-20.0, -10.0, 100.0, 70.0);
+        let mut params = Params::default();
+        let at = |o: &Rgba, x: i64, y: i64| {
+            let i = (((y + 10) * 120 + x + 20) * 4) as usize;
+            [o.data[i], o.data[i + 1], o.data[i + 2], o.data[i + 3]]
+        };
+        let scene =
+            |p: &Params| render_region(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None }, region, 120, 80);
+
+        // Transparent: nothing outside the picture, the picture itself as usual.
+        let t = scene(&params);
+        assert_eq!(at(&t, -15, 5)[3], 0);
+        assert_eq!(at(&t, 5, 30)[3], 255);
+        assert_eq!(&at(&t, 5, 30)[..3], &img.data[(30 * 80 + 5) * 3..(30 * 80 + 5) * 3 + 3]);
+
+        // A colour fills the extra canvas.
+        params.background.mode = BgMode::Color;
+        params.background.color = [10, 20, 30];
+        let c = scene(&params);
+        assert_eq!(at(&c, -15, 5), [10, 20, 30, 255]);
+        assert_eq!(at(&c, 90, 65), [10, 20, 30, 255]);
+
+        // The original is continued with its edge pixels.
+        params.background.mode = BgMode::Original;
+        let o = scene(&params);
+        assert_eq!(&at(&o, -15, 5)[..3], &img.data[5 * 80 * 3..5 * 80 * 3 + 3], "left of the picture: its first column");
+        assert_eq!(&at(&o, 95, 65)[..3], &img.data[(59 * 80 + 79) * 3..(59 * 80 + 79) * 3 + 3], "past the corner: the corner pixel");
+
+        // The shadow of a subject at the edge spills past it.
+        params.background.mode = BgMode::Transparent;
+        params.shadow.enabled = true;
+        params.shadow.blur_radius = 12;
+        let sh = scene(&params);
+        assert!(at(&sh, -4, 30)[3] > 0 && at(&sh, -4, 30)[3] < 255, "{:?}", at(&sh, -4, 30));
+        assert_eq!(at(&sh, -19, 0)[3], 0);
     }
 
     #[test]
