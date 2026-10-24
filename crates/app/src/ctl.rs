@@ -715,7 +715,12 @@ impl Ctl {
     /// Read the document state into the interface state.
     pub fn refresh_doc(self: &Arc<Self>) {
         let st = self.st.doc.guard().as_mut().map(|d| d.state());
-        self.ux.guard().doc = st;
+        let new_error = st.as_ref().and_then(|s| s.bg_error.clone());
+        let known_error = std::mem::replace(&mut self.ux.guard().doc, st).and_then(|d| d.bg_error);
         self.refresh(R_MAIN | R_VIEW);
+        if let Some(path) = new_error.filter(|p| known_error.as_ref() != Some(p)) {
+            let name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path);
+            self.say(tf("Cannot read the background picture: {file}", &[("file", &name)]), true);
+        }
     }
 }

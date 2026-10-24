@@ -198,5 +198,6 @@
   "Highest quality, several times slower on CPU. Best with a GPU.": "Qualité maximale, plusieurs fois plus lent sur processeur. Idéal avec un GPU.",
   "Fastest option (under a second on CPU). Good on clear subjects, softer on hair.": "Le plus rapide (moins d'une seconde sur processeur). Bon sur les sujets nets, moins précis sur les cheveux.",
   "Point at a subject to select it: click what to keep, right-click what to leave out, or drag a box. Used by the Smart select tool.": "Pointez un sujet pour le sélectionner : cliquez ce qu'il faut garder, clic droit ce qu'il faut exclure, ou tracez un cadre. Utilisé par l'outil Sélection intelligente.",
-  "Cannot save the settings: {error}": "Impossible d'enregistrer les réglages : {error}"
+  "Cannot save the settings: {error}": "Impossible d'enregistrer les réglages : {error}",
+  "Cannot read the background picture: {file}": "Impossible de lire l'image d'arrière-plan : {file}"
 }

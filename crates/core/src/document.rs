@@ -67,6 +67,9 @@ pub struct DocState {
     pub params: Params,
     /// Crop rectangle in effect (manual, ratio-constrained or fitted to the result).
     pub crop: Rect,
+    /// The background picture the parameters ask for could not be read (the path); nothing is drawn for it and the
+    /// load is not retried until the path changes.
+    pub bg_error: Option<String>,
 }
 
 pub struct Document {
@@ -98,6 +101,8 @@ pub struct Document {
     alpha_exact: u64,
     job_running: bool,
     bg: Option<(String, Image)>,
+    /// Path of a background picture that failed to load, so that `prepare()` does not try again at every call.
+    bg_failed: Option<String>,
     filled: Option<(FillKey, Image)>,
 }
 
@@ -133,6 +138,7 @@ impl Document {
             alpha_exact: u64::MAX,
             job_running: false,
             bg: None,
+            bg_failed: None,
             filled: None,
         }
     }
@@ -289,6 +295,10 @@ impl Document {
 
     /// Set one property, addressed by a dotted path such as `background.mode`.
     pub fn set_param(&mut self, path: &str, value: Value) -> Result<()> {
+        if path == "background.image_path" {
+            // Choosing the picture again is how a failed load is retried.
+            self.bg_failed = None;
+        }
         let mut root = serde_json::to_value(&self.params)?;
         let old = set_json(&mut root, path, value.clone())?;
         if old == value {
@@ -526,9 +536,13 @@ impl Document {
             self.hair_marks = Some(rasterize(&self.strokes, w, h, &[StrokeKind::Hair, StrokeKind::HairErase]));
         }
         let wanted = self.params.background.image_path.clone();
-        if self.params.background.mode == BgMode::Image && self.bg.as_ref().map(|(p, _)| p) != wanted.as_ref() {
-            // Undo/redo can change the path without going through set_param.
-            let _ = self.load_bg(wanted);
+        if self.params.background.mode == BgMode::Image && self.bg.as_ref().map(|(p, _)| p) != wanted.as_ref() && self.bg_failed != wanted {
+            // Undo/redo can change the path without going through set_param. A failure is remembered (and shown by
+            // `state()`) instead of being retried at every call.
+            if self.load_bg(wanted.clone()).is_err() {
+                self.bg = None;
+                self.bg_failed = wanted;
+            }
         }
         let bgp = &self.params.background;
         if bgp.mode == BgMode::Original && bgp.fill_hole {
@@ -569,6 +583,7 @@ impl Document {
             computing: self.computing(),
             params: self.params.clone(),
             crop: crop::effective_crop(&self.params, finished.as_ref(), (w, h)),
+            bg_error: self.bg_failed.clone().filter(|p| self.params.background.image_path.as_ref() == Some(p)),
         }
     }
 
@@ -1093,5 +1108,25 @@ mod tests {
         d.apply_selection(SelectionMode::Replace);
         assert_eq!((d.alpha().get(5, 5), d.alpha().get(25, 5)), (0, 255));
         assert!(!d.apply_selection(SelectionMode::Add), "nothing pending");
+    }
+
+    #[test]
+    fn a_missing_background_picture_is_reported_once_and_not_retried() {
+        let dir = std::env::temp_dir().join(format!("osc-bg-missing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("bg.png");
+        let mut d = doc();
+        let mut p = d.params().clone();
+        p.background.mode = BgMode::Image;
+        p.background.image_path = Some(file.display().to_string());
+        d.set_params(p);
+        assert_eq!(d.state().bg_error.as_deref(), Some(file.display().to_string().as_str()));
+        // The file shows up afterwards: the failure was remembered, so no new attempt is made.
+        crate::io::save_rgba(&file, &Rgba::new(2, 2), crate::io::Format::Png, 95, [0; 3]).unwrap();
+        assert!(d.state().bg_error.is_some() && d.bg.is_none());
+        // Choosing the picture again loads it and clears the error.
+        d.set_param("background.image_path", json!(file.display().to_string())).unwrap();
+        assert!(d.state().bg_error.is_none() && d.bg.is_some());
+        std::fs::remove_dir_all(dir).ok();
     }
 }
