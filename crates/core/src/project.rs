@@ -159,14 +159,16 @@ fn clean_strokes(strokes: Vec<Stroke>) -> Vec<Stroke> {
         .collect()
 }
 
-/// A crop must be a real rectangle inside the image; anything else means "no manual crop".
+/// A crop must be a real rectangle within the area a crop may reach (the image and a margin around it); anything else
+/// means "no manual crop".
 fn clean_crop(crop: Option<Rect>, w: usize, h: usize) -> Option<Rect> {
     let r = crop?;
     if ![r.x0, r.y0, r.x1, r.y1].iter().all(|v| v.is_finite()) {
         return None;
     }
-    let (x0, y0) = (r.x0.clamp(0.0, w as f64), r.y0.clamp(0.0, h as f64));
-    let (x1, y1) = (r.x1.clamp(0.0, w as f64), r.y1.clamp(0.0, h as f64));
+    let area = crate::render::crop::allowed_area((w as f64, h as f64));
+    let (x0, y0) = (r.x0.clamp(area.x0, area.x1), r.y0.clamp(area.y0, area.y1));
+    let (x1, y1) = (r.x1.clamp(area.x0, area.x1), r.y1.clamp(area.y0, area.y1));
     (x1 - x0 >= 1.0 && y1 - y0 >= 1.0).then(|| Rect::new(x0, y0, x1, y1))
 }
 
@@ -387,7 +389,7 @@ mod tests {
         assert_eq!(l.strokes.len(), 1, "the stroke with no usable point is dropped");
         assert_eq!(l.strokes[0].width, 300);
         assert_eq!(l.strokes[0].points, vec![[5.0, 5.0]]);
-        assert_eq!(l.params.crop, Some(Rect::new(0.0, 0.0, 40.0, 12.0)), "the crop is brought inside the image");
+        assert_eq!(l.params.crop, Some(Rect::new(-40.0, -5.0, 80.0, 12.0)), "the crop is brought inside the area a crop may reach");
         v["crop"] = json!({ "x0": 10.0, "y0": 10.0, "x1": 10.0, "y1": 20.0 });
         std::fs::write(dir.join("r.osproj"), v.to_string()).unwrap();
         assert_eq!(load_project(&dir.join("r.osproj")).unwrap().params.crop, None, "an empty crop means no crop");

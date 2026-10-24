@@ -345,14 +345,21 @@ pub fn export_deep(scene: &Scene, deep: &Image16) -> Option<Rgba16> {
     let alpha = finished_alpha(scene.alpha, p);
     let bg: Option<[u32; 3]> = (p.background.mode == BgMode::Color).then(|| p.background.color.map(|c| c as u32 * 257));
     let r = crop::effective_crop(p, p.background.fit_to_result.then_some(&alpha), (w as f64, h as f64));
-    let x0 = (r.x0.round() as usize).min(w - 1);
-    let y0 = (r.y0.round() as usize).min(h - 1);
-    let cw = (r.width().round() as usize).clamp(1, w - x0);
-    let ch = (r.height().round() as usize).clamp(1, h - y0);
+    let (x0, y0, cw, ch) = crop_pixels(r);
     let mut data = vec![0u16; cw * ch * 4];
     data.par_chunks_mut(cw * 4).enumerate().for_each(|(y, row)| {
+        let sy = y0 + y as i64;
         for x in 0..cw {
-            let i = (y0 + y) * w + x0 + x;
+            let sx = x0 + x as i64;
+            if !(0..w as i64).contains(&sx) || !(0..h as i64).contains(&sy) {
+                // Canvas extended past the picture: the background colour, or nothing.
+                if let Some(b) = bg {
+                    row[x * 4..x * 4 + 3].iter_mut().zip(b).for_each(|(o, v)| *o = v as u16);
+                    row[x * 4 + 3] = 65535;
+                }
+                continue;
+            }
+            let i = sy as usize * w + sx as usize;
             let a = alpha.data[i] as u32 * 257;
             let src = &deep.data[i * 3..i * 3 + 3];
             let o = &mut row[x * 4..x * 4 + 4];
@@ -600,6 +607,32 @@ mod tests {
         assert_eq!((corner.w, corner.h), (40, 30));
         assert_eq!(&corner.data[(5 * 40 + 5) * 4..][..3], &[200, 0, 0]);
         assert_eq!(&corner.data[(5 * 40 + 35) * 4..][..3], &[0, 0, 200], "the right half of the picture reaches the frame");
+    }
+
+    #[test]
+    fn a_crop_past_the_picture_exports_a_bigger_canvas_in_8_and_16_bits() {
+        let (img, alpha) = scene_parts(); // 80 x 60
+        let deep = Image16 { w: 80, h: 60, data: img.data.iter().map(|&v| v as u16 * 257).collect() };
+        let mut params = Params { crop: Some(Rect::new(-10.0, -5.0, 90.0, 65.0)), ..Params::default() };
+        params.background.mode = BgMode::Color;
+        params.background.color = [10, 20, 30];
+        let scene = Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None };
+        let out = export_rgba(&scene);
+        assert_eq!((out.w, out.h), (100, 70));
+        assert_eq!(&out.data[..4], &[10, 20, 30, 255], "the added margin is the background colour");
+        let inside = ((35 + 5) * 100 + 40 + 10) * 4; // picture pixel (40, 35) is inside the subject
+        assert_eq!(&out.data[inside..inside + 3], &img.data[(35 * 80 + 40) * 3..(35 * 80 + 40) * 3 + 3]);
+
+        let d = export_deep(&scene, &deep).unwrap();
+        assert_eq!((d.w, d.h), (100, 70));
+        assert_eq!(&d.data[..4], &[10 * 257, 20 * 257, 30 * 257, 65535]);
+        assert_eq!(d.data[inside..inside + 3], deep.data[(35 * 80 + 40) * 3..(35 * 80 + 40) * 3 + 3]);
+
+        // Transparent background: the margin is transparent.
+        params.background.mode = BgMode::Transparent;
+        let scene = Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None };
+        assert_eq!(export_rgba(&scene).data[3], 0);
+        assert_eq!(export_deep(&scene, &deep).unwrap().data[3], 0);
     }
 
     #[test]
