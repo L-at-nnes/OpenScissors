@@ -205,8 +205,9 @@ impl Ctl {
         }
         let me = self.clone();
         std::thread::spawn(move || {
-            let exported = me.st.doc.guard().as_mut().map(|d| d.export());
-            let Some(img) = exported else { return };
+            // The document is locked only to take what the export needs; the rendering itself runs without the lock.
+            let job = me.st.doc.guard().as_mut().map(|d| d.export_job());
+            let Some(img) = job.map(|j| j.run()) else { return };
             match clipboard::write(&img) {
                 Ok(()) => me.say(t("Copied the result to the clipboard"), false),
                 Err(ClipboardError::Empty) => me.say(t("The clipboard holds no image."), true),

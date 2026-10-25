@@ -267,9 +267,7 @@ impl Document {
             .map(|c| match c {
                 Command::AddStroke(s) => strokes(std::slice::from_ref(s)),
                 Command::SetPrediction { old, new } => mask(old) + mask(new),
-                Command::SetParam { path, old, new, .. } => {
-                    path.len() + 2 * std::mem::size_of::<Value>() + json_size(old) + json_size(new)
-                }
+                Command::SetParam { path, old, new, .. } => path.len() + 2 * std::mem::size_of::<Value>() + json_size(old) + json_size(new),
                 Command::SetParams { .. } => 2 * params,
                 Command::SetStrokes { old, new } => strokes(old) + strokes(new),
             })
@@ -632,6 +630,21 @@ impl Document {
         render::export_rgba(&self.scene())
     }
 
+    /// Everything [`Document::export`] needs, detached from the document: the document can be unlocked while the (long)
+    /// rendering runs.
+    pub fn export_job(&mut self) -> ExportJob {
+        self.alpha_blocking();
+        self.prepare();
+        let scene = self.scene();
+        ExportJob {
+            image: self.image.clone(),
+            alpha: scene.alpha.clone(),
+            params: self.params.clone(),
+            bg_image: scene.bg_image.cloned(),
+            filled: scene.filled.cloned(),
+        }
+    }
+
     /// 16-bit result, when the source is 16-bit and the settings allow it.
     pub fn export_deep(&mut self) -> Option<Rgba16> {
         let deep = self.deep.clone()?;
@@ -660,6 +673,29 @@ pub enum SelectionMode {
     Replace,
     Add,
     Subtract,
+}
+
+/// A full-resolution export prepared by [`Document::export_job`].
+pub struct ExportJob {
+    image: Arc<Image>,
+    alpha: Mask,
+    params: Params,
+    bg_image: Option<Image>,
+    filled: Option<Image>,
+}
+
+impl ExportJob {
+    pub fn run(&self) -> Rgba {
+        let scene = Scene {
+            image: &self.image,
+            alpha: &self.alpha,
+            params: &self.params,
+            bg_image: self.bg_image.as_ref(),
+            filled: self.filled.as_ref(),
+            frame: None,
+        };
+        render::export_rgba(&scene)
+    }
 }
 
 /// A background computation of the exact mask, detached from the document.
@@ -948,6 +984,20 @@ mod tests {
         d.undo();
         d.undo();
         assert!(d.alpha().is_empty_mask());
+    }
+
+    #[test]
+    fn an_export_job_renders_the_same_picture_without_the_document() {
+        let mut d = doc();
+        d.set_prediction(Some(Mask::filled(50, 40, 255)));
+        d.set_param("background.mode", json!("color")).unwrap();
+        d.set_param("crop", json!({ "x0": 5.0, "y0": 5.0, "x1": 35.0, "y1": 30.0 })).unwrap();
+        let expected = d.export();
+        let job = d.export_job();
+        d.set_param("background.color", json!([1, 2, 3])).unwrap(); // later edits do not leak into the job
+        let out = job.run();
+        assert_eq!((out.w, out.h), (30, 25));
+        assert!(out == expected);
     }
 
     #[test]
