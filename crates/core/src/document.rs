@@ -110,6 +110,16 @@ pub struct Document {
 
 type FillKey = (u64, i32, u32);
 
+/// Rough size in bytes of a JSON value, without printing it.
+fn json_size(v: &Value) -> usize {
+    match v {
+        Value::String(s) => s.len(),
+        Value::Array(a) => a.iter().map(|x| 8 + json_size(x)).sum(),
+        Value::Object(o) => o.iter().map(|(k, x)| 8 + k.len() + json_size(x)).sum(),
+        _ => 8,
+    }
+}
+
 fn set_json(root: &mut Value, path: &str, v: Value) -> Result<Value> {
     let ptr = format!("/{}", path.replace('.', "/"));
     let slot = root.pointer_mut(&ptr).ok_or_else(|| Error::msg(format!("unknown property '{path}'")))?;
@@ -245,12 +255,9 @@ impl Document {
 
     /// Memory held by the undo history. A mask shared by two steps (the "new" of one is the "old" of the next) counts once.
     fn history_bytes(&self) -> usize {
-        let mut seen: Vec<*const Mask> = Vec::new();
+        let mut seen: std::collections::HashSet<*const Mask> = std::collections::HashSet::new();
         let mut mask = |m: &Option<Arc<Mask>>| match m {
-            Some(m) if !seen.contains(&Arc::as_ptr(m)) => {
-                seen.push(Arc::as_ptr(m));
-                m.data.len()
-            }
+            Some(m) if seen.insert(Arc::as_ptr(m)) => m.data.len(),
             _ => 0,
         };
         let strokes = |v: &[Stroke]| v.iter().map(|s| 32 + s.points.len() * 8).sum::<usize>();
@@ -261,7 +268,7 @@ impl Document {
                 Command::AddStroke(s) => strokes(std::slice::from_ref(s)),
                 Command::SetPrediction { old, new } => mask(old) + mask(new),
                 Command::SetParam { path, old, new, .. } => {
-                    path.len() + 2 * std::mem::size_of::<Value>() + old.to_string().len() + new.to_string().len()
+                    path.len() + 2 * std::mem::size_of::<Value>() + json_size(old) + json_size(new)
                 }
                 Command::SetParams { .. } => 2 * params,
                 Command::SetStrokes { old, new } => strokes(old) + strokes(new),
