@@ -14,7 +14,7 @@ use crate::io::load_image;
 use crate::mask::compose::{apply_stroke, compose_alpha};
 use crate::mask::graphcut::{graphcut_alpha, GraphcutOptions};
 use crate::mask::matting::hair_matting;
-use crate::mask::strokes::{paint_stroke, rasterize, Stroke, StrokeKind};
+use crate::mask::strokes::{erased_mask, paint_stroke, rasterize, Stroke, StrokeKind};
 use crate::params::{BgMode, Params};
 use crate::render::{self, crop, inpaint, Scene, SourceLayers};
 use crate::types::{Image, Image16, Mask, Rect, Rgba, Rgba16};
@@ -695,6 +695,15 @@ fn compute_alpha(image: &Image, predicted: Option<&Mask>, strokes: &[Stroke], pa
         });
         // Missing a class (no green or no red mark yet): keep the simple result.
         alpha = graphcut_alpha(image, prior.as_ref(), &fg, &bg, &GraphcutOptions::default());
+        // The eraser is as certain as a mark: the colour model must not bring back what it wiped out.
+        if let Some(a) = &mut alpha {
+            let erased = erased_mask(strokes, w, h);
+            a.data.iter_mut().zip(&erased.data).for_each(|(v, &e)| {
+                if e > 127 {
+                    *v = 0;
+                }
+            });
+        }
     }
     let alpha = alpha.unwrap_or_else(|| compose_alpha(predicted, strokes, w, h));
     let hair = rasterize(strokes, w, h, &[StrokeKind::Hair, StrokeKind::HairErase]);
@@ -932,6 +941,27 @@ mod tests {
         d.undo();
         d.undo();
         assert!(d.alpha().is_empty_mask());
+    }
+
+    #[test]
+    fn graphcut_mode_keeps_what_the_eraser_removed_removed() {
+        let (w, h) = (80, 60);
+        let mut d = Document::new(6, disc_scene(w, h), None);
+        d.set_param("mask.graphcut", json!(true)).unwrap();
+        d.add_stroke(Stroke { kind: StrokeKind::Keep, width: 5, points: vec![[40.5, 30.5]] });
+        d.add_stroke(Stroke { kind: StrokeKind::Remove, width: 5, points: vec![[5.5, 5.5]] });
+        assert_eq!(d.alpha_blocking().get(52, 30), 255, "the whole disc is found");
+        // The eraser goes over a part of the disc that has no mark: that part is removed, as in simple mode.
+        d.add_stroke(Stroke { kind: StrokeKind::Erase, width: 9, points: vec![[52.5, 30.5]] });
+        let a = d.alpha_blocking().clone();
+        assert_eq!((a.get(52, 30), a.get(50, 28), a.get(54, 32)), (0, 0, 0), "erased pixels are transparent");
+        assert_eq!(a.get(40, 30), 255, "the rest of the disc stays");
+        // A later green mark over the erased part brings it back (the last stroke wins, like in simple mode).
+        d.add_stroke(Stroke { kind: StrokeKind::Keep, width: 3, points: vec![[52.5, 30.5]] });
+        assert_eq!(d.alpha_blocking().get(52, 30), 255);
+        // An eraser that goes over a green mark removes the mark and the pixels under it.
+        d.add_stroke(Stroke { kind: StrokeKind::Erase, width: 9, points: vec![[40.5, 30.5]] });
+        assert_eq!(d.alpha_blocking().get(40, 30), 0);
     }
 
     #[test]

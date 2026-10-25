@@ -76,6 +76,15 @@ pub fn rasterize(strokes: &[Stroke], w: usize, h: usize, kinds: &[StrokeKind]) -
     m
 }
 
+/// Pixels (255) whose last green, red or eraser stroke is an eraser: what the user wiped out and did not mark again.
+pub fn erased_mask(strokes: &[Stroke], w: usize, h: usize) -> Mask {
+    let mut m = Mask::new(w, h);
+    for s in strokes.iter().filter(|s| matches!(s.kind, StrokeKind::Keep | StrokeKind::Remove | StrokeKind::Erase)) {
+        paint_stroke(&mut m, s, if s.kind == StrokeKind::Erase { 255 } else { 0 });
+    }
+    m
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +121,18 @@ mod tests {
         assert_eq!(m.get(10, 10), 255); // keep after erase wins
         assert_eq!(m.get(11, 10), 0); // erased ring stays erased
         assert_eq!(m.get(13, 10), 255); // untouched part of the first keep
+    }
+
+    #[test]
+    fn erased_pixels_are_those_whose_last_stroke_is_an_eraser() {
+        let remove = Stroke { kind: StrokeKind::Remove, width: 3, points: vec![[3.5, 3.5]] };
+        let strokes = vec![keep(&[[10.5, 10.5]], 9), erase(&[[10.5, 10.5]], 3), keep(&[[10.5, 10.5]], 1), erase(&[[3.5, 3.5]], 5), remove];
+        let m = erased_mask(&strokes, 21, 21);
+        assert_eq!(m.get(10, 10), 0, "marked again after the eraser");
+        assert_eq!(m.get(11, 10), 255, "erased ring");
+        assert_eq!(m.get(13, 10), 0, "never erased");
+        assert_eq!(m.get(3, 3), 0, "a red mark after the eraser");
+        assert_eq!(m.get(1, 3), 255, "erased by the second eraser, outside the red mark");
     }
 
     #[test]
