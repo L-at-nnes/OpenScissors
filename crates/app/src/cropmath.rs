@@ -1,5 +1,6 @@
 //! Crop rectangle editing with an optional aspect ratio, in image coordinates.
 
+use openscissors_core::render::crop::{allowed_area, MAX_EXTENT};
 use openscissors_core::types::Rect;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,32 +50,34 @@ impl Handle {
 
 pub const MIN: f64 = 8.0;
 
-fn clamp_into(r: Rect, bw: f64, bh: f64) -> Rect {
-    let w = (r.x1 - r.x0).min(bw);
-    let h = (r.y1 - r.y0).min(bh);
-    let x0 = r.x0.max(0.0).min(bw - w);
-    let y0 = r.y0.max(0.0).min(bh - h);
+fn clamp_into(r: Rect, area: Rect) -> Rect {
+    let w = (r.x1 - r.x0).min(area.width());
+    let h = (r.y1 - r.y0).min(area.height());
+    let x0 = r.x0.max(area.x0).min(area.x1 - w);
+    let y0 = r.y0.max(area.y0).min(area.y1 - h);
     Rect::new(x0, y0, x0 + w, y0 + h)
 }
 
-/// Rectangle `r` after dragging `handle` by (dx, dy) image pixels inside an image of `bounds`.
+/// Rectangle `r` after dragging `handle` by (dx, dy) image pixels in an image of `bounds`. The crop may reach past the
+/// image: the canvas is extended there, within `allowed_area` and `MAX_EXTENT` of the core.
 pub fn drag_rect(r: Rect, handle: Handle, dx: f64, dy: f64, bounds: (f64, f64), ratio: Option<(u32, u32)>) -> Rect {
-    let (bw, bh) = bounds;
+    let area = allowed_area(bounds);
+    let (max_w, max_h) = (MAX_EXTENT * bounds.0, MAX_EXTENT * bounds.1);
     if handle == Handle::Move {
-        return clamp_into(Rect::new(r.x0 + dx, r.y0 + dy, r.x1 + dx, r.y1 + dy), bw, bh);
+        return clamp_into(Rect::new(r.x0 + dx, r.y0 + dy, r.x1 + dx, r.y1 + dy), area);
     }
     let (mut x0, mut y0, mut x1, mut y1) = (r.x0, r.y0, r.x1, r.y1);
     if handle.has('w') {
-        x0 = (x1 - MIN).min((x0 + dx).max(0.0));
+        x0 = (x1 - MIN).min((x0 + dx).max(area.x0).max(x1 - max_w));
     }
     if handle.has('e') {
-        x1 = (x0 + MIN).max((x1 + dx).min(bw));
+        x1 = (x0 + MIN).max((x1 + dx).min(area.x1).min(x0 + max_w));
     }
     if handle.has('n') {
-        y0 = (y1 - MIN).min((y0 + dy).max(0.0));
+        y0 = (y1 - MIN).min((y0 + dy).max(area.y0).max(y1 - max_h));
     }
     if handle.has('s') {
-        y1 = (y0 + MIN).max((y1 + dy).min(bh));
+        y1 = (y0 + MIN).max((y1 + dy).min(area.y1).min(y0 + max_h));
     }
     let Some(ratio) = ratio else { return Rect::new(x0, y0, x1, y1) };
 
@@ -107,22 +110,22 @@ pub fn drag_rect(r: Rect, handle: Handle, dx: f64, dy: f64, bounds: (f64, f64), 
     } else {
         h = w / k;
     }
-    // Largest size that still fits between the anchor and the image border.
-    let max_w = if handle.has('w') {
-        anchor_x
+    // Largest size that still fits between the anchor and the border of the area a crop may reach.
+    let room_w = if handle.has('w') {
+        anchor_x - area.x0
     } else if handle.has('e') {
-        bw - anchor_x
+        area.x1 - anchor_x
     } else {
-        2.0 * anchor_x.min(bw - anchor_x)
+        2.0 * (anchor_x - area.x0).min(area.x1 - anchor_x)
     };
-    let max_h = if handle.has('n') {
-        anchor_y
+    let room_h = if handle.has('n') {
+        anchor_y - area.y0
     } else if handle.has('s') {
-        bh - anchor_y
+        area.y1 - anchor_y
     } else {
-        2.0 * anchor_y.min(bh - anchor_y)
+        2.0 * (anchor_y - area.y0).min(area.y1 - anchor_y)
     };
-    let s = 1f64.min(max_w / w).min(max_h / h);
+    let s = 1f64.min(room_w.min(max_w) / w).min(room_h.min(max_h) / h);
     w *= s;
     h *= s;
     if handle.has('w') {
@@ -139,7 +142,7 @@ pub fn drag_rect(r: Rect, handle: Handle, dx: f64, dy: f64, bounds: (f64, f64), 
     } else {
         (y0, y1) = (anchor_y - h / 2.0, anchor_y + h / 2.0);
     }
-    clamp_into(Rect::new(x0, y0, x1, y1), bw, bh)
+    clamp_into(Rect::new(x0, y0, x1, y1), area)
 }
 
 pub fn same_rect(a: &Rect, b: &Rect, eps: f64) -> bool {
@@ -183,10 +186,12 @@ mod tests {
     }
 
     #[test]
-    fn move_keeps_the_size_and_stays_inside_the_image() {
+    fn move_keeps_the_size_and_stops_at_the_limit_of_the_area_a_crop_may_reach() {
         let r = drag_rect(base(), Handle::Move, 500.0, -500.0, BOUNDS, None);
         assert!((r.x1 - r.x0 - 200.0).abs() < 1e-9 && (r.y1 - r.y0 - 150.0).abs() < 1e-9);
-        assert!((r.x1 - 400.0).abs() < 1e-9 && r.y0.abs() < 1e-9);
+        assert!((r.x1 - 800.0).abs() < 1e-9 && (r.y0 + 300.0).abs() < 1e-9, "one image width/height of margin: {r:?}");
+        let inside = drag_rect(base(), Handle::Move, 20.0, 10.0, BOUNDS, None);
+        assert_eq!(inside, Rect::new(120.0, 90.0, 320.0, 240.0));
     }
 
     #[test]
@@ -205,16 +210,21 @@ mod tests {
             for h in handles {
                 let r = drag_rect(start, h, 23.0, -17.0, BOUNDS, Some(ratio));
                 assert!((ratio_of(&r) - ratio.0 as f64 / ratio.1 as f64).abs() < 1e-6, "{h:?} {ratio:?}");
-                assert!(r.x0 >= -1e-9 && r.y0 >= -1e-9 && r.x1 <= 400.0 + 1e-9 && r.y1 <= 300.0 + 1e-9);
+                assert!(r.x0 >= -400.0 - 1e-9 && r.y0 >= -300.0 - 1e-9 && r.x1 <= 800.0 + 1e-9 && r.y1 <= 600.0 + 1e-9);
             }
         }
     }
 
     #[test]
-    fn never_leaves_the_image_even_with_a_huge_drag() {
-        let r = drag_rect(base(), Handle::SE, 5000.0, 5000.0, BOUNDS, Some((4, 3)));
-        assert!(r.x1 <= 400.0 && r.y1 <= 300.0);
-        assert!(same_rect(&r, &r, 0.5));
+    fn a_crop_can_be_dragged_past_the_image_but_not_without_limit() {
+        let out = drag_rect(base(), Handle::E, 150.0, 0.0, BOUNDS, None);
+        assert_eq!(out.x1, 450.0, "past the right edge of the 400 px image: the canvas grows");
+        let far = drag_rect(base(), Handle::SE, 5000.0, 5000.0, BOUNDS, Some((4, 3)));
+        assert!(far.x1 <= 800.0 && far.y1 <= 600.0 && far.x1 - far.x0 <= 800.0 + 1e-9, "{far:?}");
+        assert!((ratio_of(&far) - 4.0 / 3.0).abs() < 1e-6);
+        let wide = drag_rect(Rect::new(-390.0, 0.0, 400.0, 100.0), Handle::W, -5000.0, 0.0, BOUNDS, None);
+        assert!(wide.x1 - wide.x0 <= 800.0 + 1e-9 && wide.x0 >= -400.0, "{wide:?}");
+        assert!(same_rect(&far, &far, 0.5));
     }
 
     #[test]

@@ -64,10 +64,16 @@ pub fn to_screen(v: &View, ix: f64, iy: f64) -> (f64, f64) {
 
 /// Part of the image visible in a pane, in image pixels, or `None` when nothing is.
 pub fn visible_region(v: &View, img: (f64, f64), boxed: (f64, f64)) -> Option<Region> {
-    let x0 = (-v.tx / v.scale).max(0.0);
-    let y0 = (-v.ty / v.scale).max(0.0);
-    let x1 = img.0.min((boxed.0 - v.tx) / v.scale);
-    let y1 = img.1.min((boxed.1 - v.ty) / v.scale);
+    visible_in(v, Region { x0: 0.0, y0: 0.0, x1: img.0, y1: img.1 }, boxed)
+}
+
+/// Part of `area` (image pixels) visible in a pane, or `None` when nothing is. The result view uses an area larger
+/// than the image when the crop extends the canvas.
+pub fn visible_in(v: &View, area: Region, boxed: (f64, f64)) -> Option<Region> {
+    let x0 = (-v.tx / v.scale).max(area.x0);
+    let y0 = (-v.ty / v.scale).max(area.y0);
+    let x1 = area.x1.min((boxed.0 - v.tx) / v.scale);
+    let y1 = area.y1.min((boxed.1 - v.ty) / v.scale);
     (x1 - x0 > 1e-6 && y1 - y0 > 1e-6).then_some(Region { x0, y0, x1, y1 })
 }
 
@@ -123,6 +129,17 @@ mod tests {
         assert_eq!(r, Region { x0: 25.0, y0: 0.0, x1: 75.0, y1: 100.0 });
         assert!(visible_region(&View { scale: 1.0, tx: 500.0, ty: 0.0, fit: false }, img, (100.0, 100.0)).is_none());
         assert!(visible_region(&pan_by(View::default(), -200.0, 0.0), img, (100.0, 100.0)).is_none());
+    }
+
+    #[test]
+    fn the_visible_part_of_a_larger_area_reaches_past_the_image() {
+        let area = Region { x0: -50.0, y0: 0.0, x1: 150.0, y1: 100.0 };
+        let v = View { scale: 1.0, tx: 60.0, ty: 0.0, fit: false };
+        assert_eq!(visible_in(&v, area, (300.0, 100.0)).unwrap(), Region { x0: -50.0, y0: 0.0, x1: 150.0, y1: 100.0 });
+        assert_eq!(visible_region(&v, (100.0, 100.0), (300.0, 100.0)).unwrap(), Region { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0 });
+        // Only the extra margin is in the pane: the image itself is out of view.
+        assert!(visible_region(&v, (100.0, 100.0), (30.0, 100.0)).is_none());
+        assert_eq!(visible_in(&v, area, (30.0, 100.0)).unwrap(), Region { x0: -50.0, y0: 0.0, x1: -30.0, y1: 100.0 });
     }
 
     #[test]

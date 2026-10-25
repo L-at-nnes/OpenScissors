@@ -17,7 +17,7 @@ use crate::cropmath::{same_rect, Handle};
 use crate::i18n::{self, t, tf};
 use crate::render::{Job, Output, Renderer};
 use crate::state::AppState;
-use crate::viewport::{device_grid, fit_view, to_screen, visible_region, View};
+use crate::viewport::{device_grid, fit_view, to_screen, visible_in, visible_region, Region, View};
 use crate::{Backend, Box2, Dot, FilterV, MainWindow, ModelRow, ParamsV, PluginRow};
 
 pub const R_VIEW: u32 = 1;
@@ -651,15 +651,21 @@ impl Ctl {
         }
         ux.render_key = Some(key);
         let img = (doc.width as f64, doc.height as f64);
-        let Some(region) = visible_region(&v, img, ux.pane) else {
-            b.set_src_img(slint::Image::default());
-            b.set_res_img(slint::Image::default());
-            return;
-        };
-        let (w, h, grid) = device_grid(&v, &region, ux.dpr);
-        let origin = (((v.tx + grid.x0 * v.scale) * ux.dpr).round() as i64, ((v.ty + grid.y0 * v.scale) * ux.dpr).round() as i64);
+        // The result also shows the margin an extended crop adds around the picture; the original never does.
+        let canvas = Region { x0: doc.crop.x0.min(0.0), y0: doc.crop.y0.min(0.0), x1: doc.crop.x1.max(img.0), y1: doc.crop.y1.max(img.1) };
         let cell = (8.0 * ux.dpr).round().max(1.0) as usize;
         for side in 0..2 {
+            let visible = if side == 0 { visible_region(&v, img, ux.pane) } else { visible_in(&v, canvas, ux.pane) };
+            let Some(region) = visible else {
+                if side == 0 {
+                    b.set_src_img(slint::Image::default());
+                } else {
+                    b.set_res_img(slint::Image::default());
+                }
+                continue;
+            };
+            let (w, h, grid) = device_grid(&v, &region, ux.dpr);
+            let origin = (((v.tx + grid.x0 * v.scale) * ux.dpr).round() as i64, ((v.ty + grid.y0 * v.scale) * ux.dpr).round() as i64);
             self.renderer.submit(Job { side, doc: doc.id, region: grid, w, h, hair: hair && side == 0, origin, cell });
         }
     }
