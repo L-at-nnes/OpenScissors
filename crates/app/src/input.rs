@@ -7,7 +7,7 @@ use openscissors_core::model::Prompt;
 use openscissors_core::types::Rect;
 use slint::platform::Key;
 
-use crate::cropmath::{drag_rect, hit_test, same_rect};
+use crate::cropmath::{drag_rect, hit_test, same_rect, Handle};
 use crate::ctl::{CropDrag, Ctl, SmartDrag, Tool, R_MAIN, R_VIEW};
 use crate::viewport::{fit_view, pan_by, to_image, to_screen, zoom_at, ZOOM_STEP};
 
@@ -229,7 +229,7 @@ impl Ctl {
     }
 
     /// Keyboard shortcuts. `text` is what Slint reports for the key (special keys are private-use characters).
-    pub fn key_down(self: &Arc<Self>, text: &str, ctrl: bool, shift: bool, _alt: bool) {
+    pub fn key_down(self: &Arc<Self>, text: &str, ctrl: bool, shift: bool, alt: bool) {
         if crate::dialogs::is_open() {
             return;
         }
@@ -283,6 +283,20 @@ impl Ctl {
             }
             return;
         }
+        if alt {
+            // Alt + arrows move the crop by one image pixel (ten with Shift).
+            let step = if shift { 10.0 } else { 1.0 };
+            let (dx, dy) = match c {
+                c if c == char::from(Key::LeftArrow) => (-step, 0.0),
+                c if c == char::from(Key::RightArrow) => (step, 0.0),
+                c if c == char::from(Key::UpArrow) => (0.0, -step),
+                c if c == char::from(Key::DownArrow) => (0.0, step),
+                _ => (0.0, 0.0),
+            };
+            if (dx, dy) != (0.0, 0.0) {
+                return self.move_crop(dx, dy);
+            }
+        }
         let step = if shift { 200.0 } else { 40.0 };
         if special(Key::LeftArrow) {
             return self.pan(step, 0.0);
@@ -308,6 +322,21 @@ impl Ctl {
             ']' => self.step_marker(5),
             _ => {}
         }
+    }
+
+    /// Move the crop by (dx, dy) image pixels, as the pointer does: not when it follows the result, nor when it is the whole
+    /// image. It may leave the picture (the canvas is extended there).
+    fn move_crop(self: &Arc<Self>, dx: f64, dy: f64) {
+        let moved = {
+            let ux = self.ux.guard();
+            let Some(d) = ux.doc.as_ref() else { return };
+            let full = same_rect(&d.crop, &Rect::new(0.0, 0.0, d.width as f64, d.height as f64), 0.5);
+            if d.params.background.fit_to_result || full {
+                return;
+            }
+            drag_rect(d.crop, Handle::Move, dx, dy, (d.width as f64, d.height as f64), None)
+        };
+        self.set_crop(Some(moved));
     }
 
     pub fn key_up(self: &Arc<Self>, text: &str) {
