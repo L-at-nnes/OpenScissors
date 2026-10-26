@@ -17,7 +17,8 @@ use slint::{ComponentHandle, SharedString};
 use crate::i18n::t;
 use crate::{Backend, MainWindow};
 
-pub const IMAGE_EXT: &[&str] = &["jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp"];
+/// The extensions of the open dialog and of drag and drop: the same list as the core opens.
+pub const IMAGE_EXT: &[&str] = openscissors_core::io::IMAGE_EXTENSIONS;
 
 static UI: OnceLock<slint::Weak<MainWindow>> = OnceLock::new();
 static QUESTION: Mutex<Option<Sender<usize>>> = Mutex::new(None);

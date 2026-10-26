@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::types::{Image, Image16, Rgba, Rgba16};
 
-pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp"];
+/// File extensions that can be opened (the formats the `image` crate is built with). The first frame of a GIF is read.
+pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp", "gif"];
 
 /// Largest picture ever accepted, in pixels (500 megapixels). It only guards against a header that lies about its
 /// size; what the machine can really hold is decided by [`check_dimensions`] from the memory budget.
@@ -234,6 +235,21 @@ mod tests {
         save_rgba(&jpg, &rgba, Format::Jpeg, 95, [255; 3]).unwrap();
         let j = load_image(&jpg).unwrap();
         assert!(j.data[3] > 240 && j.data[4] > 240); // transparent pixel became ~white
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_gif_is_opened_and_listed_with_the_other_pictures() {
+        let dir = std::env::temp_dir().join(format!("osc-gif-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.gif");
+        let mut frame = image::RgbaImage::new(6, 4);
+        frame.pixels_mut().for_each(|p| *p = image::Rgba([250, 10, 10, 255]));
+        image::codecs::gif::GifEncoder::new(std::fs::File::create(&file).unwrap()).encode_frame(image::Frame::new(frame)).unwrap();
+        let img = load_image(&file).unwrap();
+        assert_eq!((img.w, img.h), (6, 4));
+        assert!(img.data[0] > 200 && img.data[1] < 60, "the colour survives the palette");
+        assert!(IMAGE_EXTENSIONS.contains(&"gif"));
         std::fs::remove_dir_all(dir).ok();
     }
 
