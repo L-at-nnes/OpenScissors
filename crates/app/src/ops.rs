@@ -20,7 +20,7 @@ use crate::i18n::{t, tf};
 /// Reasons the exporter gives for a 16-bit source saved as 8-bit, as translatable keys.
 fn why_8bit(reason: &str) -> String {
     match reason {
-        "the background is a picture or the original" => t("the background is a picture or the original"),
+        "the background is a picture, a gradient or the original" => t("the background is a picture, a gradient or the original"),
         "a foreground effect is active" => t("a foreground effect is active"),
         "the shadow is on" => t("the shadow is on"),
         other => other.to_string(),
@@ -829,6 +829,16 @@ impl Ctl {
         self.st.settings.guard().recent.clear();
         self.save_settings();
         self.refresh(R_MENU);
+    }
+
+    /// The eyedropper: the next click on a picture sets the colour parameter `path` to the colour under the pointer.
+    pub fn pick_color(self: &Arc<Self>, path: String) {
+        if self.ux.guard().doc.is_none() {
+            return;
+        }
+        self.ux.guard().pick = Some(path);
+        self.say(t("Click the picture to pick a colour. Esc cancels."), false);
+        self.refresh(R_VIEW);
     }
 
     pub fn set_jpeg_quality(self: &Arc<Self>, q: i32) {

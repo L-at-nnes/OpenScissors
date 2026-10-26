@@ -89,6 +89,28 @@ impl Ctl {
         if ux.doc.is_none() {
             return;
         }
+        if button == 0 && ux.pick.is_some() {
+            let (ix, iy) = to_image(&ux.view, x, y);
+            let path = ux.pick.take().expect("pick");
+            drop(ux);
+            let pixel = self.st.doc.guard().as_ref().and_then(|d| {
+                let (px, py) = (ix.floor(), iy.floor());
+                let inside = px >= 0.0 && py >= 0.0 && (px as usize) < d.image.w && (py as usize) < d.image.h;
+                inside.then(|| {
+                    let i = (py as usize * d.image.w + px as usize) * 3;
+                    [d.image.data[i], d.image.data[i + 1], d.image.data[i + 2]]
+                })
+            });
+            match pixel {
+                Some(rgb) => {
+                    self.say("", false);
+                    self.set_param(&path, serde_json::json!(rgb));
+                }
+                None => self.ux.guard().pick = Some(path), // outside the picture: keep waiting
+            }
+            self.refresh(R_VIEW);
+            return;
+        }
         if side == 1 && button == 0 {
             if let Some((x0, y0, x1, y1, resize, mv)) = self.crop_screen(&ux) {
                 if let Some(handle) = hit_test(x0, y0, x1, y1, x, y, resize, mv) {
@@ -240,6 +262,10 @@ impl Ctl {
         }
         let special = |k: Key| c == char::from(k);
         if special(Key::Escape) {
+            if self.ux.guard().pick.take().is_some() {
+                self.say("", false);
+                self.refresh(R_VIEW);
+            }
             self.close_popovers();
             self.smart_cancel();
             return;

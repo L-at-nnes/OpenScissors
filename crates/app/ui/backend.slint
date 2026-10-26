@@ -18,6 +18,8 @@ export struct ParamsV {
     fg-filter: FilterV,
     bg-mode: int,
     bg-color: color,
+    bg-color2: color,
+    bg-angle: int,
     bg-image: string,
     fill-hole: bool,
     ratio: int,
@@ -215,6 +217,8 @@ export global Backend {
     callback set-index(string, int);
     callback apply-preset(int);
     callback set-rgb(string, int, int, int);
+    // The next click on a picture fills in the colour setting at this path.
+    callback pick-color(string);
     callback copy-result();
     callback pick-bg-image();
     callback reset-crop();

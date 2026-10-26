@@ -180,7 +180,7 @@
   "Zoom to fit": "Ajuster à la fenêtre",
   "Zoom to fit (Ctrl+9)": "Ajuster à la fenêtre (Ctrl+9)",
   "a foreground effect is active": "un effet de premier plan est actif",
-  "the background is a picture or the original": "l'arrière-plan est une image ou l'original",
+  "the background is a picture, a gradient or the original": "l'arrière-plan est une image, un dégradé ou l'original",
   "the shadow is on": "l'ombre est activée",
   "{name} failed: {output}": "Échec de {name} : {output}",
   "{name} finished": "{name} terminé",
@@ -212,5 +212,11 @@
   "Unknown model.": "Modèle inconnu.",
   "The model file is missing.": "Le fichier du modèle est introuvable.",
   "This model is used by Smart select, not as the cut-out model.": "Ce modèle sert à la sélection intelligente, pas au détourage.",
-  "Download this model first.": "Téléchargez d'abord ce modèle."
+  "Download this model first.": "Téléchargez d'abord ce modèle.",
+  "Gradient": "Dégradé",
+  "Start color": "Couleur de départ",
+  "End color": "Couleur d'arrivée",
+  "Angle": "Angle",
+  "Click the picture to pick a colour. Esc cancels.": "Cliquez sur l'image pour choisir une couleur. Échap annule.",
+  "Pick a colour from the picture": "Prendre une couleur dans l'image"
 }

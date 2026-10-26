@@ -78,6 +78,9 @@ component FilterFields inherits VerticalLayout {
         changed(r, g, b) => {
             Backend.set-rgb(root.path + ".color", r, g, b);
         }
+        pick => {
+            Backend.pick-color(root.path + ".color");
+        }
     }
 }
 
@@ -215,7 +218,7 @@ export component Dock inherits Rectangle {
                     title: @tr("Background");
                     SelectRow {
                         label: @tr("Type");
-                        options: [@tr("Transparent"), @tr("Solid color"), @tr("Image"), @tr("Original")];
+                        options: [@tr("Transparent"), @tr("Solid color"), @tr("Image"), @tr("Original"), @tr("Gradient")];
                         current: Backend.p.bg-mode;
                         selected(i) => {
                             Backend.set-index("background.mode", i);
@@ -226,6 +229,39 @@ export component Dock inherits Rectangle {
                         value: Backend.p.bg-color;
                         changed(r, g, b) => {
                             Backend.set-rgb("background.color", r, g, b);
+                        }
+                        pick => {
+                            Backend.pick-color("background.color");
+                        }
+                    }
+                    if Backend.p.bg-mode == 4: ColorRow {
+                        label: @tr("Start color");
+                        value: Backend.p.bg-color;
+                        changed(r, g, b) => {
+                            Backend.set-rgb("background.color", r, g, b);
+                        }
+                        pick => {
+                            Backend.pick-color("background.color");
+                        }
+                    }
+                    if Backend.p.bg-mode == 4: ColorRow {
+                        label: @tr("End color");
+                        value: Backend.p.bg-color2;
+                        changed(r, g, b) => {
+                            Backend.set-rgb("background.gradient_color", r, g, b);
+                        }
+                        pick => {
+                            Backend.pick-color("background.gradient_color");
+                        }
+                    }
+                    if Backend.p.bg-mode == 4: SliderRow {
+                        label: @tr("Angle");
+                        value: Backend.p.bg-angle;
+                        minimum: 0;
+                        maximum: 359;
+                        unit: "°";
+                        changed(v) => {
+                            Backend.set-int("background.gradient_angle", v);
                         }
                     }
                     if Backend.p.bg-mode == 2: VerticalLayout {
@@ -372,6 +408,9 @@ export component Dock inherits Rectangle {
                         enabled: Backend.p.sh-on;
                         changed(r, g, b) => {
                             Backend.set-rgb("shadow.color", r, g, b);
+                        }
+                        pick => {
+                            Backend.pick-color("shadow.color");
                         }
                     }
                 }

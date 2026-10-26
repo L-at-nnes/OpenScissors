@@ -128,6 +128,8 @@ pub struct Ux {
     pub hover: Option<(i32, f64, f64)>,
     pub crop_drag: Option<CropDrag>,
     pub live_crop: Option<Rect>,
+    /// The colour setting (a parameter path such as `background.color`) that the next click on a picture fills in.
+    pub pick: Option<String>,
     pub prediction: Prediction,
     pub last_export: Option<String>,
     pub last_saved: Option<String>,
@@ -152,7 +154,7 @@ pub struct Ctl {
 }
 
 pub const KIND_KEYS: [&str; 6] = ["none", "blur", "colorize", "grayscale", "negative", "pixelate"];
-pub const MODE_KEYS: [&str; 4] = ["transparent", "color", "image", "original"];
+pub const MODE_KEYS: [&str; 5] = ["transparent", "color", "image", "original", "gradient"];
 
 fn kind_index(k: FilterKind) -> i32 {
     match k {
@@ -171,6 +173,7 @@ fn mode_index(m: BgMode) -> i32 {
         BgMode::Color => 1,
         BgMode::Image => 2,
         BgMode::Original => 3,
+        BgMode::Gradient => 4,
     }
 }
 
@@ -194,6 +197,8 @@ pub fn params_v(p: &Params) -> ParamsV {
         fg_filter: filter_v(&p.foreground.filter),
         bg_mode: mode_index(p.background.mode),
         bg_color: rgb(p.background.color),
+        bg_color2: rgb(p.background.gradient_color),
+        bg_angle: p.background.gradient_angle as i32,
         bg_image: SharedString::from(p.background.image_path.as_deref().and_then(|s| s.rsplit(['/', '\\']).next()).unwrap_or("")),
         fill_hole: p.background.fill_hole,
         ratio: ASPECT_RATIOS.iter().position(|(k, _)| *k == p.background.aspect_ratio).unwrap_or(0) as i32,
@@ -269,6 +274,7 @@ impl Ctl {
                 hover: None,
                 crop_drag: None,
                 live_crop: None,
+                pick: None,
                 prediction: Prediction::Idle,
                 last_export: None,
                 last_saved: None,
@@ -684,6 +690,9 @@ impl Ctl {
         }
         if ux.pan_from.is_some() {
             return 3;
+        }
+        if ux.pick.is_some() {
+            return 1;
         }
         if let Some(d) = &ux.crop_drag {
             return d.handle.cursor();

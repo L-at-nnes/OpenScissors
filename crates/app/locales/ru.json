@@ -180,7 +180,7 @@
   "Zoom to fit": "По размеру окна",
   "Zoom to fit (Ctrl+9)": "По размеру окна (Ctrl+9)",
   "a foreground effect is active": "включён эффект переднего плана",
-  "the background is a picture or the original": "фон — картинка или оригинал",
+  "the background is a picture, a gradient or the original": "фон — картинка, градиент или оригинал",
   "the shadow is on": "включена тень",
   "{name} failed: {output}": "Ошибка {name}: {output}",
   "{name} finished": "{name}: готово",
@@ -212,5 +212,11 @@
   "Unknown model.": "Неизвестная модель.",
   "The model file is missing.": "Файл модели отсутствует.",
   "This model is used by Smart select, not as the cut-out model.": "Эта модель используется для умного выделения, а не для удаления фона.",
-  "Download this model first.": "Сначала скачайте эту модель."
+  "Download this model first.": "Сначала скачайте эту модель.",
+  "Gradient": "Градиент",
+  "Start color": "Начальный цвет",
+  "End color": "Конечный цвет",
+  "Angle": "Угол",
+  "Click the picture to pick a colour. Esc cancels.": "Щёлкните по изображению, чтобы выбрать цвет. Esc — отмена.",
+  "Pick a colour from the picture": "Взять цвет с изображения"
 }

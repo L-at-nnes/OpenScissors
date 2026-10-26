@@ -1,4 +1,4 @@
-import { Theme } from "theme.slint";
+import { Theme, Icons } from "theme.slint";
 import { Backend } from "backend.slint";
 
 export component Icon inherits Path {
@@ -360,6 +360,8 @@ export component ColorRow inherits Rectangle {
     in property <color> value;
     in property <bool> enabled: true;
     callback changed(int, int, int);
+    // The eyedropper was pressed: the next click on a picture should fill this colour in.
+    callback pick();
     height: 34px;
     opacity: root.enabled ? 1 : 0.45;
     accessible-role: button;
@@ -404,6 +406,30 @@ export component ColorRow inherits Rectangle {
             mouse-cursor: MouseCursor.pointer;
             clicked => {
                 popup.show();
+            }
+        }
+        dropper := Rectangle {
+            x: parent.width - 26px;
+            y: 3px;
+            width: 22px;
+            height: 22px;
+            border-radius: 3px;
+            background: dropper-touch.has-hover && root.enabled ? Theme.surface-3 : transparent;
+            accessible-role: button;
+            accessible-label: @tr("Pick a colour from the picture");
+            Icon {
+                d: Icons.eyedropper;
+                size: 16px;
+                tint: dropper-touch.has-hover && root.enabled ? Theme.text : Theme.text-2;
+                x: 3px;
+                y: 3px;
+            }
+            dropper-touch := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: MouseCursor.pointer;
+                clicked => {
+                    root.pick();
+                }
             }
         }
     }
