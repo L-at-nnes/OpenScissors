@@ -402,6 +402,21 @@ mod tests {
     }
 
     #[test]
+    fn a_percent_sign_in_a_file_name_reaches_the_script_untouched() {
+        let root = tmp("percent");
+        install(&root, "p", serde_json::json!({ "id": "p", "name": "P" }), "echo [%~1]", "echo \"[$1]\"");
+        // `%USERNAME%` would be replaced by cmd.exe when it reads the script arguments.
+        let file = root.join("100%USERNAME%.png");
+        if std::fs::write(&file, b"x").is_err() {
+            return; // this system does not allow '%' in a file name
+        }
+        let plugin = discover(&root).into_iter().next().unwrap().plugin.unwrap();
+        let out = run(&plugin, &file, Duration::from_secs(20)).unwrap();
+        assert!(out.output.contains("100%USERNAME%.png"), "{out:?}");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn a_program_left_running_by_a_plugin_does_not_freeze_the_wait() {
         let root = tmp("stray");
         // The script ends at once, but the program it started keeps the output pipes open for 30 seconds.
