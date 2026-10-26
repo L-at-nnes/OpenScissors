@@ -158,7 +158,7 @@ A plug-in is a folder `plugins/<id>/` next to `models/`, with a `plugin.json`:
   "command": "run.cmd", "args": ["{input}"], "extensions": ["png"] }
 ```
 
-`command` is a file inside that folder; `{input}` is the file you just saved and `{dir}` its folder. A plug-in does nothing until you turn it on in *Settings*, then it runs only when you press **Run on the last saved file** (60 s limit, the last lines of its output are shown). It is a program you installed: OpenScissors adds no permission of its own.
+`command` is a file inside that folder: a `.cmd`, `.bat` or `.exe` on Windows (the example above is a Windows one), an executable script such as `run.sh` on Linux and macOS. `{input}` is the file you just saved and `{dir}` its folder. A plug-in does nothing until you turn it on in *Settings*, then it runs only when you press **Run on the last saved file** (60 s limit, the last lines of its output are shown). When the time is over, or when the plug-in leaves a program running behind it, that program is stopped together with everything it started. It is a program you installed: OpenScissors adds no permission of its own.
 
 ## How it is put together
 

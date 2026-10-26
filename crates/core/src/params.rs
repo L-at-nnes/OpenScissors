@@ -49,7 +49,7 @@ pub enum BgMode {
 pub struct MaskParams {
     /// Boundary offset in pixels; negative erodes.
     pub offset: i32,
-    /// "Group by Color Similarity" (graph-cut), not implemented yet.
+    /// "Group by Color Similarity": GrabCut seeded by the prediction and the green and red marks.
     pub graphcut: bool,
 }
 
