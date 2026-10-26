@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;
 
 use openscissors_core::batch::{self, BatchOptions};
-use openscissors_core::io::{load_image, save_mask_png, save_rgba, Format};
+use openscissors_core::io::{load_image, save_mask_png, save_rgba, write_atomic, Format};
 use openscissors_core::model::{ModelRegistry, ModelState, Predictor};
 use openscissors_core::params::Params;
 use openscissors_core::settings::Settings;
@@ -21,8 +21,11 @@ const USAGE: &str = "usage:
   openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>]
   openscissors-cli cut <in> <out.png|webp|avif|tiff> [--model <id|file.onnx>]
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif] [--quality 95]
-                         [--model <id|file.onnx>] [--defaults]
-      cuts out every image of the folder; --defaults applies the layer settings saved in the app";
+                         [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>]
+      cuts out every image of the folder; --defaults applies the layer settings saved in the app;
+      --resume leaves alone the images whose result is already in <dst-folder>, so that running the same
+      command again after an error or an interruption does only what is left; --report writes a JSON
+      report (one entry per image: done, skipped or failed, the file written, the error, the time)";
 
 /// The portable folder: `$OPENSCISSORS_HOME`, or the folder of the executable.
 fn home_dir() -> PathBuf {
@@ -122,7 +125,8 @@ fn run(args: Vec<String>) -> Result<(), String> {
             };
             let files = batch::validate(Path::new(src), Path::new(dst)).map_err(|e| e.to_string())?;
             let predictor = load_predictor(&registry, flag(&args, "--model"))?;
-            let opts = BatchOptions { dst: PathBuf::from(dst), format, quality, params };
+            let opts =
+                BatchOptions { dst: PathBuf::from(dst), format, quality, params, skip_existing: args.iter().any(|a| a == "--resume") };
             let predict = |img: &openscissors_core::types::Image| predictor.predict(img, true);
             let report = batch::run_batch(
                 &files,
@@ -138,7 +142,10 @@ fn run(args: Vec<String>) -> Result<(), String> {
             for f in &report.failed {
                 eprintln!("failed: {}: {}", f.file, f.error);
             }
-            eprintln!("{} processed, {} failed", report.processed, report.failed.len());
+            if let Some(path) = flag(&args, "--report") {
+                write_atomic(Path::new(&path), report.to_json().as_bytes()).map_err(|e| format!("cannot write the report {path}: {e}"))?;
+            }
+            eprintln!("{} processed, {} skipped, {} failed", report.processed, report.skipped, report.failed.len());
             if report.failed.is_empty() {
                 Ok(())
             } else {

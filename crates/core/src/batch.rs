@@ -18,6 +18,9 @@ pub struct BatchOptions {
     pub quality: u8,
     /// Layer settings applied to every image (normally the user's saved defaults).
     pub params: Params,
+    /// Leave alone the images whose result (`name.ext`) is already in the destination: running the same batch again
+    /// after an interruption or a failure then only does what is left.
+    pub skip_existing: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -26,12 +29,41 @@ pub struct BatchFailure {
     pub error: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BatchStatus {
+    Done,
+    Skipped,
+    Failed,
+}
+
+/// What happened to one image.
+#[derive(Clone, Debug, Serialize)]
+pub struct BatchItem {
+    pub file: String,
+    pub status: BatchStatus,
+    /// The file written (done) or the one that was already there (skipped).
+    pub output: Option<String>,
+    pub error: Option<String>,
+    pub millis: u64,
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BatchReport {
     pub total: usize,
     pub processed: usize,
+    pub skipped: usize,
     pub failed: Vec<BatchFailure>,
     pub cancelled: bool,
+    /// One entry per image that was looked at, in order.
+    pub items: Vec<BatchItem>,
+}
+
+impl BatchReport {
+    /// The report as JSON text, for a machine to read.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_default()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -81,7 +113,18 @@ pub fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     (1..).map(|n| dir.join(format!("{stem}_{n}.{ext}"))).find(|p| !p.exists()).expect("an unused name exists")
 }
 
-fn process_one(file: &Path, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Result<Mask>) -> Result<()> {
+/// What `process_one` did.
+enum Outcome {
+    Written(PathBuf),
+    AlreadyThere(PathBuf),
+}
+
+fn process_one(file: &Path, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Result<Mask>) -> Result<Outcome> {
+    let stem = file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into());
+    let existing = opts.dst.join(format!("{stem}.{}", opts.format.extension()));
+    if opts.skip_existing && existing.is_file() {
+        return Ok(Outcome::AlreadyThere(existing));
+    }
     let image = load_image(file)?;
     let mask = predict(&image)?;
     let mut params = opts.params.clone();
@@ -90,8 +133,9 @@ fn process_one(file: &Path, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Res
     let mut doc = Document::new(0, image, Some(file.to_path_buf())).with_params(params);
     doc.set_prediction(Some(mask));
     let out = doc.export();
-    let stem = file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into());
-    save_rgba(&unique_path(&opts.dst, &stem, opts.format.extension()), &out, opts.format, opts.quality, flatten)
+    let target = unique_path(&opts.dst, &stem, opts.format.extension());
+    save_rgba(&target, &out, opts.format, opts.quality, flatten)?;
+    Ok(Outcome::Written(target))
 }
 
 /// Process `files` one after the other. `predict` produces the mask of an image; `cancel` is
@@ -110,15 +154,25 @@ pub fn run_batch(
             break;
         }
         progress(BatchProgress { done: i, total: files.len(), current: Some(file) });
-        match process_one(file, opts, predict) {
-            Ok(()) => report.processed += 1,
-            Err(e) => report.failed.push(BatchFailure {
-                file: file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                error: e.to_string(),
-            }),
-        }
+        let started = std::time::Instant::now();
+        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let (status, output, error) = match process_one(file, opts, predict) {
+            Ok(Outcome::Written(p)) => {
+                report.processed += 1;
+                (BatchStatus::Done, Some(p.display().to_string()), None)
+            }
+            Ok(Outcome::AlreadyThere(p)) => {
+                report.skipped += 1;
+                (BatchStatus::Skipped, Some(p.display().to_string()), None)
+            }
+            Err(e) => {
+                report.failed.push(BatchFailure { file: name.clone(), error: e.to_string() });
+                (BatchStatus::Failed, None, Some(e.to_string()))
+            }
+        };
+        report.items.push(BatchItem { file: name, status, output, error, millis: started.elapsed().as_millis() as u64 });
     }
-    progress(BatchProgress { done: report.processed + report.failed.len(), total: files.len(), current: None });
+    progress(BatchProgress { done: report.processed + report.skipped + report.failed.len(), total: files.len(), current: None });
     report
 }
 
@@ -154,7 +208,7 @@ mod tests {
     }
 
     fn opts(dst: &Path, format: Format) -> BatchOptions {
-        BatchOptions { dst: dst.into(), format, quality: 90, params: Params::default() }
+        BatchOptions { dst: dst.into(), format, quality: 90, params: Params::default(), skip_existing: false }
     }
 
     #[test]
@@ -215,6 +269,39 @@ mod tests {
         let again = run_batch(&files, &opts(&dst, Format::Png), &half_mask, &mut |_| {}, &AtomicBool::new(false));
         assert_eq!(again.processed, 2);
         assert!(dst.join("one_1.png").exists() && dst.join("two_1.png").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn running_again_with_skip_existing_only_does_what_is_left_and_the_report_says_so() {
+        let root = tmp("resume");
+        let (src, dst) = (root.join("src"), root.join("dst"));
+        std::fs::create_dir_all(&src).unwrap();
+        write_png(&src.join("one.png"), 12, 12);
+        write_png(&src.join("two.png"), 12, 12);
+        std::fs::write(src.join("three.png"), "not an image yet").unwrap();
+        let files = validate(&src, &dst).unwrap();
+        let mut o = opts(&dst, Format::Png);
+        o.skip_existing = true;
+        let first = run_batch(&files, &o, &half_mask, &mut |_| {}, &AtomicBool::new(false));
+        assert_eq!((first.processed, first.skipped, first.failed.len()), (2, 0, 1));
+
+        // The broken file is repaired; the next run leaves the two finished results alone.
+        write_png(&src.join("three.png"), 12, 12);
+        let second = run_batch(&files, &o, &half_mask, &mut |_| {}, &AtomicBool::new(false));
+        assert_eq!((second.processed, second.skipped, second.failed.len()), (1, 2, 0));
+        assert!(!dst.join("one_1.png").exists(), "nothing was written twice");
+        let statuses: Vec<_> = second.items.iter().map(|i| (i.file.as_str(), i.status)).collect();
+        assert_eq!(statuses, [("one.png", BatchStatus::Skipped), ("three.png", BatchStatus::Done), ("two.png", BatchStatus::Skipped)]);
+
+        let json: serde_json::Value = serde_json::from_str(&second.to_json()).unwrap();
+        assert_eq!((json["processed"].as_u64(), json["skipped"].as_u64()), (Some(1), Some(2)));
+        assert_eq!(json["items"][1]["status"], "done");
+        assert!(json["items"][1]["output"].as_str().unwrap().ends_with("three.png"));
+        assert!(json["items"][0]["error"].is_null());
+        let failed = serde_json::from_str::<serde_json::Value>(&first.to_json()).unwrap();
+        assert_eq!(failed["items"][1]["status"], "failed");
+        assert!(failed["items"][1]["error"].as_str().is_some());
         std::fs::remove_dir_all(root).ok();
     }
 

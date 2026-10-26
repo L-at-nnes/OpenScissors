@@ -705,7 +705,7 @@ impl Ctl {
         self.refresh(crate::ctl::R_BATCH);
         let me = self.clone();
         std::thread::spawn(move || {
-            let opts = BatchOptions { dst, format, quality, params };
+            let opts = BatchOptions { dst, format, quality, params, skip_existing: false };
             let predict = |img: &openscissors_core::types::Image| model.predict(img, true);
             let report = batch::run_batch(
                 &files,
