@@ -12,7 +12,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff", "gif"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff", "gif", "avif"] }
 fast_image_resize = { version = "5", features = ["rayon"] }
 rayon = "1"
 ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "copy-dylibs", "tls-native"] }
@@ -21,6 +21,7 @@ hex = "0.4"
 base64 = "0.22"
 moxcms = "0.8"
 ureq = { version = "3", features = ["rustls"] }
+webp = { version = "0.3", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"

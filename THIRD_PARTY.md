@@ -9,6 +9,8 @@ Dependencies are resolved by Cargo, not vendored.
 | ort (ONNX Runtime bindings, ONNX Runtime) | model inference | MIT / Apache-2.0 |
 | image, fast_image_resize | codecs, resampling | MIT / Apache-2.0 |
 | moxcms (also used by `image`) | colour profile conversion to sRGB | BSD-3-Clause / Apache-2.0 |
+| webp, libwebp (C library, built from source) | lossy WebP export | MIT or Apache-2.0 (wrapper) / BSD-3-Clause (libwebp) |
+| ravif, rav1e (through `image`) | AVIF export | BSD-3-Clause / BSD-2-Clause |
 | rayon, serde, serde_json, thiserror, sha2, hex, base64, ureq | core utilities, checked downloads | MIT / Apache-2.0 |
 | Microsoft DirectML runtime (Windows, optional GPU provider, shipped in the portable folder) | GPU inference | MIT |
 

@@ -67,7 +67,7 @@ pub fn validate(src: &Path, dst: &Path) -> Result<Vec<PathBuf>> {
     }
     let files = list_images(src)?;
     if files.is_empty() {
-        return Err(Error::msg("The source folder contains no supported image (jpg, png, bmp, tif, webp)."));
+        return Err(Error::msg("The source folder contains no supported image (jpg, png, bmp, tif, webp, gif)."));
     }
     Ok(files)
 }

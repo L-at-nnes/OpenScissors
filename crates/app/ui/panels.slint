@@ -445,7 +445,7 @@ export component BatchPanel inherits Frame {
                 text: @tr("3. Result format");
             }
             SelectRow {
-                options: ["PNG", "JPG", "WebP"];
+                options: ["PNG", "JPG", "WebP", "AVIF"];
                 current: Backend.batch-format;
                 enabled: !Backend.batch-running;
                 selected(i) => {
@@ -586,7 +586,7 @@ export component SettingsDialog inherits Frame {
             text: @tr("Export");
         }
         SliderRow {
-            label: @tr("JPEG quality");
+            label: @tr("Quality (JPEG, WebP, AVIF)");
             value: Backend.jpeg-quality;
             minimum: 10;
             maximum: 100;

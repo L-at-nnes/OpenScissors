@@ -19,8 +19,8 @@ const USAGE: &str = "usage:
   openscissors-cli models download <id>        download a model (HTTPS, sha256 checked; run it again to resume)
   openscissors-cli models verify <id>          check the downloaded files against their sha256
   openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>]
-  openscissors-cli cut <in> <out.png|webp|tiff> [--model <id|file.onnx>]
-  openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp] [--quality 95]
+  openscissors-cli cut <in> <out.png|webp|avif|tiff> [--model <id|file.onnx>]
+  openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif] [--quality 95]
                          [--model <id|file.onnx>] [--defaults]
       cuts out every image of the folder; --defaults applies the layer settings saved in the app";
 
@@ -108,6 +108,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 "png" => Format::Png,
                 "jpg" | "jpeg" => Format::Jpeg,
                 "webp" => Format::Webp,
+                "avif" => Format::Avif,
                 other => return Err(format!("unsupported format '{other}'")),
             };
             let quality = flag(&args, "--quality")
@@ -157,7 +158,8 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 p[..3].copy_from_slice(&image.data[i * 3..i * 3 + 3]);
                 p[3] = mask.data[i];
             }
-            let format = Format::from_path(Path::new(output)).filter(|f| f.supports_alpha()).ok_or("output must be png, webp or tiff")?;
+            let format =
+                Format::from_path(Path::new(output)).filter(|f| f.supports_alpha()).ok_or("output must be png, webp, avif or tiff")?;
             save_rgba(Path::new(output), &rgba, format, 95, [255; 3]).map_err(|e| e.to_string())
         }
         _ => Err(USAGE.to_string()),

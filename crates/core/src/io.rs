@@ -187,6 +187,8 @@ pub enum Format {
     Png,
     Jpeg,
     Webp,
+    /// Written only: the build has an AVIF encoder, no decoder.
+    Avif,
     Bmp,
     Tiff,
 }
@@ -197,6 +199,7 @@ impl Format {
             "png" => Some(Self::Png),
             "jpg" | "jpeg" => Some(Self::Jpeg),
             "webp" => Some(Self::Webp),
+            "avif" => Some(Self::Avif),
             "bmp" => Some(Self::Bmp),
             "tif" | "tiff" => Some(Self::Tiff),
             _ => None,
@@ -210,6 +213,7 @@ impl Format {
             Self::Png => "png",
             Self::Jpeg => "jpg",
             Self::Webp => "webp",
+            Self::Avif => "avif",
             Self::Bmp => "bmp",
             Self::Tiff => "tiff",
         }
@@ -228,8 +232,11 @@ pub fn flatten(rgba: &Rgba, bg: [u8; 3]) -> Image {
     Image { w: rgba.w, h: rgba.h, data: out }
 }
 
+/// AVIF encoder effort, 1 (slowest, smallest) to 10: 6 keeps a 12-megapixel export within a few seconds.
+const AVIF_SPEED: u8 = 6;
+
 /// Save `rgba` in `format`. Formats without alpha are flattened on `flatten_color`.
-/// `quality` (10-100) only applies to JPEG; WebP is written lossless.
+/// `quality` (10-100) applies to JPEG, WebP and AVIF; WebP at 100 is lossless (and keeps the colour profile tag).
 /// The file is encoded in memory first and written with [`write_atomic`], so a failure never leaves a truncated file.
 pub fn save_rgba(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_color: [u8; 3]) -> Result<()> {
     save_rgba_tagged(path, rgba, format, quality, flatten_color, false)
@@ -255,8 +262,18 @@ pub fn save_rgba_tagged(path: &Path, rgba: &Rgba, format: Format, quality: u8, f
                 tag(&mut e);
                 e.write_image(buf.as_raw(), w, h, color)?
             }
-            Format::Webp => {
+            Format::Webp if quality >= 100 => {
                 let mut e = image::codecs::webp::WebPEncoder::new_lossless(&mut out);
+                tag(&mut e);
+                e.write_image(buf.as_raw(), w, h, color)?
+            }
+            Format::Webp => {
+                // libwebp: the colours are compressed with loss, the transparency is kept exact.
+                let lossy = webp::Encoder::from_rgba(buf.as_raw(), w, h).encode(quality.max(10) as f32);
+                std::io::Write::write_all(&mut out, &lossy)?
+            }
+            Format::Avif => {
+                let mut e = image::codecs::avif::AvifEncoder::new_with_speed_quality(&mut out, AVIF_SPEED, quality.clamp(10, 100));
                 tag(&mut e);
                 e.write_image(buf.as_raw(), w, h, color)?
             }
@@ -442,6 +459,35 @@ mod tests {
         assert_eq!((img.w, img.h), (6, 4));
         assert!(img.data[0] > 200 && img.data[1] < 60, "the colour survives the palette");
         assert!(IMAGE_EXTENSIONS.contains(&"gif"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn webp_is_lossy_below_100_and_lossless_at_100_and_avif_is_written() {
+        let dir = std::env::temp_dir().join(format!("osc-lossy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // A noisy picture with a transparent half: lossy files are smaller, the transparency stays exact.
+        let mut rgba = Rgba::new(64, 64);
+        let mut seed = 7u32;
+        for (i, p) in rgba.data.chunks_exact_mut(4).enumerate() {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            p.copy_from_slice(&[(seed >> 24) as u8, (seed >> 16) as u8, (seed >> 8) as u8, if i % 64 < 32 { 255 } else { 0 }]);
+        }
+        let size = |name: &str, q: u8| {
+            save_rgba(&dir.join(name), &rgba, Format::from_path(Path::new(name)).unwrap(), q, [255; 3]).unwrap();
+            std::fs::metadata(dir.join(name)).unwrap().len()
+        };
+        let (lossless, lossy) = (size("a.webp", 100), size("b.webp", 60));
+        assert!(lossy < lossless, "{lossy} < {lossless}");
+        let back = image::open(dir.join("b.webp")).unwrap().to_rgba8();
+        assert_eq!((back.get_pixel(0, 0).0[3], back.get_pixel(40, 0).0[3]), (255, 0), "the transparency is kept exact");
+        let exact = image::open(dir.join("a.webp")).unwrap().to_rgba8();
+        assert_eq!(exact.get_pixel(3, 3).0[..3], rgba.data[(3 * 64 + 3) * 4..][..3], "100 is lossless");
+        assert!(size("c.avif", 60) > 0);
+        let head = std::fs::read(dir.join("c.avif")).unwrap();
+        assert_eq!(&head[4..12], b"ftypavif", "an AVIF container");
+        assert_eq!(Format::from_path(Path::new("x.AVIF")), Some(Format::Avif));
+        assert!(Format::Avif.supports_alpha() && !IMAGE_EXTENSIONS.contains(&"avif"), "written, not read");
         std::fs::remove_dir_all(dir).ok();
     }
 

@@ -27,8 +27,14 @@ fn why_8bit(reason: &str) -> String {
     }
 }
 
-const SAVE_FILTERS: &[(&str, &[&str])] =
-    &[("PNG (transparency)", &["png"]), ("WebP", &["webp"]), ("JPEG", &["jpg", "jpeg"]), ("TIFF", &["tif", "tiff"]), ("BMP", &["bmp"])];
+const SAVE_FILTERS: &[(&str, &[&str])] = &[
+    ("PNG (transparency)", &["png"]),
+    ("WebP", &["webp"]),
+    ("AVIF", &["avif"]),
+    ("JPEG", &["jpg", "jpeg"]),
+    ("TIFF", &["tif", "tiff"]),
+    ("BMP", &["bmp"]),
+];
 
 enum Exported {
     Bits8(openscissors_core::types::Rgba, [u8; 3]),
@@ -288,7 +294,7 @@ impl Ctl {
     }
 
     pub fn export_to(self: &Arc<Self>, target: &Path) -> Result<(), String> {
-        let format = Format::from_path(target).ok_or_else(|| t("Unsupported file type: use png, jpg, webp, bmp or tiff."))?;
+        let format = Format::from_path(target).ok_or_else(|| t("Unsupported file type: use png, jpg, webp, avif, bmp or tiff."))?;
         let (quality, want16) = {
             let s = self.st.settings.guard();
             (s.jpeg_quality, s.export_16bit && matches!(format, Format::Png | Format::Tiff))
@@ -672,6 +678,7 @@ impl Ctl {
         let format = match self.ux.guard().batch.format {
             1 => Format::Jpeg,
             2 => Format::Webp,
+            3 => Format::Avif,
             _ => Format::Png,
         };
         let (src, dst) = (PathBuf::from(src), PathBuf::from(dst));
