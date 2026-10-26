@@ -1,0 +1,20 @@
+# cargo-deny configuration (https://embarkstudios.github.io/cargo-deny/). CI runs
+# `cargo deny check advisories bans sources`: known vulnerabilities, wildcard versions and crates that do not come from
+# crates.io. The licences are tracked by hand in THIRD_PARTY.md (Slint's own licence has no SPDX identifier).
+
+[advisories]
+version = 2
+yanked = "deny"
+# Only the crates the workspace itself depends on: Slint pulls in unmaintained ones (ttf-parser, zbus) that nothing can fix here.
+unmaintained = "workspace"
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+# `path = "../core"` between our own crates is not a wildcard.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

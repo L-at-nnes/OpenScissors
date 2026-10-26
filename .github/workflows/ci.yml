@@ -2,6 +2,9 @@ name: ci
 on:
   push:
   pull_request:
+  schedule:
+    # New advisories appear without any commit: look again every Monday.
+    - cron: "0 6 * * 1"
 
 jobs:
   test:
@@ -23,6 +26,14 @@ jobs:
           sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace   # golden and pipeline tests are skipped without OPENSCISSORS_MODEL
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans sources   # deny.toml
 
   portable:
     needs: test
