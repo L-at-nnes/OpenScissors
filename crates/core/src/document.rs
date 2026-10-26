@@ -589,7 +589,8 @@ impl Document {
                 self.filled = Some((key, inpaint::fill_hole(&self.image, &hole)));
             }
         }
-        if self.params.background.mode == BgMode::Image && self.frame.as_ref().map(|(r, _)| *r) != Some(self.rev) {
+        if matches!(self.params.background.mode, BgMode::Image | BgMode::Gradient) && self.frame.as_ref().map(|(r, _)| *r) != Some(self.rev)
+        {
             let alpha = self.alpha.as_ref().expect("alpha ready");
             let finished = self.params.background.fit_to_result.then(|| render::finished_alpha(alpha, &self.params));
             self.frame = Some((self.rev, crop::effective_crop(&self.params, finished.as_ref(), (w as f64, h as f64))));
@@ -603,7 +604,7 @@ impl Document {
             params: &self.params,
             bg_image: self.bg.as_ref().map(|(_, i)| i),
             filled: self.filled.as_ref().map(|(_, i)| i),
-            frame: self.frame.filter(|_| self.params.background.mode == BgMode::Image).map(|(_, r)| r),
+            frame: self.frame.filter(|_| matches!(self.params.background.mode, BgMode::Image | BgMode::Gradient)).map(|(_, r)| r),
         }
     }
 

@@ -111,6 +111,28 @@ fn sample_mask(src: &Mask, exp: Rect, dw: usize, dh: usize, interp: Interp) -> M
     Mask { w: dw, h: dh, data: sample(&src.data, src.w, src.h, 1, exp, dw, dh, interp, false) }
 }
 
+/// The gradient of `bg` over `frame` (the canvas that is exported), seen through `exp` at `scale`: the start colour at
+/// one end of the frame along the gradient's direction, the end colour at the other.
+fn gradient(bg: &crate::params::BackgroundParams, frame: Rect, exp: Rect, scale: f64, ew: usize, eh: usize) -> Image {
+    let angle = (bg.gradient_angle as f64).to_radians();
+    let (dx, dy) = (angle.sin(), -angle.cos());
+    let (cx, cy) = ((frame.x0 + frame.x1) / 2.0, (frame.y0 + frame.y1) / 2.0);
+    // Half the extent of the frame along the direction: the corners are exactly at the two ends.
+    let half = (frame.width() / 2.0 * dx.abs() + frame.height() / 2.0 * dy.abs()).max(1e-9);
+    let mut out = Image::new(ew, eh);
+    out.data.par_chunks_mut(ew * 3).enumerate().for_each(|(y, row)| {
+        let py = exp.y0 + (y as f64 + 0.5) / scale;
+        for x in 0..ew {
+            let px = exp.x0 + (x as f64 + 0.5) / scale;
+            let t = (((px - cx) * dx + (py - cy) * dy) / (2.0 * half) + 0.5).clamp(0.0, 1.0);
+            for c in 0..3 {
+                row[x * 3 + c] = (bg.color[c] as f64 * (1.0 - t) + bg.gradient_color[c] as f64 * t).round() as u8;
+            }
+        }
+    });
+    out
+}
+
 /// Render `region` (image coordinates) into an `out_w` x `out_h` RGBA buffer with straight alpha. Transparent areas
 /// keep alpha 0. The region may reach past the picture (a canvas extended by the crop): what is there is the
 /// background, with the shadow of the subject if it spills over.
@@ -160,6 +182,10 @@ fn render_region_with(scene: &Scene, region: Rect, out_w: usize, out_h: usize, m
     let (bg, bg_opaque) = match p.background.mode {
         BgMode::Transparent => (Image::new(ew, eh), false),
         BgMode::Color => (Image::filled(ew, eh, p.background.color), true),
+        BgMode::Gradient => {
+            let frame = scene.frame.unwrap_or(Rect::new(0.0, 0.0, iw, ih));
+            (gradient(&p.background, frame, exp, scale, ew, eh), true)
+        }
         BgMode::Image => match scene.bg_image {
             Some(pic) => {
                 let frame = scene.frame.unwrap_or(Rect::new(0.0, 0.0, iw, ih));
@@ -318,7 +344,7 @@ fn resize_to_output_width(img: Rgba, width: usize) -> Rgba {
 /// Why a 16-bit export is not possible with the current settings, if it is not.
 pub fn deep_blocker(params: &Params) -> Option<&'static str> {
     if !matches!(params.background.mode, BgMode::Transparent | BgMode::Color) {
-        Some("the background is a picture or the original")
+        Some("the background is a picture, a gradient or the original")
     } else if params.background.output_width > 0 {
         Some("a fixed output width is set")
     } else if (params.foreground.brightness, params.foreground.saturation, params.foreground.warmth) != (0, 0, 0) {
@@ -583,6 +609,35 @@ mod tests {
         let sh = scene(&params);
         assert!(at(&sh, -4, 30)[3] > 0 && at(&sh, -4, 30)[3] < 255, "{:?}", at(&sh, -4, 30));
         assert_eq!(at(&sh, -19, 0)[3], 0);
+    }
+
+    #[test]
+    fn a_gradient_runs_from_one_colour_to_the_other_across_the_exported_frame() {
+        let (img, alpha) = scene_parts(); // 80 x 60
+        let mut params = Params::default();
+        params.background.mode = BgMode::Gradient;
+        params.background.color = [0, 0, 0];
+        params.background.gradient_color = [200, 100, 0];
+        let export = |p: &Params| export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None });
+        // 90 degrees: from the left edge to the right edge.
+        params.background.gradient_angle = 90;
+        let out = export(&params);
+        let at = |x: usize, y: usize| out.data[(y * 80 + x) * 4..][..4].to_vec();
+        let (left, right) = (at(0, 5), at(79, 5));
+        assert!(left[0] <= 3 && left[1] <= 2 && right[0] >= 197 && right[1] >= 98, "the ends are the two colours: {left:?} {right:?}");
+        let middle = at(10 + 20, 55); // below the subject, a quarter of the way: about a quarter of the end colour
+        assert!(middle[0].abs_diff(75) <= 3 && middle[1].abs_diff(37) <= 3 && middle[3] == 255, "{middle:?}");
+        assert_eq!(at(10, 2)[0], at(10, 57)[0], "the colour does not change along the other axis");
+        // 180 degrees: from the top to the bottom.
+        params.background.gradient_angle = 180;
+        let out = export(&params);
+        assert!(out.data[(2 * 80 + 5) * 4] < 10 && out.data[(57 * 80 + 5) * 4] > 190);
+        // The gradient follows the exported frame, not the picture.
+        params.crop = Some(Rect::new(40.0, 0.0, 80.0, 60.0));
+        params.background.gradient_angle = 90;
+        let out = export(&params);
+        assert!(out.data[(5 * 40) * 4] < 10 && out.data[(5 * 40 + 39) * 4] > 190, "start and end are the edges of the crop");
+        assert!(deep_blocker(&params).is_some());
     }
 
     #[test]

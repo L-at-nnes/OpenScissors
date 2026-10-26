@@ -42,6 +42,8 @@ pub enum BgMode {
     Color,
     Image,
     Original,
+    /// Two colours blended along a direction (`gradient_angle`).
+    Gradient,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -72,7 +74,12 @@ pub struct ForegroundParams {
 #[serde(default)]
 pub struct BackgroundParams {
     pub mode: BgMode,
+    /// The solid colour, or where a gradient starts.
     pub color: [u8; 3],
+    /// Where a gradient ends.
+    pub gradient_color: [u8; 3],
+    /// Direction of a gradient in degrees, clockwise from "towards the top" (90 = to the right, 180 = to the bottom).
+    pub gradient_angle: u32,
     pub image_path: Option<String>,
     pub fill_hole: bool,
     /// "free" or "W:H".
@@ -89,6 +96,8 @@ impl Default for BackgroundParams {
         Self {
             mode: BgMode::Transparent,
             color: [255, 255, 255],
+            gradient_color: [0, 0, 0],
+            gradient_angle: 180,
             image_path: None,
             fill_hole: false,
             aspect_ratio: "free".into(),
@@ -143,6 +152,7 @@ impl Params {
             f.strength = f.strength.min(100);
         }
         self.background.padding = self.background.padding.min(100);
+        self.background.gradient_angle %= 360;
         self.background.output_width = self.background.output_width.min(16_000);
         self.shadow.opacity = self.shadow.opacity.min(100);
         self.shadow.blur_radius = self.shadow.blur_radius.min(100);
