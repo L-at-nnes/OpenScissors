@@ -102,13 +102,23 @@ pub fn srgb_profile() -> &'static [u8] {
 /// Write `bytes` to `path` so that a crash or a full disk never leaves a half-written file: the data goes to a
 /// temporary file in the same folder, is flushed to disk, then replaces the target in one step.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_atomic_with(path, |out| std::io::Write::write_all(out, bytes))
+}
+
+/// Like [`write_atomic`], for data that is produced as it is written (a big project is not built in memory first).
+pub fn write_atomic_with(
+    path: &Path,
+    write: impl FnOnce(&mut std::io::BufWriter<std::fs::File>) -> std::io::Result<()>,
+) -> std::io::Result<()> {
     use std::io::Write;
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let tmp = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
     let result = (|| {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
+        write(&mut out)?;
+        out.flush()?;
+        out.get_ref().sync_all()?;
+        drop(out);
         std::fs::rename(&tmp, path)
     })();
     if result.is_err() {

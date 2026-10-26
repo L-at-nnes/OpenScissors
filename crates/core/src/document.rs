@@ -196,6 +196,11 @@ impl Document {
         self.deep.is_some()
     }
 
+    /// The 16-bit samples of the source, when the file had them.
+    pub fn deep(&self) -> Option<&Image16> {
+        self.deep.as_deref()
+    }
+
     pub fn with_params(mut self, params: Params) -> Self {
         self.params = params;
         self

@@ -227,7 +227,9 @@ impl Ctl {
         let id = self.st.next_doc_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let image_path = loaded.orig_path.map(PathBuf::from);
         let predicted = loaded.predicted.is_some();
-        let doc = Document::restore(id, loaded.image, image_path, loaded.predicted, loaded.strokes, loaded.params);
+        let doc = Document::restore(id, loaded.image, image_path, loaded.predicted, loaded.strokes, loaded.params)
+            .with_deep(loaded.deep)
+            .with_srgb_tag(loaded.srgb_tag);
         *self.st.doc.guard() = Some(doc);
         *self.st.predicted_doc.guard() = None;
         {

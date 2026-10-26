@@ -4,8 +4,8 @@
 //! the AI prediction, every stroke and all properties. Marks files hold the strokes only and
 //! follow the layout used by other tools of this kind, so they can be exchanged.
 
-use std::io::Cursor;
-use std::path::Path;
+use std::io::{BufReader, Cursor};
+use std::path::{Component, Path};
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -17,11 +17,11 @@ use crate::document::Document;
 use crate::error::{Error, Result};
 use crate::mask::{Stroke, StrokeKind};
 use crate::params::{BackgroundParams, ForegroundParams, MaskParams, Params, ShadowParams};
-use crate::types::{Image, Mask, Rect};
+use crate::types::{Image, Image16, Mask, Rect};
 
 pub const PROJECT_FORMAT: &str = "openscissors-project";
 pub const PROJECT_VERSION: u32 = 1;
-/// Project files larger than this are refused (they are read fully into memory).
+/// Project files larger than this are refused (the pictures inside are decoded in memory).
 const MAX_PROJECT_BYTES: u64 = 1 << 30;
 
 #[derive(Serialize, Deserialize)]
@@ -30,6 +30,10 @@ struct EncodedImage {
     data: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     orig_path: Option<String>,
+    /// `orig_path` relative to the folder of the project file, with `/` separators: it still finds the picture when
+    /// the folder that holds both is moved or copied to another machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    orig_rel: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -66,6 +70,12 @@ struct ProjectFile {
     format: String,
     version: u32,
     image: EncodedImage,
+    /// The 16-bit samples of the source, when it had them (`png16-base64`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    image16: Option<EncodedImage>,
+    /// The colours were converted from another colour profile to sRGB when the picture was opened.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    srgb_tag: bool,
     #[serde(default)]
     predicted: Option<EncodedImage>,
     #[serde(default)]
@@ -84,6 +94,10 @@ struct ProjectFile {
 /// Everything restored from a project file.
 pub struct LoadedProject {
     pub image: Image,
+    /// The 16-bit samples of the source, when the project kept them.
+    pub deep: Option<Image16>,
+    pub srgb_tag: bool,
+    /// Where the source picture is: next to the project if it is found there (see `orig_rel`), else where it was.
     pub orig_path: Option<String>,
     pub predicted: Option<Mask>,
     pub strokes: Vec<Stroke>,
@@ -102,7 +116,7 @@ fn png_base64(data: &[u8], w: usize, h: usize, color: image::ExtendedColorType) 
 }
 
 fn decode(e: &EncodedImage) -> Result<image::DynamicImage> {
-    if e.encoding != "png-base64" {
+    if e.encoding != "png-base64" && e.encoding != "png16-base64" {
         return Err(Error::msg(format!("unsupported image encoding '{}'", e.encoding)));
     }
     let bytes = B64.decode(&e.data).map_err(|err| Error::msg(format!("corrupt image data: {err}")))?;
@@ -113,22 +127,69 @@ fn decode(e: &EncodedImage) -> Result<image::DynamicImage> {
     Ok(image::DynamicImage::from_decoder(decoder)?)
 }
 
+/// `target` as a path relative to the folder `base`, with `/` separators; `None` when they share no root (another
+/// drive) or one of them is not absolute.
+fn relative_path(target: &Path, base: &Path) -> Option<String> {
+    if !target.is_absolute() || !base.is_absolute() {
+        return None;
+    }
+    let (t, b): (Vec<Component>, Vec<Component>) = (target.components().collect(), base.components().collect());
+    let common = t.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    if common == 0 {
+        return None;
+    }
+    let mut parts: Vec<String> = vec!["..".into(); b.len() - common];
+    parts.extend(t[common..].iter().map(|c| c.as_os_str().to_string_lossy().into_owned()));
+    Some(parts.join("/"))
+}
+
+/// `dir` followed by the relative path `rel`, with the `..` and `.` parts worked out.
+fn join_normalized(dir: &Path, rel: &str) -> std::path::PathBuf {
+    let mut out = dir.to_path_buf();
+    for part in rel.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                out.pop();
+            }
+            p => out.push(p),
+        }
+    }
+    out
+}
+
 /// Write `doc` as a project. `model` records which model produced the prediction.
 pub fn save_project(doc: &Document, model: Option<ModelRef>, marker_size: u32, path: &Path) -> Result<()> {
     let p = doc.params();
+    let orig = doc.path();
     let file = ProjectFile {
         format: PROJECT_FORMAT.into(),
         version: PROJECT_VERSION,
         image: EncodedImage {
             encoding: "png-base64".into(),
             data: png_base64(&doc.image.data, doc.image.w, doc.image.h, image::ExtendedColorType::Rgb8)?,
-            orig_path: doc.path().map(|p| p.display().to_string()),
+            orig_path: orig.map(|p| p.display().to_string()),
+            orig_rel: orig.zip(path.parent()).and_then(|(o, dir)| relative_path(o, dir)),
         },
+        image16: match doc.deep() {
+            Some(d) => {
+                let bytes: Vec<u8> = d.data.iter().flat_map(|v| v.to_ne_bytes()).collect();
+                Some(EncodedImage {
+                    encoding: "png16-base64".into(),
+                    data: png_base64(&bytes, d.w, d.h, image::ExtendedColorType::Rgb16)?,
+                    orig_path: None,
+                    orig_rel: None,
+                })
+            }
+            None => None,
+        },
+        srgb_tag: doc.srgb_tag(),
         predicted: match doc.predicted() {
             Some(m) => Some(EncodedImage {
                 encoding: "png-base64".into(),
                 data: png_base64(&m.data, m.w, m.h, image::ExtendedColorType::L8)?,
                 orig_path: None,
+                orig_rel: None,
             }),
             None => None,
         },
@@ -143,7 +204,8 @@ pub fn save_project(doc: &Document, model: Option<ModelRef>, marker_size: u32, p
         crop: p.crop,
         ui: Ui { graphcut: p.mask.graphcut, marker_size },
     };
-    crate::io::write_atomic(path, &serde_json::to_vec(&file)?)?;
+    // Written as it is serialised: the pictures are already base64 text, the whole file is not built a second time.
+    crate::io::write_atomic_with(path, |out| serde_json::to_writer(out, &file).map_err(std::io::Error::from))?;
     Ok(())
 }
 
@@ -176,11 +238,25 @@ pub fn load_project(path: &Path) -> Result<LoadedProject> {
     if std::fs::metadata(path)?.len() > MAX_PROJECT_BYTES {
         return Err(Error::msg("project file is too large"));
     }
-    let value: Value = serde_json::from_slice(&std::fs::read(path)?)?;
-    if value.get("format").and_then(Value::as_str) != Some(PROJECT_FORMAT) {
-        return Err(Error::msg("this is not an OpenScissors project"));
-    }
-    let file: ProjectFile = serde_json::from_value(value)?;
+    // Read straight into the structure: no copy of the text, no intermediate tree of JSON values.
+    let parsed = serde_json::from_reader::<_, ProjectFile>(BufReader::new(std::fs::File::open(path)?));
+    let file = match parsed {
+        Ok(f) if f.format == PROJECT_FORMAT => f,
+        // Something else, or damaged: say which, with a small look at the start of the file.
+        other => {
+            #[derive(Deserialize)]
+            struct Header {
+                format: Option<String>,
+            }
+            let header = serde_json::from_reader::<_, Header>(BufReader::new(std::fs::File::open(path)?));
+            return match (header, other) {
+                (Ok(Header { format: Some(f) }), _) if f != PROJECT_FORMAT => Err(Error::msg("this is not an OpenScissors project")),
+                (Ok(Header { format: None }), _) => Err(Error::msg("this is not an OpenScissors project")),
+                (_, Err(e)) => Err(e.into()),
+                (_, Ok(_)) => Err(Error::msg("this is not an OpenScissors project")),
+            };
+        }
+    };
     let img = decode(&file.image)?.to_rgb8();
     let image = Image { w: img.width() as usize, h: img.height() as usize, data: img.into_raw() };
     let predicted = match &file.predicted {
@@ -190,6 +266,16 @@ pub fn load_project(path: &Path) -> Result<LoadedProject> {
                 return Err(Error::msg("the stored prediction does not match the image size"));
             }
             Some(Mask { w: image.w, h: image.h, data: m.into_raw() })
+        }
+        None => None,
+    };
+    let deep = match &file.image16 {
+        Some(e) => {
+            let d = decode(e)?.to_rgb16();
+            if (d.width() as usize, d.height() as usize) != (image.w, image.h) {
+                return Err(Error::msg("the stored 16-bit picture does not match the image size"));
+            }
+            Some(Image16 { w: image.w, h: image.h, data: d.into_raw() })
         }
         None => None,
     };
@@ -203,9 +289,19 @@ pub fn load_project(path: &Path) -> Result<LoadedProject> {
     params.sanitize();
     let warning = (file.version > PROJECT_VERSION)
         .then(|| format!("This project was made by a newer version (format {}); some settings may be ignored.", file.version));
+    // Where it was when the project was saved; if it is not there any more (the folder was moved or copied), where it
+    // is relative to the project.
+    let stored = file.image.orig_path;
+    let beside = file.image.orig_rel.as_deref().zip(path.parent()).map(|(rel, dir)| join_normalized(dir, rel)).filter(|p| p.is_file());
+    let orig_path = match beside {
+        Some(p) if !stored.as_deref().is_some_and(|s| Path::new(s).is_file()) => Some(p.display().to_string()),
+        _ => stored,
+    };
     Ok(LoadedProject {
         image,
-        orig_path: file.image.orig_path,
+        deep,
+        srgb_tag: file.srgb_tag,
+        orig_path,
         predicted,
         strokes: clean_strokes(file.strokes),
         params,
@@ -371,6 +467,43 @@ mod tests {
             "same bytes after a round trip"
         );
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_project_follows_its_picture_when_the_folder_moves_and_keeps_the_16_bit_samples() {
+        let root = tmp("move");
+        let (photos, work) = (root.join("a").join("photos"), root.join("a").join("work"));
+        std::fs::create_dir_all(&photos).unwrap();
+        std::fs::create_dir_all(&work).unwrap();
+        let picture = photos.join("me.png");
+        std::fs::write(&picture, b"x").unwrap();
+        let deep = Image16 { w: 24, h: 16, data: (0..24 * 16 * 3).map(|i| (i * 97 % 65_536) as u16).collect() };
+        let mut img = Image::new(24, 16);
+        img.data.iter_mut().enumerate().for_each(|(i, v)| *v = (i % 251) as u8);
+        let doc = Document::new(1, img, Some(picture.clone())).with_deep(Some(deep.clone())).with_srgb_tag(true);
+        save_project(&doc, None, 30, &work.join("p.osproj")).unwrap();
+        let text = std::fs::read_to_string(work.join("p.osproj")).unwrap();
+        assert!(text.contains(r#""orig_rel":"../photos/me.png""#), "the picture is stored relative to the project");
+
+        let l = load_project(&work.join("p.osproj")).unwrap();
+        assert_eq!(l.deep.as_ref(), Some(&deep), "16-bit samples survive");
+        assert!(l.srgb_tag);
+        assert_eq!(l.orig_path.as_deref(), Some(picture.display().to_string().as_str()));
+
+        // The whole folder is moved: the absolute path is stale, the relative one finds the picture.
+        std::fs::rename(root.join("a"), root.join("b")).unwrap();
+        let l = load_project(&root.join("b").join("work").join("p.osproj")).unwrap();
+        assert_eq!(l.orig_path.as_deref(), Some(root.join("b").join("photos").join("me.png").display().to_string().as_str()));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn relative_paths_climb_out_of_the_project_folder_and_refuse_what_they_cannot_express() {
+        let base = std::env::temp_dir().join("x").join("work");
+        let target = std::env::temp_dir().join("y").join("p.jpg");
+        assert_eq!(relative_path(&target, &base).as_deref(), Some("../../y/p.jpg"));
+        assert_eq!(relative_path(&base.join("p.jpg"), &base).as_deref(), Some("p.jpg"));
+        assert_eq!(relative_path(Path::new("photos/p.jpg"), &base), None, "a relative path stays as it is");
     }
 
     #[test]
