@@ -8,6 +8,7 @@ Dependencies are resolved by Cargo, not vendored.
 | winit, rfd, sys-locale | window, native dialogs, system language | Apache-2.0 / MIT |
 | ort (ONNX Runtime bindings, ONNX Runtime) | model inference | MIT / Apache-2.0 |
 | image, fast_image_resize | codecs, resampling | MIT / Apache-2.0 |
+| moxcms (also used by `image`) | colour profile conversion to sRGB | BSD-3-Clause / Apache-2.0 |
 | rayon, serde, serde_json, thiserror, sha2, hex, base64, ureq | core utilities, checked downloads | MIT / Apache-2.0 |
 | Microsoft DirectML runtime (Windows, optional GPU provider, shipped in the portable folder) | GPU inference | MIT |
 

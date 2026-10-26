@@ -8,7 +8,7 @@ use image::{DynamicImage, ImageDecoder, ImageEncoder, ImageReader};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::types::{Image, Image16, Rgba, Rgba16};
+use crate::types::{Image, Image16, Mask, Rgba, Rgba16};
 
 /// File extensions that can be opened (the formats the `image` crate is built with). The first frame of a GIF is read.
 pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp", "gif"];
@@ -62,6 +62,40 @@ pub fn check_dimensions(w: u64, h: u64) -> Result<()> {
 pub struct Loaded {
     pub image: Image,
     pub deep: Option<Image16>,
+    /// The transparency of a picture that is already cut out (a PNG, WebP or TIFF with an alpha channel that is not
+    /// fully opaque). `None` for a picture with no transparency.
+    pub alpha: Option<Mask>,
+    /// The file carried a colour profile other than sRGB and the pixels were converted to sRGB.
+    pub converted: bool,
+}
+
+/// The colour profile `icc` when it describes an RGB space other than sRGB (the only case that needs a conversion).
+fn foreign_profile(icc: &[u8]) -> Option<moxcms::ColorProfile> {
+    let profile = moxcms::ColorProfile::new_from_slice(icc).ok()?;
+    let is_srgb = format!("{:?}", profile.description).contains("sRGB");
+    (profile.color_space == moxcms::DataColorSpace::Rgb && !is_srgb).then_some(profile)
+}
+
+/// Samples converted per call: the transform reads and writes separate buffers, so the picture goes through in pieces.
+const CONVERT_CHUNK: usize = 3 << 20;
+
+/// Convert RGB samples (3 per pixel) from `profile` to sRGB, in place. False if the profile cannot be used.
+fn to_srgb<T: Copy + Default + Send + Sync>(data: &mut [T], transform: &dyn moxcms::TransformExecutor<T>) -> bool {
+    let mut scratch = vec![T::default(); CONVERT_CHUNK.min(data.len())];
+    for chunk in data.chunks_mut(CONVERT_CHUNK) {
+        let tmp = &mut scratch[..chunk.len()];
+        tmp.copy_from_slice(chunk);
+        if transform.transform(tmp, chunk).is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+/// The sRGB colour profile, as written into the exports of a picture that was colour-converted.
+pub fn srgb_profile() -> &'static [u8] {
+    static ICC: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    ICC.get_or_init(|| moxcms::ColorProfile::new_srgb().encode().unwrap_or_default())
 }
 
 /// Read an image as 8-bit RGB. EXIF orientation is applied; alpha is dropped.
@@ -99,18 +133,42 @@ pub fn load_image_deep(path: &Path) -> Result<Loaded> {
     let (w, h) = decoder.dimensions();
     check_dimensions(w as u64, h as u64)?;
     let orientation = decoder.orientation()?;
+    let profile = decoder.icc_profile().ok().flatten().as_deref().and_then(foreign_profile);
     let mut img = DynamicImage::from_decoder(decoder)?;
     img.apply_orientation(orientation);
+    let alpha = cut_out_alpha(&img);
     let is_deep = matches!(
         img,
         DynamicImage::ImageRgb16(_) | DynamicImage::ImageRgba16(_) | DynamicImage::ImageLuma16(_) | DynamicImage::ImageLumaA16(_)
     );
-    let deep = is_deep.then(|| {
+    let mut deep = is_deep.then(|| {
         let d = img.to_rgb16();
         Image16 { w: d.width() as usize, h: d.height() as usize, data: d.into_raw() }
     });
-    let rgb = img.to_rgb8();
-    Ok(Loaded { image: Image { w: rgb.width() as usize, h: rgb.height() as usize, data: rgb.into_raw() }, deep })
+    let mut rgb = img.to_rgb8();
+    drop(img);
+    let mut converted = false;
+    if let Some(profile) = &profile {
+        let srgb = moxcms::ColorProfile::new_srgb();
+        let options = moxcms::TransformOptions::default();
+        if let Ok(t) = profile.create_transform_8bit(moxcms::Layout::Rgb, &srgb, moxcms::Layout::Rgb, options) {
+            converted = to_srgb(&mut rgb, t.as_ref());
+        }
+        if let (Some(d), Ok(t)) = (&mut deep, profile.create_transform_16bit(moxcms::Layout::Rgb, &srgb, moxcms::Layout::Rgb, options)) {
+            to_srgb(&mut d.data, t.as_ref());
+        }
+    }
+    Ok(Loaded { image: Image { w: rgb.width() as usize, h: rgb.height() as usize, data: rgb.into_raw() }, deep, alpha, converted })
+}
+
+/// The alpha channel of `img` when it really makes the picture transparent somewhere.
+fn cut_out_alpha(img: &DynamicImage) -> Option<Mask> {
+    if !img.color().has_alpha() {
+        return None;
+    }
+    let rgba = img.to_rgba8();
+    let data: Vec<u8> = rgba.as_raw().chunks_exact(4).map(|p| p[3]).collect();
+    data.iter().any(|&a| a < 255).then(|| Mask { w: rgba.width() as usize, h: rgba.height() as usize, data })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,29 +222,49 @@ pub fn flatten(rgba: &Rgba, bg: [u8; 3]) -> Image {
 /// `quality` (10-100) only applies to JPEG; WebP is written lossless.
 /// The file is encoded in memory first and written with [`write_atomic`], so a failure never leaves a truncated file.
 pub fn save_rgba(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_color: [u8; 3]) -> Result<()> {
+    save_rgba_tagged(path, rgba, format, quality, flatten_color, false)
+}
+
+/// Like [`save_rgba`]; with `srgb_tag` the sRGB colour profile is embedded (formats that can hold one), which tells
+/// colour-managed software that the colours of a picture converted at opening ([`Loaded::converted`]) are sRGB.
+pub fn save_rgba_tagged(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_color: [u8; 3], srgb_tag: bool) -> Result<()> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
     let mut out = Cursor::new(Vec::new());
+    // Encoders that cannot hold a profile say so; the picture is then written without one.
+    let tag = |e: &mut dyn ImageEncoder| {
+        if srgb_tag {
+            let _ = e.set_icc_profile(srgb_profile().to_vec());
+        }
+    };
     if format.supports_alpha() {
         let buf = image::RgbaImage::from_raw(w, h, rgba.data.clone()).ok_or_else(|| Error::msg("bad RGBA buffer"))?;
+        let color = image::ExtendedColorType::Rgba8;
         match format {
             Format::Png => {
-                image::codecs::png::PngEncoder::new(&mut out).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?
+                let mut e = image::codecs::png::PngEncoder::new(&mut out);
+                tag(&mut e);
+                e.write_image(buf.as_raw(), w, h, color)?
             }
             Format::Webp => {
-                image::codecs::webp::WebPEncoder::new_lossless(&mut out).write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgba8)?
+                let mut e = image::codecs::webp::WebPEncoder::new_lossless(&mut out);
+                tag(&mut e);
+                e.write_image(buf.as_raw(), w, h, color)?
             }
-            _ => DynamicImage::ImageRgba8(buf).write_to(&mut out, image::ImageFormat::Tiff)?,
+            _ => {
+                let mut e = image::codecs::tiff::TiffEncoder::new(&mut out);
+                tag(&mut e);
+                e.write_image(buf.as_raw(), w, h, color)?
+            }
         }
     } else {
         let flat = flatten(rgba, flatten_color);
         let buf = image::RgbImage::from_raw(w, h, flat.data).ok_or_else(|| Error::msg("bad RGB buffer"))?;
         match format {
-            Format::Jpeg => JpegEncoder::new_with_quality(&mut out, quality.clamp(10, 100)).write_image(
-                buf.as_raw(),
-                w,
-                h,
-                image::ExtendedColorType::Rgb8,
-            )?,
+            Format::Jpeg => {
+                let mut e = JpegEncoder::new_with_quality(&mut out, quality.clamp(10, 100));
+                tag(&mut e);
+                e.write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgb8)?
+            }
             _ => DynamicImage::ImageRgb8(buf).write_to(&mut out, image::ImageFormat::Bmp)?,
         }
     }
@@ -196,12 +274,30 @@ pub fn save_rgba(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_
 
 /// Save 16-bit RGBA as PNG or TIFF (atomically, like [`save_rgba`]).
 pub fn save_rgba16(path: &Path, rgba: &Rgba16, format: Format) -> Result<()> {
+    save_rgba16_tagged(path, rgba, format, false)
+}
+
+/// Like [`save_rgba16`], embedding the sRGB profile with `srgb_tag` (see [`save_rgba_tagged`]).
+pub fn save_rgba16_tagged(path: &Path, rgba: &Rgba16, format: Format, srgb_tag: bool) -> Result<()> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
     let bytes: Vec<u8> = rgba.data.iter().flat_map(|v| v.to_ne_bytes()).collect();
     let mut out = Cursor::new(Vec::new());
+    let tag = |e: &mut dyn ImageEncoder| {
+        if srgb_tag {
+            let _ = e.set_icc_profile(srgb_profile().to_vec());
+        }
+    };
     match format {
-        Format::Png => image::codecs::png::PngEncoder::new(&mut out).write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?,
-        Format::Tiff => image::codecs::tiff::TiffEncoder::new(&mut out).write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?,
+        Format::Png => {
+            let mut e = image::codecs::png::PngEncoder::new(&mut out);
+            tag(&mut e);
+            e.write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?
+        }
+        Format::Tiff => {
+            let mut e = image::codecs::tiff::TiffEncoder::new(&mut out);
+            tag(&mut e);
+            e.write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?
+        }
         _ => return Err(Error::msg("16-bit output needs PNG or TIFF")),
     }
     write_atomic(path, &out.into_inner())?;
@@ -235,6 +331,92 @@ mod tests {
         save_rgba(&jpg, &rgba, Format::Jpeg, 95, [255; 3]).unwrap();
         let j = load_image(&jpg).unwrap();
         assert!(j.data[3] > 240 && j.data[4] > 240); // transparent pixel became ~white
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    fn png_with_profile(path: &Path, pixels: &[[u8; 3]], profile: Option<Vec<u8>>) {
+        let mut out = Vec::new();
+        let mut e = image::codecs::png::PngEncoder::new(&mut out);
+        if let Some(p) = profile {
+            e.set_icc_profile(p).unwrap();
+        }
+        let raw: Vec<u8> = pixels.iter().flatten().copied().collect();
+        e.write_image(&raw, pixels.len() as u32, 1, image::ExtendedColorType::Rgb8).unwrap();
+        std::fs::write(path, out).unwrap();
+    }
+
+    #[test]
+    fn colours_are_converted_from_the_embedded_profile_to_srgb() {
+        let dir = std::env::temp_dir().join(format!("osc-icc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pixels = [[128, 128, 128], [200, 100, 50]];
+        let p3 = moxcms::ColorProfile::new_display_p3().encode().unwrap();
+        let srgb = moxcms::ColorProfile::new_srgb().encode().unwrap();
+
+        png_with_profile(&dir.join("p3.png"), &pixels, Some(p3));
+        let loaded = load_image_deep(&dir.join("p3.png")).unwrap();
+        assert!(loaded.converted);
+        let (grey, colour) = (&loaded.image.data[..3], &loaded.image.data[3..6]);
+        assert!(grey.iter().all(|&v| v.abs_diff(128) <= 2), "a neutral grey stays grey: {grey:?}");
+        assert!(colour[0] > 205 && colour[1] < 95, "a Display P3 colour is more saturated in sRGB: {colour:?}");
+
+        // No profile, or an sRGB one: the pixels are what the file says.
+        png_with_profile(&dir.join("none.png"), &pixels, None);
+        png_with_profile(&dir.join("srgb.png"), &pixels, Some(srgb));
+        for name in ["none.png", "srgb.png"] {
+            let l = load_image_deep(&dir.join(name)).unwrap();
+            assert!(!l.converted, "{name}");
+            assert_eq!(l.image.data, vec![128, 128, 128, 200, 100, 50], "{name}");
+        }
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_picture_that_is_already_cut_out_keeps_its_transparency() {
+        let dir = std::env::temp_dir().join(format!("osc-alpha-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut rgba = Rgba::new(4, 2);
+        for (i, p) in rgba.data.chunks_exact_mut(4).enumerate() {
+            p.copy_from_slice(&[10, 20, 30, [0, 60, 200, 255][i % 4]]);
+        }
+        save_rgba(&dir.join("cut.png"), &rgba, Format::Png, 95, [255; 3]).unwrap();
+        let loaded = load_image_deep(&dir.join("cut.png")).unwrap();
+        let alpha = loaded.alpha.expect("the transparency is kept");
+        assert_eq!((alpha.w, alpha.h), (4, 2));
+        assert_eq!(alpha.data, vec![0, 60, 200, 255, 0, 60, 200, 255]);
+        assert_eq!(&loaded.image.data[3..6], &[10, 20, 30], "the colours are still there");
+        // An alpha channel with nothing transparent in it is not a cut-out.
+        rgba.data.chunks_exact_mut(4).for_each(|p| p[3] = 255);
+        save_rgba(&dir.join("opaque.png"), &rgba, Format::Png, 95, [255; 3]).unwrap();
+        assert!(load_image_deep(&dir.join("opaque.png")).unwrap().alpha.is_none());
+        save_rgba(&dir.join("plain.jpg"), &rgba, Format::Jpeg, 90, [255; 3]).unwrap();
+        assert!(load_image_deep(&dir.join("plain.jpg")).unwrap().alpha.is_none());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn exports_can_carry_the_srgb_profile() {
+        let dir = std::env::temp_dir().join(format!("osc-tag-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let rgba = Rgba::new(3, 3);
+        let profile_of = |name: &str| {
+            let mut reader = ImageReader::open(dir.join(name)).unwrap().with_guessed_format().unwrap();
+            reader.no_limits();
+            reader.into_decoder().unwrap().icc_profile().unwrap()
+        };
+        for (name, format) in [("t.png", Format::Png), ("t.jpg", Format::Jpeg), ("t.webp", Format::Webp)] {
+            save_rgba_tagged(&dir.join(name), &rgba, format, 90, [255; 3], true).unwrap();
+            assert_eq!(profile_of(name).as_deref(), Some(srgb_profile()), "{name}");
+        }
+        // The TIFF decoder of the `image` crate does not hand the profile back: look for it in the file.
+        save_rgba_tagged(&dir.join("t.tiff"), &rgba, Format::Tiff, 90, [255; 3], true).unwrap();
+        let tiff = std::fs::read(dir.join("t.tiff")).unwrap();
+        assert!(tiff.windows(srgb_profile().len()).any(|w| w == srgb_profile()), "the profile is stored in the TIFF");
+        save_rgba(&dir.join("plain.png"), &rgba, Format::Png, 90, [255; 3]).unwrap();
+        assert!(profile_of("plain.png").is_none());
+        let deep = Rgba16 { w: 2, h: 2, data: vec![1000; 16] };
+        save_rgba16_tagged(&dir.join("d.png"), &deep, Format::Png, true).unwrap();
+        assert_eq!(profile_of("d.png").as_deref(), Some(srgb_profile()));
         std::fs::remove_dir_all(dir).ok();
     }
 

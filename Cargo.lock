@@ -3621,6 +3621,7 @@ dependencies = [
  "hex",
  "image",
  "libc",
+ "moxcms",
  "ort",
  "rayon",
  "serde",

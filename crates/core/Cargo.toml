@@ -19,6 +19,7 @@ ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "d
 sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
+moxcms = "0.8"
 ureq = { version = "3", features = ["rustls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

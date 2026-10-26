@@ -306,6 +306,10 @@ impl Ctl {
 
     /// Start predicting the open image when a model is ready and it has not been tried yet.
     pub fn maybe_predict(self: &Arc<Self>) {
+        // A picture that came with its own mask (a cut-out, a project) needs no model, so none is loaded for it.
+        if self.st.doc.guard().as_ref().is_some_and(|d| d.has_prediction()) && !self.ux.guard().repredict {
+            return;
+        }
         let Some(model) = self.st.model.guard().clone() else {
             let (loading, error, started) = {
                 let st = self.st.model_status.guard();

@@ -77,6 +77,8 @@ pub struct Document {
     pub image: Arc<Image>,
     /// The 16-bit samples when the source file had them (see `export_deep`).
     deep: Option<Arc<Image16>>,
+    /// The source was converted from another colour profile to sRGB: exports say so (see `srgb_tag`).
+    srgb_tag: bool,
     path: Option<PathBuf>,
     predicted: Option<Arc<Mask>>,
     strokes: Vec<Stroke>,
@@ -132,6 +134,7 @@ impl Document {
             id,
             image: Arc::new(image),
             deep: None,
+            srgb_tag: false,
             path,
             predicted: None,
             strokes: Vec::new(),
@@ -169,6 +172,24 @@ impl Document {
     pub fn with_deep(mut self, deep: Option<Image16>) -> Self {
         self.deep = deep.filter(|d| (d.w, d.h) == (self.image.w, self.image.h)).map(Arc::new);
         self
+    }
+
+    /// Start from a mask that came with the file (a picture that is already cut out). It is not an edit: nothing to
+    /// undo, the document stays unmodified. Ignored when its size is not the picture's.
+    pub fn with_prediction(mut self, mask: Option<Mask>) -> Self {
+        self.predicted = mask.filter(|m| (m.w, m.h) == (self.image.w, self.image.h)).map(Arc::new);
+        self
+    }
+
+    /// Mark the source as converted from another colour profile to sRGB, so that exports carry the sRGB profile.
+    pub fn with_srgb_tag(mut self, converted: bool) -> Self {
+        self.srgb_tag = converted;
+        self
+    }
+
+    /// Whether exports should embed the sRGB profile.
+    pub fn srgb_tag(&self) -> bool {
+        self.srgb_tag
     }
 
     pub fn has_deep_source(&self) -> bool {
@@ -1206,6 +1227,17 @@ mod tests {
         d.apply_selection(SelectionMode::Replace);
         assert_eq!((d.alpha().get(5, 5), d.alpha().get(25, 5)), (0, 255));
         assert!(!d.apply_selection(SelectionMode::Add), "nothing pending");
+    }
+
+    #[test]
+    fn a_mask_that_came_with_the_file_is_the_starting_point_not_an_edit() {
+        let mut m = Mask::new(50, 40);
+        m.data[5 * 50 + 5] = 255;
+        let mut d = Document::new(1, Image::filled(50, 40, [9, 9, 9]), None).with_prediction(Some(m.clone()));
+        assert!(d.has_prediction() && d.is_clean() && !d.can_undo());
+        assert_eq!(d.alpha(), &m);
+        let wrong = Document::new(1, Image::filled(50, 40, [9, 9, 9]), None).with_prediction(Some(Mask::new(3, 3)));
+        assert!(!wrong.has_prediction(), "a mask of another size is ignored");
     }
 
     #[test]

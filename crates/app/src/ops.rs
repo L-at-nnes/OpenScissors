@@ -144,7 +144,13 @@ impl Ctl {
             (s.defaults.clone(), s.group_by_color)
         };
         defaults.mask.graphcut = group;
-        let doc = Document::new(id, loaded.image, Some(path.to_path_buf())).with_deep(loaded.deep).with_params(defaults);
+        // A picture that is already cut out starts from its own transparency: no model has to run on it.
+        let cut_out = loaded.alpha.is_some();
+        let doc = Document::new(id, loaded.image, Some(path.to_path_buf()))
+            .with_deep(loaded.deep)
+            .with_prediction(loaded.alpha)
+            .with_srgb_tag(loaded.converted)
+            .with_params(defaults);
         *self.st.doc.guard() = Some(doc);
         *self.st.sam_cache.guard() = None;
         *self.st.predicted_doc.guard() = None;
@@ -154,7 +160,7 @@ impl Ctl {
             s.last_dir = path.parent().map(|d| d.display().to_string());
         }
         self.save_settings();
-        self.after_open(false);
+        self.after_open(cut_out);
         Ok(None)
     }
 
@@ -285,11 +291,12 @@ impl Ctl {
             let s = self.st.settings.guard();
             (s.jpeg_quality, s.export_16bit && matches!(format, Format::Png | Format::Tiff))
         };
-        let (exported, why) = {
+        let (exported, why, srgb_tag) = {
             let mut g = self.st.doc.guard();
             let d = g.as_mut().ok_or_else(|| t("No image is open."))?;
+            let tag = d.srgb_tag();
             if let Some(deep) = want16.then(|| d.export_deep()).flatten() {
-                (Exported::Bits16(deep), None)
+                (Exported::Bits16(deep), None, tag)
             } else {
                 let flatten = if matches!(d.params().background.mode, openscissors_core::params::BgMode::Color) {
                     d.params().background.color
@@ -297,13 +304,13 @@ impl Ctl {
                     [255, 255, 255]
                 };
                 let why = if want16 { d.deep_blocker() } else { None };
-                (Exported::Bits8(d.export(), flatten), why)
+                (Exported::Bits8(d.export(), flatten), why, tag)
             }
         };
         let bits16 = matches!(exported, Exported::Bits16(_));
         match exported {
-            Exported::Bits16(img) => io::save_rgba16(target, &img, format),
-            Exported::Bits8(img, flatten) => io::save_rgba(target, &img, format, quality, flatten),
+            Exported::Bits16(img) => io::save_rgba16_tagged(target, &img, format, srgb_tag),
+            Exported::Bits8(img, flatten) => io::save_rgba_tagged(target, &img, format, quality, flatten, srgb_tag),
         }
         .map_err(|e| e.to_string())?;
         self.st.settings.guard().last_dir = target.parent().map(|d| d.display().to_string());
