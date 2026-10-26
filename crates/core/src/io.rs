@@ -432,7 +432,7 @@ mod tests {
             reader.into_decoder().unwrap().icc_profile().unwrap()
         };
         for (name, format) in [("t.png", Format::Png), ("t.jpg", Format::Jpeg), ("t.webp", Format::Webp)] {
-            save_rgba_tagged(&dir.join(name), &rgba, format, 90, [255; 3], true).unwrap();
+            save_rgba_tagged(&dir.join(name), &rgba, format, 100, [255; 3], true).unwrap(); // 100: WebP stays lossless
             assert_eq!(profile_of(name).as_deref(), Some(srgb_profile()), "{name}");
         }
         // The TIFF decoder of the `image` crate does not hand the profile back: look for it in the file.
