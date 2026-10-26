@@ -16,7 +16,8 @@ use openscissors_core::types::Rgba;
 
 const USAGE: &str = "usage:
   openscissors-cli models                      list models and their state
-  openscissors-cli models download <id>        download a model (HTTPS, sha256 checked)
+  openscissors-cli models download <id>        download a model (HTTPS, sha256 checked; run it again to resume)
+  openscissors-cli models verify <id>          check the downloaded files against their sha256
   openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>]
   openscissors-cli cut <in> <out.png|webp|tiff> [--model <id|file.onnx>]
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp] [--quality 95]
@@ -82,6 +83,17 @@ fn run(args: Vec<String>) -> Result<(), String> {
             registry.download(&spec, &mut progress, &AtomicBool::new(false)).map_err(|e| e.to_string())?;
             eprintln!("\ndownloaded to {}", registry.model_path(&spec).display());
             Ok(())
+        }
+        Some("models") if args.get(1).map(String::as_str) == Some("verify") => {
+            let id = args.get(2).ok_or("model id expected")?;
+            let spec = registry.get(id).ok_or_else(|| format!("unknown model '{id}'"))?;
+            let bad = registry.verify(&spec, &AtomicBool::new(false)).map_err(|e| e.to_string())?;
+            if bad.is_empty() {
+                eprintln!("{} is intact", spec.id);
+                Ok(())
+            } else {
+                Err(format!("{}: missing or damaged: {}", spec.id, bad.join(", ")))
+            }
         }
         Some("models") => {
             for s in registry.available() {

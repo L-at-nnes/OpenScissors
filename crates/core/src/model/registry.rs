@@ -349,14 +349,19 @@ impl ModelRegistry {
         Ok(())
     }
 
-    /// Download every file of `spec` (HTTPS only) into its folder, verifying each SHA-256.
+    /// Download every file of `spec` (HTTPS only) into its folder, verifying each SHA-256. A file already there is
+    /// checked and kept if intact; a download that was cut resumes where it stopped.
     /// `progress(done, total)` counts bytes over all files; set `cancel` to abort.
     pub fn download(&self, spec: &ModelSpec, progress: Progress, cancel: &AtomicBool) -> Result<PathBuf> {
+        self.download_files(spec, progress, cancel, true)
+    }
+
+    fn download_files(&self, spec: &ModelSpec, progress: Progress, cancel: &AtomicBool, https_only: bool) -> Result<PathBuf> {
         let files = spec.all_files();
         if let Some(f) = files.iter().find(|f| f.sha256.len() != 64) {
             return Err(Error::Download(format!("file '{}' of model '{}' has no pinned sha256", f.name, spec.id)));
         }
-        if files.iter().any(|f| !f.url.starts_with("https://")) {
+        if https_only && files.iter().any(|f| !f.url.starts_with("https://")) {
             return Err(Error::Download("model URL must use HTTPS".into()));
         }
         if !is_plain_name(spec.folder.as_deref().unwrap_or(&spec.id)) {
@@ -369,9 +374,13 @@ impl ModelRegistry {
         for f in &files {
             let dest = dir.join(&f.name);
             if dest.is_file() {
-                before += f.size_bytes;
-                progress(before, total);
-                continue;
+                // Present is not the same as intact: a damaged file is downloaded again.
+                if file_matches(&dest, &f.sha256, cancel)? {
+                    before += f.size_bytes;
+                    progress(before, total);
+                    continue;
+                }
+                fs::remove_file(&dest)?;
             }
             let base = before;
             let mut report = |done: u64, _file_total: u64| progress(base + done, total.max(base + done));
@@ -382,22 +391,50 @@ impl ModelRegistry {
     }
 
     fn download_file(&self, id: &str, file: &ModelFile, dest: &Path, progress: Progress, cancel: &AtomicBool) -> Result<()> {
-        let part = dest.with_extension("part");
-        let resp = download_agent().get(&file.url).call().map_err(|e| Error::Download(e.to_string()))?;
-        let total =
-            resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok()).unwrap_or(file.size_bytes);
+        let part = part_path(dest);
+        // A download that was cut (cancelled, connection lost) left its start behind: ask for the rest only.
+        let kept = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+        let mut resume_from = if kept > 0 && (file.size_bytes == 0 || kept < file.size_bytes) { kept } else { 0 };
+        let agent = download_agent();
+        let resp = loop {
+            let mut request = agent.get(&file.url);
+            if resume_from > 0 {
+                request = request.header("Range", format!("bytes={resume_from}-"));
+            }
+            match request.call() {
+                Ok(r) => break r,
+                // The server does not accept that range (the file changed, or the partial file is wrong): start over.
+                Err(ureq::Error::StatusCode(416)) if resume_from > 0 => {
+                    let _ = fs::remove_file(&part);
+                    resume_from = 0;
+                }
+                Err(e) => return Err(Error::Download(e.to_string())),
+            }
+        };
+        let announced: Option<u64> = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
+        // 206 with a Content-Range that starts where the partial file ends: the body is the rest of the file.
+        let resuming = resume_from > 0 && resp.status().as_u16() == 206 && content_range_start(&resp) == Some(resume_from);
+        let start = if resuming { resume_from } else { 0 };
+        let total = announced.map_or(file.size_bytes, |n| start + n);
         if !within_expected(file.size_bytes, total) {
-            return Err(Error::Download(format!("the server announces {total} bytes for '{}', the catalogue says {}", file.name, file.size_bytes)));
+            return Err(Error::Download(format!(
+                "the server announces {total} bytes for '{}', the catalogue says {}",
+                file.name, file.size_bytes
+            )));
         }
-        let mut reader = resp.into_body().into_reader();
-        let mut out = fs::File::create(&part)?;
         let mut hasher = Sha256::new();
+        let mut out = if resuming {
+            hash_into(&mut hasher, &part, cancel)?;
+            fs::OpenOptions::new().append(true).open(&part)?
+        } else {
+            fs::File::create(&part)?
+        };
+        let mut reader = resp.into_body().into_reader();
         let mut buf = vec![0u8; 1 << 20];
-        let mut done = 0u64;
+        let mut done = start;
         loop {
             if cancel.load(Ordering::Relaxed) {
-                drop(out);
-                let _ = fs::remove_file(&part);
+                // The part stays: the next attempt continues from it.
                 return Err(Error::Cancelled);
             }
             let n = reader.read(&mut buf).map_err(|e| Error::Download(e.to_string()))?;
@@ -416,6 +453,9 @@ impl ModelRegistry {
         }
         out.flush()?;
         drop(out);
+        if announced.is_some() && done != total {
+            return Err(Error::Download(format!("the connection closed after {done} of {total} bytes; the download can be resumed")));
+        }
         if hex::encode(hasher.finalize()) != file.sha256 {
             let _ = fs::remove_file(&part);
             return Err(Error::Checksum(id.to_string()));
@@ -423,6 +463,56 @@ impl ModelRegistry {
         fs::rename(&part, dest)?;
         Ok(())
     }
+
+    /// Check the files of `spec` that are on disk against the pinned SHA-256: the names of the ones that are missing
+    /// or damaged (empty when the model is intact).
+    pub fn verify(&self, spec: &ModelSpec, cancel: &AtomicBool) -> Result<Vec<String>> {
+        let dir = self.model_dir(spec);
+        let mut bad = Vec::new();
+        for f in spec.all_files() {
+            let path = dir.join(&f.name);
+            if !path.is_file() || !file_matches(&path, &f.sha256, cancel)? {
+                bad.push(f.name);
+            }
+        }
+        Ok(bad)
+    }
+}
+
+/// Where a file is downloaded before it is checked and moved into place (never shared between two files of a model).
+fn part_path(dest: &Path) -> PathBuf {
+    let mut name = dest.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(".part");
+    dest.with_file_name(name)
+}
+
+/// First byte of the answer to a range request, from `Content-Range: bytes <first>-<last>/<size>`.
+fn content_range_start(resp: &ureq::http::Response<ureq::Body>) -> Option<u64> {
+    let v = resp.headers().get("content-range")?.to_str().ok()?;
+    v.strip_prefix("bytes ")?.split('-').next()?.trim().parse().ok()
+}
+
+/// Feed the whole file to `hasher`.
+fn hash_into(hasher: &mut Sha256, path: &Path, cancel: &AtomicBool) -> Result<()> {
+    let mut f = fs::File::open(path)?;
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            return Ok(());
+        }
+        hasher.update(&buf[..n]);
+    }
+}
+
+/// Whether the SHA-256 of the file is `sha256`.
+fn file_matches(path: &Path, sha256: &str, cancel: &AtomicBool) -> Result<bool> {
+    let mut hasher = Sha256::new();
+    hash_into(&mut hasher, path, cancel)?;
+    Ok(hex::encode(hasher.finalize()).eq_ignore_ascii_case(sha256))
 }
 
 /// A client that gives up on a server that does not answer, instead of waiting for ever. The body is not given a
@@ -554,6 +644,141 @@ mod tests {
         let mut spec = reg.get("birefnet-lite").unwrap();
         spec.url = "http://example.invalid/m.onnx".into();
         assert!(matches!(reg.download(&spec, &mut |_, _| {}, &cancel), Err(Error::Download(_))));
+        fs::remove_dir_all(dir).ok();
+    }
+
+    /// A one-file HTTP server on localhost for the tests. The first `cut_first` requests are answered with the start of
+    /// the body only (the connection then drops); the others with the whole body, or from the requested offset when
+    /// `ranges` is on. Returns the address and the `Range` headers it received.
+    fn serve(body: Vec<u8>, cut_first: usize, ranges: bool) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{BufRead, BufReader};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/model.onnx", listener.local_addr().unwrap());
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = seen.clone();
+        std::thread::spawn(move || {
+            for (n, stream) in listener.incoming().enumerate() {
+                let Ok(mut stream) = stream else { return };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut range = None;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line.trim().is_empty() {
+                        break;
+                    }
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("range: bytes=") {
+                        range = v.trim().trim_end_matches('-').parse::<usize>().ok();
+                    }
+                }
+                log.lock().unwrap().push(range.map_or("none".to_string(), |r| format!("from {r}")));
+                let from = if ranges { range.unwrap_or(0) } else { 0 };
+                let rest = &body[from..];
+                let head = if from > 0 {
+                    format!(
+                        "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {from}-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len() - 1,
+                        body.len(),
+                        rest.len()
+                    )
+                } else {
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", rest.len())
+                };
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(if n < cut_first { &rest[..rest.len() / 3] } else { rest });
+            }
+        });
+        (url, seen)
+    }
+
+    fn file_for(url: String, body: &[u8]) -> ModelFile {
+        ModelFile { name: "model.onnx".into(), url, sha256: hex::encode(Sha256::digest(body)), size_bytes: body.len() as u64 }
+    }
+
+    fn body() -> Vec<u8> {
+        (0..3_000_000u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 24) as u8).collect()
+    }
+
+    #[test]
+    fn a_cut_download_resumes_from_the_bytes_it_has() {
+        let dir = tmp("resume");
+        let data = body();
+        let (url, seen) = serve(data.clone(), 1, true);
+        let file = file_for(url, &data);
+        let dest = dir.join("model.onnx");
+        let reg = ModelRegistry::new(&dir);
+        let no = AtomicBool::new(false);
+        assert!(reg.download_file("m", &file, &dest, &mut |_, _| {}, &no).is_err(), "the connection dropped");
+        let kept = fs::metadata(part_path(&dest)).unwrap().len();
+        assert_eq!(kept, data.len() as u64 / 3, "the start of the file is kept");
+        assert!(!dest.exists());
+
+        let mut last = 0;
+        reg.download_file("m", &file, &dest, &mut |done, _| last = done, &no).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), data, "the file is whole and its hash matches");
+        assert_eq!(last, data.len() as u64, "progress counts the bytes of the first attempt too");
+        assert!(!part_path(&dest).exists());
+        assert_eq!(*seen.lock().unwrap(), vec!["none".to_string(), format!("from {kept}")]);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_server_that_ignores_the_range_makes_the_download_start_over() {
+        let dir = tmp("noranges");
+        let data = body();
+        let (url, seen) = serve(data.clone(), 1, false);
+        let file = file_for(url, &data);
+        let dest = dir.join("model.onnx");
+        let reg = ModelRegistry::new(&dir);
+        let no = AtomicBool::new(false);
+        assert!(reg.download_file("m", &file, &dest, &mut |_, _| {}, &no).is_err());
+        reg.download_file("m", &file, &dest, &mut |_, _| {}, &no).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), data);
+        assert_eq!(seen.lock().unwrap().len(), 2);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_wrong_hash_is_refused_and_leaves_nothing_to_resume() {
+        let dir = tmp("badhash");
+        let data = body();
+        let (url, _) = serve(data.clone(), 0, true);
+        let mut file = file_for(url, &data);
+        file.sha256 = "0".repeat(64);
+        let dest = dir.join("model.onnx");
+        let reg = ModelRegistry::new(&dir);
+        assert!(matches!(reg.download_file("m", &file, &dest, &mut |_, _| {}, &AtomicBool::new(false)), Err(Error::Checksum(_))));
+        assert!(!dest.exists() && !part_path(&dest).exists());
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_file_that_is_already_there_is_checked_before_it_is_trusted() {
+        let dir = tmp("verify");
+        let data = body();
+        let (url, seen) = serve(data.clone(), 0, true);
+        let file = file_for(url, &data);
+        let spec = ModelSpec { id: "m".into(), files: vec![], ..builtin_catalog().remove(0) };
+        let spec = ModelSpec {
+            file_name: file.name.clone(),
+            url: file.url.clone(),
+            sha256: file.sha256.clone(),
+            size_bytes: file.size_bytes,
+            ..spec
+        };
+        let reg = ModelRegistry::new(&dir);
+        let folder = reg.model_dir(&spec);
+        fs::create_dir_all(&folder).unwrap();
+        let no = AtomicBool::new(false);
+        // Right size, wrong content: it is found damaged and downloaded again.
+        fs::write(folder.join(&file.name), vec![7u8; data.len()]).unwrap();
+        assert_eq!(reg.verify(&spec, &no).unwrap(), vec![file.name.clone()]);
+        reg.download_files(&spec, &mut |_, _| {}, &no, false).unwrap();
+        assert_eq!(fs::read(folder.join(&file.name)).unwrap(), data);
+        assert!(reg.verify(&spec, &no).unwrap().is_empty());
+        // An intact file is kept without contacting the server again.
+        let requests = seen.lock().unwrap().len();
+        reg.download_files(&spec, &mut |_, _| {}, &no, false).unwrap();
+        assert_eq!(seen.lock().unwrap().len(), requests);
         fs::remove_dir_all(dir).ok();
     }
 }
