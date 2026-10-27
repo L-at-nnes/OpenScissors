@@ -56,6 +56,10 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
   <img src="docs/images/batch.png" alt="The batch panel" width="440">
   <img src="docs/images/models.png" alt="The models panel" width="440">
 </p>
+<p align="center">
+  <img src="docs/images/gradient-banner.png" alt="A 16:9 banner on a gradient background, with the start and end colours, the angle and the eyedropper" width="440">
+  <img src="docs/images/before-after.png" alt="The before and after view: the original on the left of the divider, the result on the right" width="440">
+</p>
 
 ## Get it
 

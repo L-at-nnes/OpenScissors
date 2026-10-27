@@ -56,6 +56,10 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
   <img src="docs/images/batch.png" alt="Le panneau du traitement par lot" width="440">
   <img src="docs/images/models.png" alt="Le panneau des modèles" width="440">
 </p>
+<p align="center">
+  <img src="docs/images/gradient-banner.png" alt="Une bannière 16:9 sur un fond dégradé, avec les couleurs de départ et d'arrivée, l'angle et la pipette" width="440">
+  <img src="docs/images/before-after.png" alt="La vue avant et après : l'original à gauche de la barre, le résultat à droite" width="440">
+</p>
 
 ## Obtenir l'appli
 
