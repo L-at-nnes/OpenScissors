@@ -4,6 +4,7 @@
 #![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::manual_memcpy, clippy::chunks_exact_to_as_chunks)]
 
 pub mod batch;
+pub mod compare;
 pub mod document;
 pub mod error;
 pub mod imaging;

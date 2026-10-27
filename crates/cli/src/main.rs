@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;
 
 use openscissors_core::batch::{self, BatchOptions};
+use openscissors_core::compare;
 use openscissors_core::io::{load_image, save_mask_png, save_rgba, write_atomic, Format};
 use openscissors_core::model::{ModelRegistry, ModelState, Predictor};
 use openscissors_core::params::Params;
@@ -18,6 +19,10 @@ const USAGE: &str = "usage:
   openscissors-cli models                      list models and their state
   openscissors-cli models download <id>        download a model (HTTPS, sha256 checked; run it again to resume)
   openscissors-cli models verify <id>          check the downloaded files against their sha256
+  openscissors-cli compare <in> <out-folder> [--models <id,id,...>]
+      runs several models one after the other on one picture (every downloaded model by default), writes each mask
+      and a contact sheet (the picture, then each cut-out) into <out-folder>, and prints how much each model keeps
+      and how much each pair agrees
   openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>]
   openscissors-cli cut <in> <out.png|webp|avif|tiff> [--model <id|file.onnx>]
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif] [--quality 95]
@@ -97,6 +102,48 @@ fn run(args: Vec<String>) -> Result<(), String> {
             } else {
                 Err(format!("{}: missing or damaged: {}", spec.id, bad.join(", ")))
             }
+        }
+        Some("compare") => {
+            let (input, out_dir) = (args.get(1).ok_or("input expected")?, args.get(2).ok_or("output folder expected")?);
+            let ids: Vec<String> = match flag(&args, "--models") {
+                Some(list) => list.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
+                None => registry
+                    .available()
+                    .into_iter()
+                    .filter(|s| s.kind == openscissors_core::model::ModelKind::Segmenter && registry.state(s) == ModelState::Ready)
+                    .map(|s| s.id)
+                    .collect(),
+            };
+            if ids.len() < 2 {
+                return Err("compare needs at least two models: download them, or name them with --models a,b".into());
+            }
+            let image = load_image(Path::new(input)).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
+            let stem = Path::new(input).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into());
+            let mut results: Vec<(String, openscissors_core::types::Mask)> = Vec::new();
+            for id in &ids {
+                // One model in memory at a time: the next is loaded once this one is dropped.
+                let started = std::time::Instant::now();
+                let mask = {
+                    let predictor = load_predictor(&registry, Some(id.clone()))?;
+                    predictor.predict(&image, true).map_err(|e| e.to_string())?
+                };
+                let millis = started.elapsed().as_millis();
+                save_mask_png(&Path::new(out_dir).join(format!("{stem}.{id}.png")), &mask).map_err(|e| e.to_string())?;
+                println!("{id:<24} {:>5.1}% kept  {millis:>6} ms", compare::coverage(&mask) * 100.0);
+                results.push((id.clone(), mask));
+            }
+            println!("\nagreement (intersection over union):");
+            for (i, (a, ma)) in results.iter().enumerate() {
+                for (b, mb) in &results[i + 1..] {
+                    println!("  {a} / {b}: {:.1}%", compare::iou(ma, mb) * 100.0);
+                }
+            }
+            let sheet = compare::contact_sheet(&image, &results);
+            let sheet_path = Path::new(out_dir).join(format!("{stem}.compare.png"));
+            save_rgba(&sheet_path, &sheet, Format::Png, 95, [255; 3]).map_err(|e| e.to_string())?;
+            println!("\ncontact sheet: {} (picture, then {})", sheet_path.display(), ids.join(", "));
+            Ok(())
         }
         Some("models") => {
             for s in registry.available() {
