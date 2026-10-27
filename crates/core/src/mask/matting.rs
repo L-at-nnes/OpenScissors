@@ -317,21 +317,41 @@ pub fn hair_matting(image: &Image, alpha: &Mask, hair: &Mask, feather: u32) -> M
     let guess: Vec<f64> = dec_s.data.iter().map(|&v| v as f64 / 255.0).collect();
     let soft = solve(&img, sw, sh, &unknown, &known, &guess);
 
-    // Back to full resolution: guided refinement on the image edges.
-    let full: Vec<f32> = if reduced {
+    // Back to full resolution: guided refinement on the image edges, band by band.
+    let full: Vec<u8> = if reduced {
         let low = Mask { w: sw, h: sh, data: soft.iter().map(|&v| (v * 255.0).round() as u8).collect() };
         let up = resize_mask(&low, w, h, Interp::Bilinear);
-        let guide: Vec<f32> = image.gray().data.iter().map(|&v| v as f32 / 255.0).collect();
-        let src: Vec<f32> = up.data.iter().map(|&v| v as f32 / 255.0).collect();
-        guided_filter(&guide, &src, w, h, REFINE_RADIUS, REFINE_EPS, 1)
+        refine_in_bands(&image.gray().data, &up.data, w, h, REFINE_BAND_ROWS)
     } else {
-        soft.iter().map(|&v| v as f32).collect()
+        soft.iter().map(|&v| (v as f32).clamp(0.0, 1.0)).map(|v| (v * 255.0).round() as u8).collect()
     };
 
     let mut out = alpha.clone();
     for i in 0..w * h {
         if hair.data[i] > 0 {
-            out.data[i] = (full[i].clamp(0.0, 1.0) * 255.0).round() as u8;
+            out.data[i] = full[i];
+        }
+    }
+    out
+}
+
+/// Rows refined together by [`refine_in_bands`]. The filter's working buffers cost about 56 bytes per pixel of the
+/// band instead of per pixel of the picture, which was the one big memory item left on 33 megapixels and more.
+const REFINE_BAND_ROWS: usize = 128;
+
+/// The guided filter of `soft` (a 0-255 mask) on the edges of `gray`, as 0-255 again, computed `band_rows` rows at a
+/// time. The two box filters inside reach `2 * REFINE_RADIUS` rows, which each band reads beyond its own: the result
+/// is the one of the whole picture.
+fn refine_in_bands(gray: &[u8], soft: &[u8], w: usize, h: usize, band_rows: usize) -> Vec<u8> {
+    let reach = 2 * REFINE_RADIUS + 1;
+    let mut out = vec![0u8; w * h];
+    for y0 in (0..h).step_by(band_rows.max(1)) {
+        let y1 = (y0 + band_rows).min(h);
+        let (a0, a1) = (y0.saturating_sub(reach), (y1 + reach).min(h));
+        let unit = |s: &[u8]| s[a0 * w..a1 * w].iter().map(|&v| v as f32 / 255.0).collect::<Vec<f32>>();
+        let filtered = guided_filter(&unit(gray), &unit(soft), w, a1 - a0, REFINE_RADIUS, REFINE_EPS, 1);
+        for (o, &v) in out[y0 * w..y1 * w].iter_mut().zip(&filtered[(y0 - a0) * w..(y1 - a0) * w]) {
+            *o = (v.clamp(0.0, 1.0) * 255.0).round() as u8;
         }
     }
     out
@@ -396,6 +416,28 @@ mod tests {
         // Pixels outside the strokes are untouched.
         assert_eq!(out.data[5 * w + 10], alpha.data[5 * w + 10]);
         assert_eq!(out.data[5 * w + 50], alpha.data[5 * w + 50]);
+    }
+
+    #[test]
+    fn refining_in_bands_gives_the_result_of_the_whole_picture() {
+        // 90 x 77: not a multiple of the band height, so the last band is short; a soft ramp over a textured guide.
+        let (w, h) = (90usize, 77usize);
+        let mut seed = 5u32;
+        let gray: Vec<u8> = (0..w * h)
+            .map(|_| {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                (seed >> 24) as u8
+            })
+            .collect();
+        let soft: Vec<u8> = (0..w * h).map(|i| (i % w * 255 / w) as u8).collect();
+        let whole = refine_in_bands(&gray, &soft, w, h, h);
+        for rows in [1, 7, 20, 64] {
+            assert_eq!(refine_in_bands(&gray, &soft, w, h, rows), whole, "{rows} rows per band");
+        }
+        let f = |s: &[u8]| s.iter().map(|&v| v as f32 / 255.0).collect::<Vec<f32>>();
+        let direct = guided_filter(&f(&gray), &f(&soft), w, h, REFINE_RADIUS, REFINE_EPS, 1);
+        let worst = whole.iter().zip(&direct).map(|(&b, &d)| (b as f32 - (d.clamp(0.0, 1.0) * 255.0)).abs()).fold(0f32, f32::max);
+        assert!(worst <= 0.51, "{worst}");
     }
 
     #[test]
