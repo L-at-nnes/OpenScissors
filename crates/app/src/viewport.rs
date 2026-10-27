@@ -34,10 +34,16 @@ fn clamp_scale(s: f64) -> f64 {
 
 /// Largest scale that shows the whole image, centred, with a little air around it.
 pub fn fit_view(img: (f64, f64), boxed: (f64, f64), margin: f64) -> View {
+    fit_area(Region { x0: 0.0, y0: 0.0, x1: img.0, y1: img.1 }, boxed, margin)
+}
+
+/// Like [`fit_view`] for an `area` that does not start at the corner of the image: the canvas of an extended crop.
+pub fn fit_area(area: Region, boxed: (f64, f64), margin: f64) -> View {
+    let (w, h) = (area.x1 - area.x0, area.y1 - area.y0);
     let aw = (boxed.0 - margin * 2.0).max(1.0);
     let ah = (boxed.1 - margin * 2.0).max(1.0);
-    let scale = clamp_scale((aw / img.0).min(ah / img.1));
-    View { scale, tx: (boxed.0 - img.0 * scale) / 2.0, ty: (boxed.1 - img.1 * scale) / 2.0, fit: true }
+    let scale = clamp_scale((aw / w).min(ah / h));
+    View { scale, tx: (boxed.0 - w * scale) / 2.0 - area.x0 * scale, ty: (boxed.1 - h * scale) / 2.0 - area.y0 * scale, fit: true }
 }
 
 /// Zoom by `factor` keeping the image point under (px, py) fixed.
@@ -103,6 +109,20 @@ mod tests {
     fn fit_centres_the_image_and_keeps_it_inside_the_box() {
         let v = fit_view((400.0, 200.0), (500.0, 500.0), 0.0);
         assert!((v.scale - 1.25).abs() < 1e-9 && v.tx.abs() < 1e-9 && (v.ty - 125.0).abs() < 1e-9 && v.fit);
+    }
+
+    #[test]
+    fn fitting_an_extended_canvas_shows_all_of_it() {
+        let area = Region { x0: -100.0, y0: 0.0, x1: 500.0, y1: 200.0 };
+        let v = fit_area(area, (600.0, 300.0), 0.0);
+        assert!((v.scale - 1.0).abs() < 1e-9 && v.fit);
+        let (left, _) = to_screen(&v, area.x0, 0.0);
+        let (right, _) = to_screen(&v, area.x1, 0.0);
+        assert!(left.abs() < 1e-9 && (right - 600.0).abs() < 1e-9, "the canvas spans the pane: {left} {right}");
+        assert_eq!(
+            fit_view((400.0, 200.0), (500.0, 500.0), 0.0),
+            fit_area(Region { x0: 0.0, y0: 0.0, x1: 400.0, y1: 200.0 }, (500.0, 500.0), 0.0)
+        );
     }
 
     #[test]

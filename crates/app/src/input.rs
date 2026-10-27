@@ -8,8 +8,9 @@ use openscissors_core::types::Rect;
 use slint::platform::Key;
 
 use crate::cropmath::{drag_rect, hit_test, same_rect, Handle};
+use crate::ctl::canvas_of;
 use crate::ctl::{CropDrag, Ctl, SmartDrag, Tool, R_MAIN, R_VIEW};
-use crate::viewport::{fit_view, pan_by, to_image, to_screen, zoom_at, ZOOM_STEP};
+use crate::viewport::{fit_area, pan_by, to_image, to_screen, zoom_at, ZOOM_STEP};
 
 fn ratio_of(key: &str) -> Option<(u32, u32)> {
     openscissors_core::params::parse_ratio(key)
@@ -25,7 +26,7 @@ impl Ctl {
             ux.pane = (w, h);
             if ux.view.fit {
                 if let Some(d) = &ux.doc {
-                    ux.view = fit_view((d.width as f64, d.height as f64), (w, h), 24.0);
+                    ux.view = fit_area(canvas_of(d), (w, h), 24.0);
                 }
             }
         }

@@ -17,7 +17,7 @@ use crate::cropmath::{same_rect, Handle};
 use crate::i18n::{self, t, tf};
 use crate::render::{Job, Output, Renderer};
 use crate::state::AppState;
-use crate::viewport::{device_grid, fit_view, to_screen, visible_in, visible_region, Region, View};
+use crate::viewport::{device_grid, fit_area, to_screen, visible_in, visible_region, Region, View};
 use crate::{Backend, Box2, Dot, FilterV, MainWindow, ModelRow, ParamsV, PluginRow};
 
 pub const R_VIEW: u32 = 1;
@@ -183,6 +183,16 @@ fn rgb(c: [u8; 3]) -> slint::Color {
 
 fn filter_v(f: &FilterSpec) -> FilterV {
     FilterV { kind: kind_index(f.kind), radius: f.radius as i32, strength: f.strength as i32, color: rgb(f.color) }
+}
+
+/// The picture and, around it, the canvas an extended crop adds: what the result view can show.
+pub fn canvas_of(doc: &DocState) -> Region {
+    Region {
+        x0: doc.crop.x0.min(0.0),
+        y0: doc.crop.y0.min(0.0),
+        x1: doc.crop.x1.max(doc.width as f64),
+        y1: doc.crop.y1.max(doc.height as f64),
+    }
 }
 
 pub fn params_v(p: &Params) -> ParamsV {
@@ -397,7 +407,8 @@ impl Ctl {
             SelectionMode::Subtract => 2,
         });
         b.set_smart_busy(ux.smart_busy);
-        b.set_no_model(doc.is_some() && !status.ready && !status.loading);
+        // A picture that came with its own mask (a cut-out, a project) does not wait for a model.
+        b.set_no_model(doc.is_some_and(|d| !d.has_prediction) && !status.ready && !status.loading);
         b.set_busy(ux.prediction == Prediction::Running || doc.is_some_and(|d| d.computing));
         b.set_drop_active(ux.drop_active);
         let (chip, tone) = if status.loading {
@@ -658,7 +669,7 @@ impl Ctl {
         ux.render_key = Some(key);
         let img = (doc.width as f64, doc.height as f64);
         // The result also shows the margin an extended crop adds around the picture; the original never does.
-        let canvas = Region { x0: doc.crop.x0.min(0.0), y0: doc.crop.y0.min(0.0), x1: doc.crop.x1.max(img.0), y1: doc.crop.y1.max(img.1) };
+        let canvas = canvas_of(&doc);
         let cell = (8.0 * ux.dpr).round().max(1.0) as usize;
         for side in 0..2 {
             let visible = if side == 0 { visible_region(&v, img, ux.pane) } else { visible_in(&v, canvas, ux.pane) };
@@ -722,7 +733,7 @@ impl Ctl {
         let mut ux = self.ux.guard();
         if let Some(d) = &ux.doc {
             if ux.pane.0 > 0.0 {
-                ux.view = fit_view((d.width as f64, d.height as f64), ux.pane, 24.0);
+                ux.view = fit_area(canvas_of(d), ux.pane, 24.0);
             }
         }
     }
@@ -731,6 +742,13 @@ impl Ctl {
     pub fn refresh_doc(self: &Arc<Self>) {
         let st = self.st.doc.guard().as_mut().map(|d| d.state());
         let new_error = st.as_ref().and_then(|s| s.bg_error.clone());
+        {
+            // A view that follows the pane keeps all of the canvas in sight when an extended crop changes it.
+            let mut ux = self.ux.guard();
+            if let (true, Some(d)) = (ux.view.fit && ux.pane.0 > 0.0, st.as_ref()) {
+                ux.view = fit_area(canvas_of(d), ux.pane, 24.0);
+            }
+        }
         let known_error = std::mem::replace(&mut self.ux.guard().doc, st).and_then(|d| d.bg_error);
         self.refresh(R_MAIN | R_VIEW);
         if let Some(path) = new_error.filter(|p| known_error.as_ref() != Some(p)) {
