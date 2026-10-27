@@ -42,6 +42,7 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 - **The canvas can grow past the picture**: when a ratio or the padding asks for more room than the photo has (a 16:9 banner of a square photo), the background fills the extra area instead of cutting the subject. You can also drag the crop beyond the edges, or move it with <kbd>Alt</kbd>+arrows. The canvas never grows beyond twice the size of the picture.
 - **Colour profiles**: a picture with an embedded profile (Display P3, Adobe RGB...) is converted to sRGB when it opens, so the colours are right (wide gamuts are clipped to sRGB); exports of such a picture carry the sRGB profile.
 - **Pictures that are already cut out** (a PNG or WebP with transparency) open with their own transparency: no model runs, you can refine the mask or change the background.
+- **Before and after**: the button next to the zoom controls (or <kbd>C</kbd>) turns both views into one big view with a divider you drag: the original on one side, the result on the other.
 - **Copy and paste**: <kbd>Ctrl</kbd>+<kbd>V</kbd> opens the picture on the clipboard (or an image file copied in your file manager); one click, or <kbd>Ctrl</kbd>+<kbd>C</kbd>, copies the result with its transparency.
 - **Batch mode** for a whole folder: drop the folder on the window, use your saved settings or those of the image you are editing, save as PNG, JPEG, WebP or AVIF.
 - **4 languages**: English (default), Français, Deutsch, Русский.
@@ -106,7 +107,7 @@ Delete `data/` to start over, delete `models/` to free space. Nothing is written
 |---|---|
 | <kbd>F</kbd> keep · <kbd>B</kbd> remove (in *Group by color*) · <kbd>E</kbd> erase | <kbd>S</kbd> smart select · <kbd>H</kbd> hair · <kbd>Shift</kbd>+<kbd>H</kbd> erase hair |
 | <kbd>M</kbd> move · hold <kbd>Space</kbd> to pan | <kbd>[</kbd> <kbd>]</kbd> brush size |
-| <kbd>Alt</kbd>+arrows move the crop by 1 px (<kbd>Shift</kbd>: 10 px) | arrows pan the views |
+| <kbd>Alt</kbd>+arrows move the crop by 1 px (<kbd>Shift</kbd>: 10 px) | arrows pan the views · <kbd>C</kbd> before / after |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> open · <kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> save as | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> undo / redo |
 | <kbd>Ctrl</kbd>+<kbd>V</kbd> paste an image | <kbd>Ctrl</kbd>+<kbd>C</kbd> copy the result |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> fit · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | wheel pans, <kbd>Ctrl</kbd>+wheel zooms |
@@ -130,7 +131,7 @@ node scripts/package-portable.mjs --build --zip     # the portable folder (with 
 
 Debug builds keep their data in `portable-dev/`. `OPENSCISSORS_HOME` points the app to another folder, and `OPENSCISSORS_MODEL=/path/model.onnx` loads a local IS-Net style file.
 
-There is a command line tool too: `cargo run -p openscissors-cli -- cut photo.jpg cutout.png` (also `predict`, `batch`, `models`). `batch photos/ out/ --resume` leaves alone the images whose result is already in `out/`, so running the same command again after an error or an interruption only does what is left; `--report report.json` writes one entry per image (done, skipped or failed, the file written, the error, the time). `models download <id>` resumes a cut download and `models verify <id>` checks the files against their SHA-256.
+There is a command line tool too: `cargo run -p openscissors-cli -- cut photo.jpg cutout.png` (also `predict`, `batch`, `models`). `batch photos/ out/ --resume` leaves alone the images whose result is already in `out/`, so running the same command again after an error or an interruption only does what is left; `--report report.json` writes one entry per image (done, skipped or failed, the file written, the error, the time). `compare photo.jpg out/` runs every downloaded model (or `--models a,b`) on one picture, one at a time, and writes each mask, a contact sheet and the agreement between the models. `models download <id>` resumes a cut download and `models verify <id>` checks the files against their SHA-256.
 
 To look at the interface and drive it without touching the mouse (handy for tests and screenshots):
 

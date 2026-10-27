@@ -42,6 +42,7 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 - **Le canevas peut dépasser l'image** : quand un ratio ou la marge demande plus de place que la photo n'en a (une bannière 16:9 d'une photo carrée), le fond remplit la zone ajoutée au lieu de couper le sujet. Vous pouvez aussi tirer le recadrage au-delà des bords, ou le déplacer avec <kbd>Alt</kbd>+flèches. Le canevas ne dépasse jamais le double de la taille de l'image.
 - **Profils colorimétriques** : une image avec un profil intégré (Display P3, Adobe RGB...) est convertie en sRGB à l'ouverture, donc les couleurs sont justes (les gamuts larges sont écrêtés à sRGB) ; les exports d'une telle image portent le profil sRGB.
 - **Images déjà détourées** (un PNG ou WebP avec transparence) : elles s'ouvrent avec leur propre transparence, sans modèle ; on peut affiner le masque ou changer le fond.
+- **Avant et après** : le bouton à côté du zoom (ou <kbd>C</kbd>) fusionne les deux vues en une seule, avec une barre à faire glisser : l'original d'un côté, le résultat de l'autre.
 - **Copier-coller** : <kbd>Ctrl</kbd>+<kbd>V</kbd> ouvre l'image du presse-papiers (ou un fichier image copié dans l'explorateur) ; un clic, ou <kbd>Ctrl</kbd>+<kbd>C</kbd>, copie le résultat avec sa transparence.
 - **Traitement par lot** d'un dossier entier : déposez le dossier sur la fenêtre, avec vos réglages enregistrés ou ceux de l'image en cours, en PNG, JPEG, WebP ou AVIF.
 - **4 langues** : English (par défaut), Français, Deutsch, Русский.
@@ -106,7 +107,7 @@ Supprimez `data/` pour repartir de zéro, `models/` pour libérer de la place. R
 |---|---|
 | <kbd>F</kbd> garder · <kbd>B</kbd> supprimer (en *Grouper par couleur*) · <kbd>E</kbd> gomme | <kbd>S</kbd> sélection intelligente · <kbd>H</kbd> cheveux · <kbd>Maj</kbd>+<kbd>H</kbd> gomme cheveux |
 | <kbd>M</kbd> déplacer · <kbd>Espace</kbd> maintenu pour faire glisser | <kbd>[</kbd> <kbd>]</kbd> taille du pinceau |
-| <kbd>Alt</kbd>+flèches déplacent le recadrage de 1 px (<kbd>Maj</kbd> : 10 px) | les flèches déplacent les vues |
+| <kbd>Alt</kbd>+flèches déplacent le recadrage de 1 px (<kbd>Maj</kbd> : 10 px) | les flèches déplacent les vues · <kbd>C</kbd> avant / après |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir · <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer · <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>S</kbd> enregistrer sous | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> annuler / rétablir |
 | <kbd>Ctrl</kbd>+<kbd>V</kbd> coller une image | <kbd>Ctrl</kbd>+<kbd>C</kbd> copier le résultat |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> ajuster · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | molette : déplacer, <kbd>Ctrl</kbd>+molette : zoomer |
@@ -130,7 +131,7 @@ node scripts/package-portable.mjs --build --zip     # le dossier portable et son
 
 Les builds de debug gardent leurs données dans `portable-dev/`. `OPENSCISSORS_HOME` pointe l'appli vers un autre dossier, `OPENSCISSORS_MODEL=/chemin/model.onnx` charge un fichier local de type IS-Net.
 
-Un outil en ligne de commande existe aussi : `cargo run -p openscissors-cli -- cut photo.jpg detourage.png` (et `predict`, `batch`, `models`). `batch photos/ sortie/ --resume` laisse de côté les images dont le résultat est déjà dans `sortie/` : relancer la même commande après une erreur ou une interruption ne fait que le reste ; `--report rapport.json` écrit une entrée par image (faite, ignorée ou en échec, le fichier écrit, l'erreur, la durée). `models download <id>` reprend un téléchargement coupé et `models verify <id>` vérifie les fichiers par leur SHA-256.
+Un outil en ligne de commande existe aussi : `cargo run -p openscissors-cli -- cut photo.jpg detourage.png` (et `predict`, `batch`, `models`). `batch photos/ sortie/ --resume` laisse de côté les images dont le résultat est déjà dans `sortie/` : relancer la même commande après une erreur ou une interruption ne fait que le reste ; `--report rapport.json` écrit une entrée par image (faite, ignorée ou en échec, le fichier écrit, l'erreur, la durée). `compare photo.jpg sortie/` fait tourner chaque modèle téléchargé (ou `--models a,b`) sur une image, l'un après l'autre, et écrit chaque masque, une planche-contact et l'accord entre les modèles. `models download <id>` reprend un téléchargement coupé et `models verify <id>` vérifie les fichiers par leur SHA-256.
 
 Ajouter votre propre modèle : créez `models/<nom>/model.onnx` et un `model.json` à côté (voir l'exemple dans [README.md](README.md#using-your-own-model)).
 
