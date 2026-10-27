@@ -7,17 +7,21 @@ Reproduce: `cargo run --release -p openscissors-core --example perf_audit -- <mo
 
 | Step | Target | Measured |
 |---|---|---|
-| Guided upsampling to full format, 12 Mpx | <= 500 ms | 447 ms |
-| Graph-cut (reduced to 600 px), 12 Mpx | <= 800 ms | 632 ms |
-| Hair matting, 12 Mpx | <= 1500 ms | 858 ms |
-| Preview after a stroke, both views, 12 Mpx | <= 50 ms | 28 ms |
-| Pan / zoom redraw of the result view, 12 Mpx | <= 50 ms | 20 ms |
-| Full-resolution export with shadow, 12 Mpx | <= 3000 ms | 243 ms |
+| Guided upsampling to full format, 12 Mpx | <= 500 ms | 291 ms |
+| Graph-cut (reduced to 600 px), 12 Mpx | <= 800 ms | 504 ms |
+| Hair matting, 12 Mpx | <= 1500 ms | 953 ms |
+| Preview after a stroke, both views, 12 Mpx | <= 50 ms | 26 ms |
+| Pan / zoom redraw of the result view, 12 Mpx | <= 50 ms | 19 ms |
+| Full-resolution export with shadow, 12 Mpx | <= 3000 ms | 219 ms |
 | Peak heap, 24 Mpx edit and export | <= 2 GB | 0.47 GB |
-| IS-Net inference, 1024 px image | <= 1000 ms | 541 ms |
+| IS-Net inference, 1024 px image | <= 1000 ms | 768 ms |
 
 Not in the table: prediction end to end on a 12 Mpx photo with IS-Net takes about 1.1 s (inference plus
 resizing and the guided upsampling above).
+
+Hair matting refines its mask in bands of 128 rows, so the guided filter costs memory per band, not per picture
+(it was the one big buffer left on photos of 33 megapixels and more); on 12 Mpx the bands cost a few percent of time.
+The export renders only the cropped region. Figures re-measured after these changes.
 
 The memory figure counts heap bytes held at once (a counting allocator), not the process working set, which
 also holds the web view and the ONNX runtime.
