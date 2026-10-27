@@ -15,8 +15,9 @@ crates/cli    command line: models, predict, cut, batch
 | `model/` | `ModelRegistry` (catalogue + user models, SHA-256 checked downloads), `Predictor` (ONNX Runtime session, normalisation, guided up-sampling in bands), `Sam2` (encoder once per image, decoder per prompt) |
 | `mask/` | own GrabCut and Boykov–Kolmogorov max-flow, closed-form matting (coarse to fine), strokes |
 | `document.rs` | the open image: strokes, parameters, undo stack (capped at 384 MB, oldest steps forgotten first), the mask pipeline (a provisional mask is shown at once, the exact one is computed in the background), 16-bit export |
-| `render/` | viewport rendering at screen resolution, crop, filters, colour adjustments, edge clean-up (`defringe`), shadow with offset, inpainting. The same code renders the export at scale 1 |
-| `project.rs`, `batch.rs`, `plugin.rs`, `settings.rs`, `sysmem.rs` | `.osproj` / `.psm` files, batch, plug-ins (opt-in, with a timeout), settings, memory budget |
+| `render/` | viewport rendering at screen resolution, crop (the canvas may extend past the picture, up to twice its size), backgrounds (colour, gradient, picture, original) , filters, colour adjustments, edge clean-up (`defringe`), shadow with offset, inpainting. The same code renders the export at scale 1, and only for the cropped region |
+| `io.rs` | opening (EXIF orientation, embedded colour profile converted to sRGB, transparency of a cut-out picture, 16-bit samples) and atomic saving (PNG, JPEG, WebP lossy or lossless, AVIF, TIFF, BMP) |
+| `project.rs`, `batch.rs`, `plugin.rs`, `settings.rs`, `sysmem.rs` | `.osproj` (read and written as a stream; the picture path is stored relative to the project, 16-bit sources are kept) / `.psm` files, batch (resumable, JSON report), plug-ins (opt-in, with a timeout; the whole process tree is stopped), settings (a wrong field only resets itself, the old file is kept as `.bak`), memory budget |
 
 ## App
 

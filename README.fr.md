@@ -34,13 +34,16 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 - **Correction au pinceau** : marquer ce qu'il faut garder, effacer ce qui dépasse, et un outil **cheveux** pour des bords doux.
 - **Grouper par couleur** (traits verts et rouges) quand l'IA hésite : les zones de couleur proche suivent vos traits.
 - **Sélection intelligente** : cliquez ce que vous voulez, clic droit ce que vous ne voulez pas, ou tracez un cadre (modèle SAM 2, léger).
-- **Fonds** : transparent, couleur unie, une image, ou l'original avec le sujet comblé. Flou, niveaux de gris, négatif, pixellisation ou coloration sur l'une ou l'autre couche.
+- **Fonds** : transparent, couleur unie, dégradé (deux couleurs et un angle), une image, ou l'original avec le sujet comblé. Flou, niveaux de gris, négatif, pixellisation ou coloration sur l'une ou l'autre couche. Une pipette près de chaque couleur la prend dans l'image.
 - **Nettoyage des bords** : les bords doux (cheveux, adoucissement) perdent la couleur de l'ancien fond, donc aucun halo sur le nouveau.
 - **Réglage des couleurs** du sujet seul (luminosité, saturation, chaleur) pour qu'il s'accorde à son nouveau fond.
-- **Ombre** (flou, opacité, couleur, décalage vers la droite et le bas), **recadrage à un ratio, marge**, puis export en PNG, JPEG, WebP, TIFF ou BMP. Les sources 16 bits peuvent rester en 16 bits.
+- **Ombre** (flou, opacité, couleur, décalage vers la droite et le bas), **recadrage à un ratio, marge**, puis export en PNG, JPEG, WebP, AVIF, TIFF ou BMP. Les sources 16 bits peuvent rester en 16 bits. Le réglage de qualité pilote JPEG, WebP et AVIF ; WebP à 100 est sans perte, en dessous il est avec perte (la transparence reste exacte).
 - **Largeur de sortie et préréglages** (marketplace 1000 ou 2000 px, miniature, bannière 16:9) : le résultat sort à la taille exacte, centré, sur fond blanc ou transparent.
+- **Le canevas peut dépasser l'image** : quand un ratio ou la marge demande plus de place que la photo n'en a (une bannière 16:9 d'une photo carrée), le fond remplit la zone ajoutée au lieu de couper le sujet. Vous pouvez aussi tirer le recadrage au-delà des bords, ou le déplacer avec <kbd>Alt</kbd>+flèches. Le canevas ne dépasse jamais le double de la taille de l'image.
+- **Profils colorimétriques** : une image avec un profil intégré (Display P3, Adobe RGB...) est convertie en sRGB à l'ouverture, donc les couleurs sont justes (les gamuts larges sont écrêtés à sRGB) ; les exports d'une telle image portent le profil sRGB.
+- **Images déjà détourées** (un PNG ou WebP avec transparence) : elles s'ouvrent avec leur propre transparence, sans modèle ; on peut affiner le masque ou changer le fond.
 - **Copier-coller** : <kbd>Ctrl</kbd>+<kbd>V</kbd> ouvre l'image du presse-papiers (ou un fichier image copié dans l'explorateur) ; un clic, ou <kbd>Ctrl</kbd>+<kbd>C</kbd>, copie le résultat avec sa transparence.
-- **Traitement par lot** d'un dossier entier : déposez le dossier sur la fenêtre, avec vos réglages enregistrés ou ceux de l'image en cours, en PNG, JPEG ou WebP.
+- **Traitement par lot** d'un dossier entier : déposez le dossier sur la fenêtre, avec vos réglages enregistrés ou ceux de l'image en cours, en PNG, JPEG, WebP ou AVIF.
 - **4 langues** : English (par défaut), Français, Deutsch, Русский.
 - **Plug-ins** (optionnels, désactivés tant que vous ne les activez pas) : de petits programmes lancés sur le fichier que vous venez d'enregistrer.
 
@@ -103,6 +106,7 @@ Supprimez `data/` pour repartir de zéro, `models/` pour libérer de la place. R
 |---|---|
 | <kbd>F</kbd> garder · <kbd>B</kbd> supprimer (en *Grouper par couleur*) · <kbd>E</kbd> gomme | <kbd>S</kbd> sélection intelligente · <kbd>H</kbd> cheveux · <kbd>Maj</kbd>+<kbd>H</kbd> gomme cheveux |
 | <kbd>M</kbd> déplacer · <kbd>Espace</kbd> maintenu pour faire glisser | <kbd>[</kbd> <kbd>]</kbd> taille du pinceau |
+| <kbd>Alt</kbd>+flèches déplacent le recadrage de 1 px (<kbd>Maj</kbd> : 10 px) | les flèches déplacent les vues |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir · <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer · <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>S</kbd> enregistrer sous | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> annuler / rétablir |
 | <kbd>Ctrl</kbd>+<kbd>V</kbd> coller une image | <kbd>Ctrl</kbd>+<kbd>C</kbd> copier le résultat |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> ajuster · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | molette : déplacer, <kbd>Ctrl</kbd>+molette : zoomer |
@@ -126,7 +130,7 @@ node scripts/package-portable.mjs --build --zip     # le dossier portable et son
 
 Les builds de debug gardent leurs données dans `portable-dev/`. `OPENSCISSORS_HOME` pointe l'appli vers un autre dossier, `OPENSCISSORS_MODEL=/chemin/model.onnx` charge un fichier local de type IS-Net.
 
-Un outil en ligne de commande existe aussi : `cargo run -p openscissors-cli -- cut photo.jpg detourage.png` (et `predict`, `batch`, `models`).
+Un outil en ligne de commande existe aussi : `cargo run -p openscissors-cli -- cut photo.jpg detourage.png` (et `predict`, `batch`, `models`). `batch photos/ sortie/ --resume` laisse de côté les images dont le résultat est déjà dans `sortie/` : relancer la même commande après une erreur ou une interruption ne fait que le reste ; `--report rapport.json` écrit une entrée par image (faite, ignorée ou en échec, le fichier écrit, l'erreur, la durée). `models download <id>` reprend un téléchargement coupé et `models verify <id>` vérifie les fichiers par leur SHA-256.
 
 Ajouter votre propre modèle : créez `models/<nom>/model.onnx` et un `model.json` à côté (voir l'exemple dans [README.md](README.md#using-your-own-model)).
 
@@ -142,7 +146,8 @@ Détails dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) et [docs/PERF.md](doc
 
 - Windows est la plateforme testée. Le code est portable, les builds Linux et macOS (Apple Silicon) ne sont pas testés. Il n'y a pas de build macOS Intel : ONNX Runtime n'en fournit pas.
 - Le mode GPU (DirectML) fonctionne mais n'a rien accéléré sur la carte essayée ; il reste optionnel.
-- Le recadrage au clavier n'existe pas encore ; les poignées demandent un pointeur.
+- Les images à gamut large sont converties en sRGB : les couleurs hors sRGB sont écrêtées. L'AVIF s'écrit mais ne s'ouvre pas.
+- Le fonctionnement avec un lecteur d'écran (voir [docs/PERF.md](docs/PERF.md)) n'a pas été testé avec un vrai lecteur d'écran.
 - Une image est refusée, avec un message, quand elle ne tiendrait pas dans le budget mémoire (environ 24 octets par pixel une fois ouverte : une photo 8K demande ~0,8 Go, 100 mégapixels ~2,3 Go) ou dépasse 500 mégapixels. L'historique d'annulation ne garde qu'environ 384 Mo : les plus anciennes étapes sont oubliées en premier.
 - Les messages d'erreur venant de Rust sont en anglais uniquement.
 - Les traductions n'ont pas été relues par des locuteurs natifs. Les corrections sont les bienvenues.

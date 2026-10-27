@@ -34,13 +34,16 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 - **Brush correction**: mark what to keep, erase what shouldn't be there, and a *hair* tool for soft edges.
 - **Group by color** (green and red marks) when the AI struggles: whole areas of similar colour follow your strokes.
 - **Smart select**: click what you want, right-click what you don't, or drag a box (needs the small SAM 2 model).
-- **Backgrounds**: transparent, solid colour, any picture, or the original with the subject filled in. Blur, grayscale, negative, pixelate or colourize either layer.
+- **Backgrounds**: transparent, solid colour, a gradient (two colours and an angle), any picture, or the original with the subject filled in. Blur, grayscale, negative, pixelate or colourize either layer. An eyedropper next to every colour picks it from the picture.
 - **Clean up the edges**: soft edges (hair, feathering) lose the colour of the old background, so no halo shows on the new one.
 - **Adjust the colours** of the subject alone (brightness, saturation, warmth) so it sits right on its new background.
-- **Shadow** (blur, opacity, colour, offset right and down), **crop to a ratio, padding**, then export to PNG, JPEG, WebP, TIFF or BMP. 16-bit sources can stay 16-bit.
+- **Shadow** (blur, opacity, colour, offset right and down), **crop to a ratio, padding**, then export to PNG, JPEG, WebP, AVIF, TIFF or BMP. 16-bit sources can stay 16-bit. The quality setting drives JPEG, WebP and AVIF; WebP at 100 is lossless, below it is lossy (the transparency stays exact).
 - **Output width and presets** (marketplace 1000 or 2000 px, thumbnail, 16:9 banner): the result comes out at the exact size, centred, on white or transparent.
+- **The canvas can grow past the picture**: when a ratio or the padding asks for more room than the photo has (a 16:9 banner of a square photo), the background fills the extra area instead of cutting the subject. You can also drag the crop beyond the edges, or move it with <kbd>Alt</kbd>+arrows. The canvas never grows beyond twice the size of the picture.
+- **Colour profiles**: a picture with an embedded profile (Display P3, Adobe RGB...) is converted to sRGB when it opens, so the colours are right (wide gamuts are clipped to sRGB); exports of such a picture carry the sRGB profile.
+- **Pictures that are already cut out** (a PNG or WebP with transparency) open with their own transparency: no model runs, you can refine the mask or change the background.
 - **Copy and paste**: <kbd>Ctrl</kbd>+<kbd>V</kbd> opens the picture on the clipboard (or an image file copied in your file manager); one click, or <kbd>Ctrl</kbd>+<kbd>C</kbd>, copies the result with its transparency.
-- **Batch mode** for a whole folder: drop the folder on the window, use your saved settings or those of the image you are editing, save as PNG, JPEG or WebP.
+- **Batch mode** for a whole folder: drop the folder on the window, use your saved settings or those of the image you are editing, save as PNG, JPEG, WebP or AVIF.
 - **4 languages**: English (default), Français, Deutsch, Русский.
 - **Plug-ins** (optional, off until you turn them on): small programs that run on the file you just saved.
 
@@ -61,7 +64,7 @@ Windows 10/11 (64-bit) is the tested platform. The Releases page also has a Linu
 2. Run `OpenScissors.exe` (`OpenScissors` on Linux and macOS).
 3. Open an image (the button, <kbd>Ctrl</kbd>+<kbd>O</kbd>, drag and drop, paste with <kbd>Ctrl</kbd>+<kbd>V</kbd>, or `OpenScissors.exe photo.jpg`).
 
-The first time, no AI model is installed (they are not bundled). Click the chip at the top, pick one, press **Download**. The file is checked against a SHA-256 before it is used.
+The first time, no AI model is installed (they are not bundled). Click the chip at the top, pick one, press **Download**. The file is checked against a SHA-256 before it is used. A download that is cut (cancelled, connection lost) resumes where it stopped the next time you press **Download**; a file that is already there is checked again before it is trusted.
 
 | Model | Download | Memory | Good for |
 |---|---|---|---|
@@ -103,6 +106,7 @@ Delete `data/` to start over, delete `models/` to free space. Nothing is written
 |---|---|
 | <kbd>F</kbd> keep · <kbd>B</kbd> remove (in *Group by color*) · <kbd>E</kbd> erase | <kbd>S</kbd> smart select · <kbd>H</kbd> hair · <kbd>Shift</kbd>+<kbd>H</kbd> erase hair |
 | <kbd>M</kbd> move · hold <kbd>Space</kbd> to pan | <kbd>[</kbd> <kbd>]</kbd> brush size |
+| <kbd>Alt</kbd>+arrows move the crop by 1 px (<kbd>Shift</kbd>: 10 px) | arrows pan the views |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> open · <kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> save as | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> undo / redo |
 | <kbd>Ctrl</kbd>+<kbd>V</kbd> paste an image | <kbd>Ctrl</kbd>+<kbd>C</kbd> copy the result |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> fit · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | wheel pans, <kbd>Ctrl</kbd>+wheel zooms |
@@ -126,7 +130,7 @@ node scripts/package-portable.mjs --build --zip     # the portable folder (with 
 
 Debug builds keep their data in `portable-dev/`. `OPENSCISSORS_HOME` points the app to another folder, and `OPENSCISSORS_MODEL=/path/model.onnx` loads a local IS-Net style file.
 
-There is a command line tool too: `cargo run -p openscissors-cli -- cut photo.jpg cutout.png` (also `predict`, `batch`, `models`).
+There is a command line tool too: `cargo run -p openscissors-cli -- cut photo.jpg cutout.png` (also `predict`, `batch`, `models`). `batch photos/ out/ --resume` leaves alone the images whose result is already in `out/`, so running the same command again after an error or an interruption only does what is left; `--report report.json` writes one entry per image (done, skipped or failed, the file written, the error, the time). `models download <id>` resumes a cut download and `models verify <id>` checks the files against their SHA-256.
 
 To look at the interface and drive it without touching the mouse (handy for tests and screenshots):
 
@@ -172,7 +176,8 @@ More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PERF.md](docs/PER
 
 - Windows is the platform I test. The code is portable, the Linux and macOS (Apple Silicon) builds are untested. There is no macOS Intel build: ONNX Runtime provides no binary for it.
 - The GPU mode (DirectML) works but didn't make anything faster on the card I tried, so it stays optional.
-- Moving the crop with the keyboard isn't there yet; the handles need a pointer.
+- Wide-gamut pictures are converted to sRGB, so colours outside sRGB are clipped. AVIF can be written but not opened.
+- The screen reader support (see [docs/PERF.md](docs/PERF.md)) has not been tested with a real screen reader.
 - A picture is refused, with a message, when it would not fit the memory budget (about 24 bytes per pixel once opened: an 8K photo needs ~0.8 GB, 100 megapixels ~2.3 GB) or is over 500 megapixels. The undo history keeps at most about 384 MB: the oldest steps are forgotten first.
 - Error messages coming from the Rust side are in English only.
 - The translations haven't been reviewed by native speakers. Corrections are welcome.

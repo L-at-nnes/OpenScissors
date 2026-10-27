@@ -113,6 +113,6 @@ for the same window, so the software renderer is the default (`--features gl` se
 - **Screen readers:** Slint exposes the controls through the platform accessibility API (AccessKit); buttons,
   sliders, switches, combo boxes and tabs carry a role and a label. Not tested with a real screen reader.
 - **Keyboard:** every tool and action has a shortcut; the arrow keys pan the views; sliders take the arrow keys
-  when focused. Moving the crop with the keyboard, which the web interface had, is not available yet: the crop is
-  edited with the pointer (handles) and with the aspect ratio and Fit to result controls.
+  when focused. <kbd>Alt</kbd>+arrows move the crop (1 px, <kbd>Shift</kbd> 10 px); it is resized with the pointer
+  (handles) and with the aspect ratio and Fit to result controls.
 - **Not covered:** axe-core (a web tool) no longer applies; the native file dialogs belong to the operating system.
