@@ -218,5 +218,7 @@
   "End color": "Endfarbe",
   "Angle": "Winkel",
   "Click the picture to pick a colour. Esc cancels.": "Klicken Sie ins Bild, um eine Farbe aufzunehmen. Esc bricht ab.",
-  "Pick a colour from the picture": "Farbe aus dem Bild aufnehmen"
+  "Pick a colour from the picture": "Farbe aus dem Bild aufnehmen",
+  "Before and after": "Vorher und nachher",
+  "Before and after (C)": "Vorher und nachher (C)"
 }

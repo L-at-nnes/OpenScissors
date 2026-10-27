@@ -293,6 +293,17 @@ component Topbar inherits Rectangle {
                 Backend.zoom-fit();
             }
         }
+        IconBtn {
+            y: 8px;
+            d: Icons.compare;
+            label: @tr("Before and after");
+            hint: @tr("Before and after (C)");
+            active: Backend.compare;
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.compare = !Backend.compare;
+            }
+        }
         Rectangle {
             width: 13px;
             Rectangle {
@@ -454,13 +465,20 @@ component ViewPane inherits Rectangle {
     property <length> cy1: Backend.view-ty * 1px + Backend.crop.y1 * Backend.view-scale * 1px;
     clip: true;
     background: Theme.canvas;
+    // The pane that reports its size is the one that is left when there is only one.
+    property <bool> reports: Backend.compare ? root.side == 1 : root.side == 0;
     changed width => {
-        if (root.side == 0) {
+        if (root.reports) {
             Backend.pane-resized(self.width / 1px, self.height / 1px);
         }
     }
     changed height => {
-        if (root.side == 0) {
+        if (root.reports) {
+            Backend.pane-resized(self.width / 1px, self.height / 1px);
+        }
+    }
+    changed reports => {
+        if (root.reports) {
             Backend.pane-resized(self.width / 1px, self.height / 1px);
         }
     }
@@ -475,7 +493,59 @@ component ViewPane inherits Rectangle {
     }
 
     // Crop rectangle, over the result.
-    if root.side == 1 && Backend.crop-visible: Rectangle {
+    // Before and after: the original, up to the divider, over the result.
+    if root.side == 1 && Backend.compare: Rectangle {
+        init => {
+            Backend.compare-x = root.width / 2;
+        }
+        Rectangle {
+            x: 0;
+            width: clamp(Backend.compare-x, 0px, root.width);
+            clip: true;
+            background: Theme.canvas;
+            Image {
+                source: Backend.src-img;
+                x: round((Backend.view-tx + Backend.src-region.x0 * Backend.view-scale)) * 1px;
+                y: round((Backend.view-ty + Backend.src-region.y0 * Backend.view-scale)) * 1px;
+                width: round((Backend.src-region.x1 - Backend.src-region.x0) * Backend.view-scale) * 1px;
+                height: round((Backend.src-region.y1 - Backend.src-region.y0) * Backend.view-scale) * 1px;
+                image-fit: fill;
+                image-rendering: Backend.view-scale >= 1 ? ImageRendering.pixelated : ImageRendering.smooth;
+            }
+        }
+        Rectangle {
+            x: clamp(Backend.compare-x, 0px, root.width) - 1px;
+            width: 2px;
+            background: Theme.accent;
+        }
+        Rectangle {
+            x: clamp(Backend.compare-x, 0px, root.width) - 14px;
+            y: (root.height - 28px) / 2;
+            width: 28px;
+            height: 28px;
+            border-radius: 14px;
+            background: Theme.accent;
+            Text {
+                text: "↔";
+                color: Theme.canvas;
+                font-size: 15px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        TouchArea {
+            x: clamp(Backend.compare-x, 0px, root.width) - 16px;
+            width: 32px;
+            mouse-cursor: MouseCursor.ew-resize;
+            moved => {
+                if (self.pressed) {
+                    Backend.compare-x = clamp(Backend.compare-x + (self.mouse-x - 16px), 0px, root.width);
+                }
+            }
+        }
+    }
+
+    if root.side == 1 && Backend.crop-visible && !Backend.compare: Rectangle {
         Rectangle {
             visible: !Backend.crop-full;
             x: 0;
@@ -729,7 +799,7 @@ export component MainWindow inherits Window {
                 Rail { }
                 views := HorizontalLayout {
                     spacing: 1px;
-                    ViewPane {
+                    if !Backend.compare: ViewPane {
                         side: 0;
                         label: @tr("Original");
                         if Backend.busy: Rectangle {

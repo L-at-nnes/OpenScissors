@@ -218,5 +218,7 @@
   "End color": "Конечный цвет",
   "Angle": "Угол",
   "Click the picture to pick a colour. Esc cancels.": "Щёлкните по изображению, чтобы выбрать цвет. Esc — отмена.",
-  "Pick a colour from the picture": "Взять цвет с изображения"
+  "Pick a colour from the picture": "Взять цвет с изображения",
+  "Before and after": "До и после",
+  "Before and after (C)": "До и после (C)"
 }

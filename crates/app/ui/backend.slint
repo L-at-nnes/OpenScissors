@@ -119,6 +119,9 @@ export global Backend {
     in property <[Box2]> boxes;
     in property <bool> drag-visible;
     in property <Box2> drag-box;
+    // Before/after: one big view, the original on the left of a divider the user drags, the result on the right.
+    in-out property <bool> compare: false;
+    in-out property <length> compare-x: 400px;
     in property <bool> crop-visible;
     in property <bool> crop-full;
     in property <bool> crop-locked;

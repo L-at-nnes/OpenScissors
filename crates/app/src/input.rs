@@ -344,6 +344,11 @@ impl Ctl {
             's' | 'S' => self.set_tool(Tool::Select),
             'h' | 'H' => self.set_tool(if shift { Tool::HairErase } else { Tool::Hair }),
             'e' | 'E' => self.set_tool(Tool::Erase),
+            'c' | 'C' => self.with_ui(|_, ui| {
+                use slint::ComponentHandle;
+                let b = ui.global::<crate::Backend>();
+                b.set_compare(!b.get_compare());
+            }),
             'm' | 'M' => self.set_tool(Tool::Move),
             '[' => self.step_marker(-5),
             ']' => self.step_marker(5),
