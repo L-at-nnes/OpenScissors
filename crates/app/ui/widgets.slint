@@ -396,10 +396,12 @@ export component ColorRow inherits Rectangle {
         }
         Text {
             x: 40px;
-            text: "R " + root.value.red + "  G " + root.value.green + "  B " + root.value.blue;
+            width: parent.width - 40px - 30px;
+            text: root.value.red + ", " + root.value.green + ", " + root.value.blue;
             color: Theme.text;
             font-size: Theme.fs-sm;
             vertical-alignment: center;
+            overflow: elide;
         }
         touch := TouchArea {
             enabled: root.enabled;
