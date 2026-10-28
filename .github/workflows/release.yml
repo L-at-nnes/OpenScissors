@@ -39,9 +39,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev zip
+          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev zip xvfb libxkbcommon-x11-0
       - run: cargo test --workspace --release
       - run: node scripts/package-portable.mjs --build --zip
+      # Unzip the archive somewhere else and run it: a zip that builds but does not start is not published.
+      - run: node scripts/check-package.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: openscissors-${{ matrix.name }}

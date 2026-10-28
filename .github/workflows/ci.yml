@@ -26,6 +26,25 @@ jobs:
           sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace   # golden and pipeline tests are skipped without OPENSCISSORS_MODEL
+      # The window itself, on a virtual display: the selftest opens a picture that is already cut out (no model needed),
+      # changes the background and saves snapshots of the real interface. It reuses what `cargo test` just built.
+      - name: Window smoke test (Linux, virtual display)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get install -y xvfb libxkbcommon-x11-0
+          export OPENSCISSORS_HOME="$RUNNER_TEMP/osc-home"
+          xvfb-run -a -s "-screen 0 1400x900x24" timeout 240             cargo run -p openscissors --example selftest -- tests/data/synthetic_cutout.png "$RUNNER_TEMP/smoke" script tests/smoke.json
+          for shot in 02-opened smoke-gradient smoke-compare; do
+            size=$(stat -c %s "$RUNNER_TEMP/smoke/$shot.png")
+            echo "$shot.png: $size bytes"
+            test "$size" -gt 20000
+          done
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.os == 'ubuntu-latest'
+        with:
+          name: window-smoke-test
+          path: ${{ runner.temp }}/smoke/*.png
+          if-no-files-found: ignore
 
   audit:
     runs-on: ubuntu-latest

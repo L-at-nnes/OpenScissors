@@ -1,0 +1,11 @@
+[
+ {"tab": 1},
+ {"param": ["background.mode", "gradient"]},
+ {"param": ["background.color", [250, 214, 160]]},
+ {"param": ["background.gradient_color", [120, 90, 160]]},
+ {"wait": 500},
+ {"shot": "smoke-gradient"},
+ {"key": "c"},
+ {"wait": 500},
+ {"shot": "smoke-compare"}
+]
