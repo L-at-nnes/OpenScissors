@@ -11,4 +11,10 @@ Thanks for looking. A few things that make a change easy to accept:
 
 Commit messages: `type(scope): short description` (`feat`, `fix`, `refactor`, `docs`, `test`, `chore`).
 
+## Releasing
+
+1. Bump `version` in `Cargo.toml` (and `Cargo.lock`, by building once), commit it: `chore(release): bump version to X.Y.Z`.
+2. Tag **that commit** `vX.Y.Z` and push the tag. The release workflow stops if the tag and `Cargo.toml` disagree, so a release can never carry another version number than its tag (the `1.0.0` release was tagged before the version was bumped and ships as 0.2.0).
+3. Never upload archives by hand: the workflow builds them, names them with the version of `Cargo.toml` and publishes them with their checksums.
+
 By contributing you agree that your work is released under the Apache-2.0 license of the project.

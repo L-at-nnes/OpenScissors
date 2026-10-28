@@ -2,9 +2,10 @@ name: release
 
 # Push a tag such as v1.1.0 (it must match the version in Cargo.toml) and this workflow builds the portable
 # archives on each system and publishes them as a GitHub release. "Run workflow" builds the archives only.
+# A tag without the "v" (1.1.0) is treated the same way, so that no tag can skip the version check below.
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "[0-9]*"]
   workflow_dispatch:
 
 permissions:
@@ -24,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: The tag matches the version in Cargo.toml
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.ref_type == 'tag'
         shell: bash
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
@@ -49,7 +50,7 @@ jobs:
 
   publish:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
