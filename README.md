@@ -17,7 +17,9 @@
 
 ## See it in 100 seconds
 
-<!-- Drag brag.mp4 into the GitHub editor, then paste the video URL it gives you (https://github.com/user-attachments/assets/...) on its own line right below this comment: GitHub shows it as a player. -->
+https://github.com/user-attachments/assets/6f4a59e5-603f-447f-9e4b-1b8eae6a16a8
+
+<br>
 
 > This is an independent project. It is not affiliated with any commercial product, and it contains no code, icons, translations or model weights from one.
 
