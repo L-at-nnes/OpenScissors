@@ -15,6 +15,10 @@
   <img src="docs/images/composed.png" alt="OpenScissors avec une tasse détourée posée sur un fond crème avec une ombre douce" width="900">
 </p>
 
+## À voir en 100 secondes
+
+<!-- Glissez brag.mp4 dans l'éditeur GitHub, puis collez l'URL de la vidéo qu'il vous donne (https://github.com/user-attachments/assets/...) seule sur une ligne juste sous ce commentaire : GitHub l'affiche comme un lecteur vidéo. -->
+
 > Projet indépendant, sans lien avec un produit commercial. Il ne contient ni code, ni icônes, ni traductions, ni poids de modèle venant d'un tel produit.
 
 ## Pourquoi

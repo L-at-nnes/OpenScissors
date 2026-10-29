@@ -15,6 +15,10 @@
   <img src="docs/images/composed.png" alt="OpenScissors with a mug cut out and placed on a cream background with a soft shadow" width="900">
 </p>
 
+## See it in 100 seconds
+
+<!-- Drag brag.mp4 into the GitHub editor, then paste the video URL it gives you (https://github.com/user-attachments/assets/...) on its own line right below this comment: GitHub shows it as a player. -->
+
 > This is an independent project. It is not affiliated with any commercial product, and it contains no code, icons, translations or model weights from one.
 
 ## Why
