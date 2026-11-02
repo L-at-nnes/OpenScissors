@@ -73,7 +73,7 @@ Windows 10/11 (64 bits) est la plateforme testée. La page Releases propose auss
 2. Lancez `OpenScissors.exe` (`OpenScissors` sous Linux et macOS).
 3. Ouvrez une image (le bouton, <kbd>Ctrl</kbd>+<kbd>O</kbd>, glisser-déposer, coller avec <kbd>Ctrl</kbd>+<kbd>V</kbd>, ou `OpenScissors.exe photo.jpg`).
 
-Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fournis). Cliquez sur la pastille en haut, choisissez-en un, **Télécharger**. Le fichier est vérifié par SHA-256 avant usage.
+Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fournis). Cliquez sur la pastille en haut, choisissez-en un, **Télécharger**. Le fichier est vérifié par SHA-256 avant usage. Un téléchargement coupé (annulé, connexion perdue, ou plus rien reçu pendant une minute) reprend là où il s'était arrêté au prochain **Télécharger** ; un fichier déjà présent est revérifié avant d'être utilisé.
 
 | Modèle | Téléchargement | Mémoire | Pour |
 |---|---|---|---|

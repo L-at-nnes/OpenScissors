@@ -7,6 +7,8 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -281,15 +283,21 @@ pub enum ModelState {
     Ready,
 }
 
+/// A download that receives nothing for this long is given up (the part already received is kept, so that pressing
+/// Download again resumes it). The HTTP client has no such limit of its own: a stalled connection would wait for ever.
+pub const STALL_LIMIT: Duration = Duration::from_secs(60);
+
 pub struct ModelRegistry {
     dir: PathBuf,
+    /// [`STALL_LIMIT`], shorter in the tests.
+    pub(crate) stall_limit: Duration,
 }
 
 pub type Progress<'a> = &'a mut dyn FnMut(u64, u64);
 
 impl ModelRegistry {
     pub fn new(models_dir: impl Into<PathBuf>) -> Self {
-        Self { dir: models_dir.into() }
+        Self { dir: models_dir.into(), stall_limit: STALL_LIMIT }
     }
 
     pub fn dir(&self) -> &Path {
@@ -429,21 +437,33 @@ impl ModelRegistry {
         } else {
             fs::File::create(&part)?
         };
-        let mut reader = resp.into_body().into_reader();
-        let mut buf = vec![0u8; 1 << 20];
+        let chunks = read_in_background(resp.into_body().into_reader());
         let mut done = start;
+        let mut last_data = Instant::now();
         loop {
             if cancel.load(Ordering::Relaxed) {
                 // The part stays: the next attempt continues from it.
                 return Err(Error::Cancelled);
             }
-            let n = reader.read(&mut buf).map_err(|e| Error::Download(e.to_string()))?;
-            if n == 0 {
+            let chunk = match chunks.recv_timeout(Duration::from_millis(200)) {
+                Ok(Ok(chunk)) => chunk,
+                Ok(Err(e)) => return Err(Error::Download(e.to_string())),
+                Err(RecvTimeoutError::Timeout) if last_data.elapsed() < self.stall_limit => continue,
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(Error::Download(format!(
+                        "nothing was received for {} seconds; the download can be resumed",
+                        self.stall_limit.as_secs()
+                    )))
+                }
+                Err(RecvTimeoutError::Disconnected) => return Err(Error::Download("the connection was lost".into())),
+            };
+            if chunk.is_empty() {
                 break;
             }
-            out.write_all(&buf[..n])?;
-            hasher.update(&buf[..n]);
-            done += n as u64;
+            last_data = Instant::now();
+            out.write_all(&chunk)?;
+            hasher.update(&chunk);
+            done += chunk.len() as u64;
             if !within_expected(file.size_bytes, done) {
                 drop(out);
                 let _ = fs::remove_file(&part);
@@ -477,6 +497,25 @@ impl ModelRegistry {
         }
         Ok(bad)
     }
+}
+
+/// Read `reader` on a thread of its own and hand over what arrives, an empty chunk at the end. The download loop can
+/// then notice Cancel, or a connection that stopped sending, while a read is still waiting. When the loop gives up,
+/// the thread ends with its next read (the connection then closes or fails).
+fn read_in_background(mut reader: impl Read + Send + 'static) -> Receiver<std::io::Result<Vec<u8>>> {
+    let (tx, rx) = sync_channel(4);
+    std::thread::spawn(move || loop {
+        let mut buf = vec![0u8; 256 << 10];
+        let item = reader.read(&mut buf).map(|n| {
+            buf.truncate(n);
+            buf
+        });
+        let end = !matches!(&item, Ok(b) if !b.is_empty());
+        if tx.send(item).is_err() || end {
+            return;
+        }
+    });
+    rx
 }
 
 /// Where a file is downloaded before it is checked and moved into place (never shared between two files of a model).
@@ -651,6 +690,12 @@ mod tests {
     /// the body only (the connection then drops); the others with the whole body, or from the requested offset when
     /// `ranges` is on. Returns the address and the `Range` headers it received.
     fn serve(body: Vec<u8>, cut_first: usize, ranges: bool) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        serve_holding(body, cut_first, ranges, false)
+    }
+
+    /// Like [`serve`]; with `hold` a cut answer keeps the connection open without sending anything more (a stalled
+    /// network), instead of closing it.
+    fn serve_holding(body: Vec<u8>, cut_first: usize, ranges: bool, hold: bool) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
         use std::io::{BufRead, BufReader};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/model.onnx", listener.local_addr().unwrap());
@@ -685,6 +730,9 @@ mod tests {
                 };
                 let _ = stream.write_all(head.as_bytes());
                 let _ = stream.write_all(if n < cut_first { &rest[..rest.len() / 3] } else { rest });
+                if hold && n < cut_first {
+                    std::thread::sleep(std::time::Duration::from_secs(20));
+                }
             }
         });
         (url, seen)
@@ -735,6 +783,40 @@ mod tests {
         assert_eq!(fs::read(&dest).unwrap(), data);
         assert_eq!(seen.lock().unwrap().len(), 2);
         fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_stalled_connection_is_given_up_and_cancel_works_while_it_hangs() {
+        let data = body();
+        let no = AtomicBool::new(false);
+        // No data for longer than the stall limit: an error that keeps the part for a later resume.
+        let dir = tmp("stall");
+        let (url, _) = serve_holding(data.clone(), 1, true, true);
+        let file = file_for(url, &data);
+        let dest = dir.join("model.onnx");
+        let mut reg = ModelRegistry::new(&dir);
+        reg.stall_limit = Duration::from_millis(400);
+        let started = Instant::now();
+        let err = reg.download_file("m", &file, &dest, &mut |_, _| {}, &no).unwrap_err().to_string();
+        assert!(started.elapsed() < Duration::from_secs(10), "it did not hang: {:?}", started.elapsed());
+        assert!(err.contains("resumed"), "{err}");
+        assert_eq!(fs::metadata(part_path(&dest)).unwrap().len(), data.len() as u64 / 3, "the part is kept");
+
+        // Cancel while nothing arrives: it is noticed at once.
+        let dir = tmp("stall-cancel");
+        let (url, _) = serve_holding(data.clone(), 1, true, true);
+        let file = file_for(url, &data);
+        let reg = ModelRegistry::new(&dir);
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let flag = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(500));
+            flag.store(true, Ordering::Relaxed);
+        });
+        let started = Instant::now();
+        let result = reg.download_file("m", &file, &dir.join("model.onnx"), &mut |_, _| {}, &cancel);
+        assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
+        assert!(started.elapsed() < Duration::from_secs(5), "cancelled in {:?}", started.elapsed());
     }
 
     #[test]

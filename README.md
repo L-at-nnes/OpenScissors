@@ -75,7 +75,7 @@ Windows 10/11 (64-bit) is the tested platform. The Releases page also has a Linu
 2. Run `OpenScissors.exe` (`OpenScissors` on Linux and macOS).
 3. Open an image (the button, <kbd>Ctrl</kbd>+<kbd>O</kbd>, drag and drop, paste with <kbd>Ctrl</kbd>+<kbd>V</kbd>, or `OpenScissors.exe photo.jpg`).
 
-The first time, no AI model is installed (they are not bundled). Click the chip at the top, pick one, press **Download**. The file is checked against a SHA-256 before it is used. A download that is cut (cancelled, connection lost) resumes where it stopped the next time you press **Download**; a file that is already there is checked again before it is trusted.
+The first time, no AI model is installed (they are not bundled). Click the chip at the top, pick one, press **Download**. The file is checked against a SHA-256 before it is used. A download that is cut (cancelled, connection lost, or nothing received for a minute) resumes where it stopped the next time you press **Download**; a file that is already there is checked again before it is trusted.
 
 | Model | Download | Memory | Good for |
 |---|---|---|---|
