@@ -15,7 +15,7 @@ thiserror = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff", "gif", "avif"] }
 fast_image_resize = { version = "5", features = ["rayon"] }
 rayon = "1"
-ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "copy-dylibs", "tls-native"] }
+ort = { version = "2.0.0-rc.15", default-features = false, features = ["std", "download-binaries", "copy-dylibs", "tls-native"] }
 sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
@@ -28,5 +28,5 @@ libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = ["Win32_System_SystemInformation", "Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_Security"] }
-ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "copy-dylibs", "tls-native", "directml"] }
+ort = { version = "2.0.0-rc.15", default-features = false, features = ["std", "download-binaries", "copy-dylibs", "tls-native", "directml"] }
 

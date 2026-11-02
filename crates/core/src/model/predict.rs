@@ -1,7 +1,7 @@
 //! AI mask prediction (spec section 4.2).
 
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
@@ -39,11 +39,21 @@ pub struct Predictor {
     backend: &'static str,
 }
 
+/// The ONNX Runtime environment of the process. ONNX Runtime allows one per process, so it is created on first use
+/// and kept for the whole run; every session is built from it. Telemetry is turned off explicitly, whatever the build
+/// of ONNX Runtime would do by default.
+pub(crate) fn environment() -> Result<&'static ort::environment::Environment> {
+    static ENV: OnceLock<std::result::Result<ort::environment::Environment, String>> = OnceLock::new();
+    ENV.get_or_init(|| ort::init().with_name("openscissors").with_telemetry(false).build().map_err(|e| e.to_string()))
+        .as_ref()
+        .map_err(|e| Error::Ort(e.clone()))
+}
+
 /// `fast_memory` keeps ONNX Runtime's memory arena on: quicker (about a third for BiRefNet) but
 /// the process then holds more than twice the memory (11 GB instead of 4.7 GB for BiRefNet lite).
 pub(crate) fn cpu_session(model_path: &Path, fast_memory: bool) -> Result<Session> {
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-    let mut b = Session::builder()?.with_optimization_level(GraphOptimizationLevel::Level3)?.with_intra_threads(threads)?;
+    let mut b = Session::builder(environment()?)?.with_optimization_level(GraphOptimizationLevel::Level3)?.with_intra_threads(threads)?;
     if !fast_memory {
         b = b.with_execution_providers([ort::ep::CPU::default().with_arena_allocator(false).build()])?.with_memory_pattern(false)?;
     }
@@ -54,7 +64,7 @@ pub(crate) fn cpu_session(model_path: &Path, fast_memory: bool) -> Result<Sessio
 #[cfg(windows)]
 fn gpu_session(model_path: &Path) -> Result<Session> {
     use ort::ep;
-    Ok(Session::builder()?
+    Ok(Session::builder(environment()?)?
         .with_execution_providers([ep::DirectML::default().build().error_on_failure()])?
         // Both are required by the DirectML provider.
         .with_memory_pattern(false)?
