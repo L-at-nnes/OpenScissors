@@ -3,12 +3,18 @@
 use crate::params::{parse_ratio, Params};
 use crate::types::{Mask, Rect};
 
-/// Bounding box of the pixels with alpha > 0.
+/// Alpha up to which a pixel does not count as part of the result when the crop is fitted to it (3 %, invisible on
+/// any background). An AI mask normalised by its minimum and maximum keeps such faint values over the whole picture,
+/// which would otherwise make "fit to result" frame everything.
+pub const BBOX_MIN_ALPHA: u8 = 8;
+
+/// Bounding box of the pixels with alpha above [`BBOX_MIN_ALPHA`].
 pub fn alpha_bbox(alpha: &Mask) -> Option<Rect> {
     let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0usize, 0usize);
+    let seen = |v: &u8| *v > BBOX_MIN_ALPHA;
     for y in 0..alpha.h {
         let row = &alpha.data[y * alpha.w..(y + 1) * alpha.w];
-        if let (Some(a), Some(b)) = (row.iter().position(|&v| v > 0), row.iter().rposition(|&v| v > 0)) {
+        if let (Some(a), Some(b)) = (row.iter().position(seen), row.iter().rposition(seen)) {
             x0 = x0.min(a);
             x1 = x1.max(b);
             y0 = y0.min(y);
@@ -165,9 +171,25 @@ mod tests {
     fn bbox_of_alpha() {
         let mut m = Mask::new(10, 10);
         assert!(alpha_bbox(&m).is_none());
-        m.data[2 * 10 + 3] = 1;
+        m.data[2 * 10 + 3] = BBOX_MIN_ALPHA + 1;
         m.data[6 * 10 + 8] = 255;
         assert_eq!(alpha_bbox(&m), Some(Rect::new(3.0, 2.0, 9.0, 7.0)));
+    }
+
+    #[test]
+    fn faint_noise_around_the_subject_does_not_widen_the_box() {
+        // What a min-max normalised prediction looks like: a subject, and values of a few units everywhere else.
+        let mut m = Mask::new(100, 80);
+        for (i, v) in m.data.iter_mut().enumerate() {
+            *v = (i % 7) as u8 + 2; // 2..=8
+        }
+        for y in 30..50 {
+            for x in 40..60 {
+                m.data[y * 100 + x] = 255;
+            }
+        }
+        assert_eq!(alpha_bbox(&m), Some(Rect::new(40.0, 30.0, 60.0, 50.0)));
+        assert!(alpha_bbox(&Mask::filled(10, 10, BBOX_MIN_ALPHA)).is_none(), "only noise: nothing to fit to");
     }
 
     #[test]
