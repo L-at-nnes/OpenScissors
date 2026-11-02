@@ -137,7 +137,7 @@ cargo test --workspace                              # tests
 node scripts/package-portable.mjs --build --zip     # le dossier portable et son zip, dans dist/
 ```
 
-Les builds de debug gardent leurs données dans `portable-dev/`. `OPENSCISSORS_HOME` pointe l'appli vers un autre dossier, `OPENSCISSORS_MODEL=/chemin/model.onnx` charge un fichier local de type IS-Net.
+Les builds de debug (de l'appli et de la ligne de commande) gardent leurs données dans `portable-dev/`. `OPENSCISSORS_HOME` pointe les deux vers un autre dossier ; la ligne de commande utilise toujours le même dossier que l'appli, repli dans le profil compris, `OPENSCISSORS_MODEL=/chemin/model.onnx` charge un fichier local de type IS-Net.
 
 Un outil en ligne de commande existe aussi : `cargo run -p openscissors-cli -- cut photo.jpg detourage.png` (et `predict`, `batch`, `models`). `batch photos/ sortie/ --resume` laisse de côté les images dont le résultat est déjà dans `sortie/` : relancer la même commande après une erreur ou une interruption ne fait que le reste (deux images de même nom, `a.jpg` et `a.png`, donnent `a_jpg.png` et `a_png.png`) ; `--report rapport.json` écrit une entrée par image (faite, ignorée ou en échec, le fichier écrit, l'erreur, la durée). `compare photo.jpg sortie/` fait tourner chaque modèle téléchargé (ou `--models a,b`) sur une image, l'un après l'autre, et écrit chaque masque, une planche-contact et l'accord entre les modèles. `models download <id>` reprend un téléchargement coupé et `models verify <id>` vérifie les fichiers par leur SHA-256.
 

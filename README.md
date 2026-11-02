@@ -139,7 +139,7 @@ cargo test --workspace                              # tests
 node scripts/package-portable.mjs --build --zip     # the portable folder (with the CLI) and its zip, in dist/
 ```
 
-Debug builds keep their data in `portable-dev/`. `OPENSCISSORS_HOME` points the app to another folder, and `OPENSCISSORS_MODEL=/path/model.onnx` loads a local IS-Net style file.
+Debug builds (of the app and of the command line) keep their data in `portable-dev/`. `OPENSCISSORS_HOME` points both to another folder; the command line always uses the same folder as the app, including the fallback in your profile, and `OPENSCISSORS_MODEL=/path/model.onnx` loads a local IS-Net style file.
 
 There is a command line tool too: `cargo run -p openscissors-cli -- cut photo.jpg cutout.png` (also `predict`, `batch`, `models`). `batch photos/ out/ --resume` leaves alone the images whose result is already in `out/`, so running the same command again after an error or an interruption only does what is left (two pictures with the same name, `a.jpg` and `a.png`, give `a_jpg.png` and `a_png.png`); `--report report.json` writes one entry per image (done, skipped or failed, the file written, the error, the time). `compare photo.jpg out/` runs every downloaded model (or `--models a,b`) on one picture, one at a time, and writes each mask, a contact sheet and the agreement between the models. `models download <id>` resumes a cut download and `models verify <id>` checks the files against their SHA-256.
 

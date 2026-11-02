@@ -1,7 +1,8 @@
 #![allow(clippy::chunks_exact_to_as_chunks)]
 //! Command line front end: `openscissors-cli predict|cut|models`.
 //!
-//! The models folder is `$OPENSCISSORS_HOME/models`, or `./models` next to the executable.
+//! The models and settings are those of the application (`openscissors_core::paths::root`): `$OPENSCISSORS_HOME`, the
+//! folder of the executable, or the user's profile when that folder is read-only.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -32,12 +33,9 @@ const USAGE: &str = "usage:
       command again after an error or an interruption does only what is left; --report writes a JSON
       report (one entry per image: done, skipped or failed, the file written, the error, the time)";
 
-/// The portable folder: `$OPENSCISSORS_HOME`, or the folder of the executable.
+/// The folder of the application, the same one the window uses.
 fn home_dir() -> PathBuf {
-    if let Ok(home) = std::env::var("OPENSCISSORS_HOME") {
-        return PathBuf::from(home);
-    }
-    std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_else(|| PathBuf::from("."))
+    openscissors_core::paths::root()
 }
 
 fn models_dir() -> PathBuf {

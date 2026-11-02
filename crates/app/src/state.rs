@@ -2,7 +2,7 @@
 
 use openscissors_core::sync::LockExt;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 
@@ -28,19 +28,7 @@ pub struct Paths {
 
 impl Paths {
     pub fn resolve() -> Self {
-        let root = if let Ok(home) = std::env::var("OPENSCISSORS_HOME") {
-            PathBuf::from(home)
-        } else if cfg!(debug_assertions) {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("portable-dev")
-        } else {
-            let exe_dir =
-                std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_else(|| PathBuf::from("."));
-            if is_writable(&exe_dir) {
-                exe_dir
-            } else {
-                fallback_dir()
-            }
-        };
+        let root = openscissors_core::paths::root();
         let data = root.join("data");
         let models = root.join("models");
         let plugins = root.join("plugins");
@@ -68,24 +56,6 @@ pub fn use_portable_temp() {
             std::env::set_var(var, &temp);
         }
     }
-}
-
-fn is_writable(dir: &Path) -> bool {
-    let probe = dir.join(".osc-write-test");
-    let ok = std::fs::write(&probe, b"").is_ok();
-    let _ = std::fs::remove_file(probe);
-    ok
-}
-
-/// Only used when the folder of the executable cannot be written (a read-only drive, Program Files):
-/// the application then keeps its data in the user's profile instead of failing.
-fn fallback_dir() -> PathBuf {
-    let base = std::env::var_os("LOCALAPPDATA")
-        .or_else(|| std::env::var_os("XDG_DATA_HOME"))
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("share")))
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("OpenScissors")
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

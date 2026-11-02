@@ -12,6 +12,7 @@ pub mod io;
 pub mod mask;
 pub mod model;
 pub mod params;
+pub mod paths;
 pub mod plugin;
 pub mod project;
 pub mod render;
