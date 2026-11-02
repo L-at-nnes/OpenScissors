@@ -235,6 +235,9 @@ pub fn flatten(rgba: &Rgba, bg: [u8; 3]) -> Image {
 /// AVIF encoder effort, 1 (slowest, smallest) to 10: 6 keeps a 12-megapixel export within a few seconds.
 const AVIF_SPEED: u8 = 6;
 
+/// Longest side the WebP format can hold (libwebp refuses more; its Rust wrapper panics on it).
+pub const WEBP_MAX_SIDE: usize = 16_383;
+
 /// Save `rgba` in `format`. Formats without alpha are flattened on `flatten_color`.
 /// `quality` (10-100) applies to JPEG, WebP and AVIF; WebP at 100 is lossless (and keeps the colour profile tag).
 /// The file is encoded in memory first and written with [`write_atomic`], so a failure never leaves a truncated file.
@@ -246,6 +249,12 @@ pub fn save_rgba(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_
 /// colour-managed software that the colours of a picture converted at opening ([`Loaded::converted`]) are sRGB.
 pub fn save_rgba_tagged(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_color: [u8; 3], srgb_tag: bool) -> Result<()> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
+    if format == Format::Webp && rgba.w.max(rgba.h) > WEBP_MAX_SIDE {
+        return Err(Error::msg(format!(
+            "WebP cannot hold a {} x {} px picture (at most {WEBP_MAX_SIDE} px per side): choose PNG, TIFF or AVIF, or an output width",
+            rgba.w, rgba.h
+        )));
+    }
     let mut out = Cursor::new(Vec::new());
     // Encoders that cannot hold a profile say so; the picture is then written without one.
     let tag = |e: &mut dyn ImageEncoder| {
@@ -269,7 +278,9 @@ pub fn save_rgba_tagged(path: &Path, rgba: &Rgba, format: Format, quality: u8, f
             }
             Format::Webp => {
                 // libwebp: the colours are compressed with loss, the transparency is kept exact.
-                let lossy = webp::Encoder::from_rgba(buf.as_raw(), w, h).encode(quality.max(10) as f32);
+                let lossy = webp::Encoder::from_rgba(buf.as_raw(), w, h)
+                    .encode_simple(false, quality.max(10) as f32)
+                    .map_err(|e| Error::msg(format!("WebP encoding failed: {e:?}")))?;
                 std::io::Write::write_all(&mut out, &lossy)?
             }
             Format::Avif => {
@@ -488,6 +499,20 @@ mod tests {
         assert_eq!(&head[4..12], b"ftypavif", "an AVIF container");
         assert_eq!(Format::from_path(Path::new("x.AVIF")), Some(Format::Avif));
         assert!(Format::Avif.supports_alpha() && !IMAGE_EXTENSIONS.contains(&"avif"), "written, not read");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_webp_too_wide_for_the_format_is_an_error_not_a_crash() {
+        let dir = std::env::temp_dir().join(format!("osc-webp-wide-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wide = Rgba::new(WEBP_MAX_SIDE + 1, 2);
+        for q in [60, 100] {
+            let err = save_rgba(&dir.join("w.webp"), &wide, Format::Webp, q, [255; 3]).unwrap_err().to_string();
+            assert!(err.contains("16383"), "quality {q}: {err}");
+        }
+        assert!(!dir.join("w.webp").exists());
+        save_rgba(&dir.join("ok.webp"), &Rgba::new(WEBP_MAX_SIDE, 2), Format::Webp, 60, [255; 3]).unwrap();
         std::fs::remove_dir_all(dir).ok();
     }
 
