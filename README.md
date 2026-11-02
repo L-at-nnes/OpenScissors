@@ -131,7 +131,7 @@ No account, no telemetry, no network call except the model downloads you start y
 
 ## Build it yourself
 
-You only need Rust (stable).
+You only need Rust (stable, 1.92 or newer).
 
 ```bash
 cargo run -p openscissors --release                 # run it

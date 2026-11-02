@@ -6,7 +6,7 @@ members = ["crates/core", "crates/cli", "crates/app"]
 version = "1.4.0"
 edition = "2021"
 license = "Apache-2.0"
-rust-version = "1.80"
+rust-version = "1.92"
 publish = false
 
 [profile.dev.package."*"]

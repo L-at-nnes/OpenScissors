@@ -129,7 +129,7 @@ Aucun compte, aucune télémétrie, aucun appel réseau hormis les téléchargem
 
 ## Compiler soi-même
 
-Il suffit de Rust (stable).
+Il suffit de Rust (stable, 1.92 ou plus récent).
 
 ```bash
 cargo run -p openscissors --release                 # lancer
