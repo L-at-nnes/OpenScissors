@@ -1,5 +1,6 @@
 //! Batch processing: cut out every image of a folder with the same settings and no markers.
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -113,15 +114,44 @@ pub fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     (1..).map(|n| dir.join(format!("{stem}_{n}.{ext}"))).find(|p| !p.exists()).expect("an unused name exists")
 }
 
+/// The file name of the result of each of `files`: `stem.ext`, or `stem_<source extension>.ext` when several sources
+/// share a stem (`a.jpg` and `a.png`; letter case is ignored, as on Windows). Every source then has a result of its own,
+/// always the same one, so that [`BatchOptions::skip_existing`] finds it on the next run.
+pub fn output_names(files: &[PathBuf], ext: &str) -> Vec<String> {
+    let stem = |p: &Path| p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into());
+    let mut count: HashMap<String, usize> = HashMap::new();
+    for f in files {
+        *count.entry(stem(f).to_lowercase()).or_default() += 1;
+    }
+    let mut taken: HashSet<String> = HashSet::new();
+    files
+        .iter()
+        .map(|f| {
+            let s = stem(f);
+            let base = if count[&s.to_lowercase()] > 1 {
+                format!("{s}_{}", f.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default())
+            } else {
+                s
+            };
+            let mut name = format!("{base}.{ext}");
+            let mut n = 1;
+            while !taken.insert(name.to_lowercase()) {
+                name = format!("{base}_{n}.{ext}");
+                n += 1;
+            }
+            name
+        })
+        .collect()
+}
+
 /// What `process_one` did.
 enum Outcome {
     Written(PathBuf),
     AlreadyThere(PathBuf),
 }
 
-fn process_one(file: &Path, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Result<Mask>) -> Result<Outcome> {
-    let stem = file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into());
-    let existing = opts.dst.join(format!("{stem}.{}", opts.format.extension()));
+fn process_one(file: &Path, name: &str, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Result<Mask>) -> Result<Outcome> {
+    let existing = opts.dst.join(name);
     if opts.skip_existing && existing.is_file() {
         return Ok(Outcome::AlreadyThere(existing));
     }
@@ -133,7 +163,8 @@ fn process_one(file: &Path, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Res
     let mut doc = Document::new(0, image, Some(file.to_path_buf())).with_params(params);
     doc.set_prediction(Some(mask));
     let out = doc.export();
-    let target = unique_path(&opts.dst, &stem, opts.format.extension());
+    let stem = name.strip_suffix(&format!(".{}", opts.format.extension())).unwrap_or(name);
+    let target = unique_path(&opts.dst, stem, opts.format.extension());
     save_rgba(&target, &out, opts.format, opts.quality, flatten)?;
     Ok(Outcome::Written(target))
 }
@@ -148,7 +179,8 @@ pub fn run_batch(
     cancel: &AtomicBool,
 ) -> BatchReport {
     let mut report = BatchReport { total: files.len(), ..Default::default() };
-    for (i, file) in files.iter().enumerate() {
+    let names = output_names(files, opts.format.extension());
+    for (i, (file, out_name)) in files.iter().zip(&names).enumerate() {
         if cancel.load(Ordering::Relaxed) {
             report.cancelled = true;
             break;
@@ -156,7 +188,7 @@ pub fn run_batch(
         progress(BatchProgress { done: i, total: files.len(), current: Some(file) });
         let started = std::time::Instant::now();
         let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let (status, output, error) = match process_one(file, opts, predict) {
+        let (status, output, error) = match process_one(file, out_name, opts, predict) {
             Ok(Outcome::Written(p)) => {
                 report.processed += 1;
                 (BatchStatus::Done, Some(p.display().to_string()), None)
@@ -302,6 +334,30 @@ mod tests {
         let failed = serde_json::from_str::<serde_json::Value>(&first.to_json()).unwrap();
         assert_eq!(failed["items"][1]["status"], "failed");
         assert!(failed["items"][1]["error"].as_str().is_some());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn sources_sharing_a_name_each_get_their_own_result_and_resume_finds_it() {
+        let root = tmp("samestem");
+        let (src, dst) = (root.join("src"), root.join("dst"));
+        std::fs::create_dir_all(&src).unwrap();
+        write_png(&src.join("a.png"), 12, 12);
+        write_png(&src.join("A.jpg"), 14, 14); // the content decides the decoder, the name only the output
+        write_png(&src.join("b.png"), 10, 10);
+        let files = validate(&src, &dst).unwrap();
+        let mut o = opts(&dst, Format::Png);
+        o.skip_existing = true;
+        let first = run_batch(&files, &o, &half_mask, &mut |_| {}, &AtomicBool::new(false));
+        assert_eq!((first.processed, first.skipped, first.failed.len()), (3, 0, 0), "{first:?}");
+        let mut names: Vec<String> =
+            std::fs::read_dir(&dst).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        assert_eq!(names, ["A_jpg.png", "a_png.png", "b.png"]);
+        assert_eq!(image::open(dst.join("A_jpg.png")).unwrap().width(), 14);
+        let again = run_batch(&files, &o, &half_mask, &mut |_| {}, &AtomicBool::new(false));
+        assert_eq!((again.processed, again.skipped), (0, 3), "everything is found on the second run");
+        assert_eq!(output_names(&[PathBuf::from("x.png"), PathBuf::from("y.png")], "webp"), ["x.webp", "y.webp"]);
         std::fs::remove_dir_all(root).ok();
     }
 
