@@ -8,6 +8,7 @@ use std::sync::Arc;
 use openscissors_core::document::{AlphaJob, SelectionMode};
 use openscissors_core::model::{Accelerator, ModelKind, ModelSpec, Predictor, Prompt, Sam2};
 use openscissors_core::sysmem;
+use openscissors_core::types::Mask;
 
 use crate::ctl::{Ctl, Prediction, R_BATCH, R_MAIN, R_MODELS, R_VIEW};
 use crate::i18n::{t, tf};
@@ -100,14 +101,23 @@ fn take_job(state: &AppState) -> Option<PendingJob> {
 
 /// Run `first`, install its result, and keep going while newer edits ask for another job.
 /// `on_applied(doc_id)` is called each time an up-to-date mask was installed.
+/// A job that panics (a bug) is abandoned: the document keeps its provisional mask instead of waiting for ever.
 pub fn run_alpha_jobs(state: &AppState, first: PendingJob, on_applied: impl Fn(u64)) {
+    run_alpha_jobs_with(state, first, AlphaJob::run, on_applied);
+}
+
+fn run_alpha_jobs_with(state: &AppState, first: PendingJob, run: impl Fn(&AlphaJob) -> Mask, on_applied: impl Fn(u64)) {
     let mut current = Some(first);
     while let Some((doc_id, job)) = current.take() {
-        let mask = job.run();
+        let mask = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&job)));
         let (applied, next) = {
             let mut g = state.doc.guard();
-            match g.as_mut() {
-                Some(d) if d.id == doc_id => (d.finish_alpha_job(job.rev(), mask), d.take_alpha_job().map(|j| (d.id, j))),
+            match (g.as_mut(), mask) {
+                (Some(d), Ok(mask)) if d.id == doc_id => (d.finish_alpha_job(job.rev(), mask), d.take_alpha_job().map(|j| (d.id, j))),
+                (Some(d), Err(_)) if d.id == doc_id => {
+                    d.abandon_alpha_job(job.rev());
+                    (true, None)
+                }
                 _ => (false, None),
             }
         };
@@ -141,7 +151,7 @@ impl Ctl {
     pub fn kick_alpha(self: &Arc<Self>) {
         let Some(first) = take_job(&self.st) else { return };
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             run_alpha_jobs(&me.st, first, |_| me.refresh_doc());
         });
     }
@@ -153,39 +163,48 @@ impl Ctl {
         *self.st.model_status.guard() = ModelStatus { active: Some(id.clone()), loading: true, ready: false, error: None, backend: None };
         self.refresh(R_MAIN | R_MODELS);
         let me = self.clone();
-        std::thread::spawn(move || {
-            let state = &me.st;
-            let result = (|| -> Result<Predictor, String> {
-                let spec = state.models().into_iter().find(|s| s.id == id).ok_or_else(|| t("Unknown model."))?;
-                let path = state.model_path(&spec);
-                if !path.is_file() {
-                    return Err(t("The model file is missing."));
+        let st = self.st.clone();
+        let failed_id = id.clone();
+        let reset = move || {
+            let error = Some(t("The model could not be loaded"));
+            *st.model_status.guard() = ModelStatus { active: Some(failed_id), loading: false, ready: false, error, backend: None };
+        };
+        self.spawn_or(
+            move || {
+                let state = &me.st;
+                let result = (|| -> Result<Predictor, String> {
+                    let spec = state.models().into_iter().find(|s| s.id == id).ok_or_else(|| t("Unknown model."))?;
+                    let path = state.model_path(&spec);
+                    if !path.is_file() {
+                        return Err(t("The model file is missing."));
+                    }
+                    let (accel, fast) = {
+                        let s = state.settings.guard();
+                        // The speed mode is dropped when it would not fit the memory budget.
+                        (s.accelerator, s.fast_memory && fits_budget(&spec, true))
+                    };
+                    check_memory(&spec, fast)?;
+                    let p = Predictor::load_with_memory(&spec, &path, accel, fast).map_err(|e| e.to_string())?;
+                    p.warmup().map_err(|e| e.to_string())?;
+                    Ok(p)
+                })();
+                match result {
+                    Ok(p) => {
+                        let backend = Some(p.backend().to_string());
+                        *state.model.guard() = Some(Arc::new(p));
+                        *state.model_status.guard() = ModelStatus { active: Some(id), loading: false, ready: true, error: None, backend };
+                    }
+                    Err(e) => {
+                        *state.model.guard() = None;
+                        *state.model_status.guard() =
+                            ModelStatus { active: Some(id), loading: false, ready: false, error: Some(e), backend: None };
+                    }
                 }
-                let (accel, fast) = {
-                    let s = state.settings.guard();
-                    // The speed mode is dropped when it would not fit the memory budget.
-                    (s.accelerator, s.fast_memory && fits_budget(&spec, true))
-                };
-                check_memory(&spec, fast)?;
-                let p = Predictor::load_with_memory(&spec, &path, accel, fast).map_err(|e| e.to_string())?;
-                p.warmup().map_err(|e| e.to_string())?;
-                Ok(p)
-            })();
-            match result {
-                Ok(p) => {
-                    let backend = Some(p.backend().to_string());
-                    *state.model.guard() = Some(Arc::new(p));
-                    *state.model_status.guard() = ModelStatus { active: Some(id), loading: false, ready: true, error: None, backend };
-                }
-                Err(e) => {
-                    *state.model.guard() = None;
-                    *state.model_status.guard() =
-                        ModelStatus { active: Some(id), loading: false, ready: false, error: Some(e), backend: None };
-                }
-            }
-            me.refresh(R_MAIN | R_MODELS | R_BATCH);
-            me.maybe_predict();
-        });
+                me.refresh(R_MAIN | R_MODELS | R_BATCH);
+                me.maybe_predict();
+            },
+            reset,
+        );
     }
 
     pub fn use_model(self: &Arc<Self>, id: &str) {
@@ -216,30 +235,39 @@ impl Ctl {
         self.ux.guard().downloads.insert(id.to_string(), (0, 0));
         self.refresh(R_MODELS);
         let me = self.clone();
-        std::thread::spawn(move || {
-            let mut last = std::time::Instant::now();
-            let mut progress = |done: u64, total: u64| {
-                if last.elapsed().as_millis() > 100 || done == total {
-                    last = std::time::Instant::now();
-                    me.ux.guard().downloads.insert(spec.id.clone(), (done, total));
-                    me.refresh(R_MODELS);
+        let owner = self.clone();
+        let failed_id = id.to_string();
+        let reset = move || {
+            owner.st.downloads.guard().remove(&failed_id);
+            owner.ux.guard().downloads.remove(&failed_id);
+        };
+        self.spawn_or(
+            move || {
+                let mut last = std::time::Instant::now();
+                let mut progress = |done: u64, total: u64| {
+                    if last.elapsed().as_millis() > 100 || done == total {
+                        last = std::time::Instant::now();
+                        me.ux.guard().downloads.insert(spec.id.clone(), (done, total));
+                        me.refresh(R_MODELS);
+                    }
+                };
+                let result = me.st.registry.download(&spec, &mut progress, &cancel);
+                me.st.downloads.guard().remove(&spec.id);
+                me.ux.guard().downloads.remove(&spec.id);
+                match &result {
+                    Ok(_) => me.say(t("Model downloaded"), false),
+                    Err(e) if e.to_string() != "cancelled" => me.say(tf("Download failed: {error}", &[("error", &e.to_string())]), true),
+                    Err(_) => {}
                 }
-            };
-            let result = me.st.registry.download(&spec, &mut progress, &cancel);
-            me.st.downloads.guard().remove(&spec.id);
-            me.ux.guard().downloads.remove(&spec.id);
-            match &result {
-                Ok(_) => me.say(t("Model downloaded"), false),
-                Err(e) if e.to_string() != "cancelled" => me.say(tf("Download failed: {error}", &[("error", &e.to_string())]), true),
-                Err(_) => {}
-            }
-            me.refresh(R_MODELS | R_MAIN);
-            // Nothing is activated here: the model is picked when an image needs it (the user's choice,
-            // otherwise the lightest on disk), so downloading a heavy model never makes the application heavy.
-            if result.is_ok() && spec.kind == ModelKind::Segmenter {
-                me.maybe_predict();
-            }
-        });
+                me.refresh(R_MODELS | R_MAIN);
+                // Nothing is activated here: the model is picked when an image needs it (the user's choice,
+                // otherwise the lightest on disk), so downloading a heavy model never makes the application heavy.
+                if result.is_ok() && spec.kind == ModelKind::Segmenter {
+                    me.maybe_predict();
+                }
+            },
+            reset,
+        );
     }
 
     pub fn cancel_download(&self, id: &str) {
@@ -322,7 +350,7 @@ impl Ctl {
                 return;
             }
             if started {
-                let message = error.unwrap_or_else(|| "The model could not be loaded".into());
+                let message = error.unwrap_or_else(|| t("The model could not be loaded"));
                 self.prediction_failed(message);
             } else if let Some(id) = pick_default_model(&self.st) {
                 // First image of the session: only now does the model take any memory.
@@ -355,34 +383,42 @@ impl Ctl {
         self.ux.guard().prediction = Prediction::Running;
         self.refresh(R_MAIN);
         let me = self.clone();
-        std::thread::spawn(move || {
-            let result = model.predict(&image, true);
-            match result {
-                Ok(mask) => {
-                    let applied = {
-                        let mut g = me.st.doc.guard();
-                        match g.as_mut() {
-                            Some(doc) if doc.id == id => {
-                                // The proposal is not an edit of the person: it must not ask to save on closing.
-                                let was_clean = doc.is_clean();
-                                doc.set_prediction(Some(mask));
-                                if was_clean {
-                                    doc.mark_clean();
+        let owner = self.clone();
+        let reset = move || {
+            *owner.st.predicted_doc.guard() = None;
+            owner.ux.guard().prediction = Prediction::Failed;
+        };
+        self.spawn_or(
+            move || {
+                let result = model.predict(&image, true);
+                match result {
+                    Ok(mask) => {
+                        let applied = {
+                            let mut g = me.st.doc.guard();
+                            match g.as_mut() {
+                                Some(doc) if doc.id == id => {
+                                    // The proposal is not an edit of the person: it must not ask to save on closing.
+                                    let was_clean = doc.is_clean();
+                                    doc.set_prediction(Some(mask));
+                                    if was_clean {
+                                        doc.mark_clean();
+                                    }
+                                    true
                                 }
-                                true
+                                _ => false,
                             }
-                            _ => false,
+                        };
+                        if applied {
+                            me.ux.guard().prediction = Prediction::Idle;
+                            me.kick_alpha();
+                            me.refresh_doc();
                         }
-                    };
-                    if applied {
-                        me.ux.guard().prediction = Prediction::Idle;
-                        me.kick_alpha();
-                        me.refresh_doc();
                     }
+                    Err(e) => me.prediction_failed(e.to_string()),
                 }
-                Err(e) => me.prediction_failed(e.to_string()),
-            }
-        });
+            },
+            reset,
+        );
     }
 
     fn prediction_failed(self: &Arc<Self>, message: String) {
@@ -428,43 +464,52 @@ impl Ctl {
         self.say(t("Analysing the image…"), false);
         self.refresh(R_MAIN | R_VIEW);
         let me = self.clone();
-        std::thread::spawn(move || {
-            let result = (|| -> Result<_, String> {
-                let sam = ensure_sam(&me.st)?;
-                let cached = me.st.sam_cache.guard().as_ref().filter(|(id, _)| *id == doc_id).map(|(_, e)| e.clone());
-                let emb = match cached {
-                    Some(e) => e,
-                    None => Arc::new(sam.embed(&image).map_err(|e| e.to_string())?),
-                };
-                let mask = sam.select(&emb, &prompts, &image).map_err(|e| e.to_string())?;
-                *me.st.sam_cache.guard() = Some((doc_id, emb));
-                Ok(mask)
-            })();
-            me.ux.guard().smart_busy = false;
-            match result {
-                Ok(mask) => {
-                    if let Some(d) = me.st.doc.guard().as_mut().filter(|d| d.id == doc_id) {
-                        d.set_selection(Some(mask));
+        let owner = self.clone();
+        let reset = move || {
+            let mut ux = owner.ux.guard();
+            ux.smart_busy = false;
+            ux.prompts.clear();
+        };
+        self.spawn_or(
+            move || {
+                let result = (|| -> Result<_, String> {
+                    let sam = ensure_sam(&me.st)?;
+                    let cached = me.st.sam_cache.guard().as_ref().filter(|(id, _)| *id == doc_id).map(|(_, e)| e.clone());
+                    let emb = match cached {
+                        Some(e) => e,
+                        None => Arc::new(sam.embed(&image).map_err(|e| e.to_string())?),
+                    };
+                    let mask = sam.select(&emb, &prompts, &image).map_err(|e| e.to_string())?;
+                    *me.st.sam_cache.guard() = Some((doc_id, emb));
+                    Ok(mask)
+                })();
+                me.ux.guard().smart_busy = false;
+                match result {
+                    Ok(mask) => {
+                        if let Some(d) = me.st.doc.guard().as_mut().filter(|d| d.id == doc_id) {
+                            d.set_selection(Some(mask));
+                        }
+                        me.say("", false);
+                        me.refresh_doc();
                     }
-                    me.say("", false);
-                    me.refresh_doc();
-                }
-                Err(e) => {
-                    me.ux.guard().prompts.clear();
-                    if e.contains(SAM_MISSING) {
-                        me.say(t("Smart select needs the SAM 2 model. Download it in AI models."), true);
-                        me.with_ui(|me, ui| {
-                            use slint::ComponentHandle;
-                            ui.global::<crate::Backend>().set_popover(1);
-                            me.refresh(R_MODELS);
-                        });
-                    } else {
-                        me.say(e, true);
+                    Err(e) => {
+                        me.ux.guard().prompts.clear();
+                        if e.contains(SAM_MISSING) {
+                            me.say(t("Smart select needs the SAM 2 model. Download it in AI models."), true);
+                            me.with_ui(|me, ui| {
+                                use slint::ComponentHandle;
+                                ui.global::<crate::Backend>().set_popover(1);
+                                me.refresh(R_MODELS);
+                            });
+                        } else {
+                            me.say(e, true);
+                        }
+                        me.refresh(R_MAIN | R_VIEW);
                     }
-                    me.refresh(R_MAIN | R_VIEW);
                 }
-            }
-        });
+            },
+            reset,
+        );
     }
 
     pub fn smart_apply(self: &Arc<Self>) {
@@ -548,6 +593,20 @@ mod tests {
         run_alpha_jobs(&state, first, |id| applied.borrow_mut().push(id));
         assert!(!state.doc.guard().as_mut().unwrap().computing(), "all jobs done");
         assert!(!applied.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_job_that_panics_is_abandoned_and_the_document_stops_waiting() {
+        let state = state_with(disc_doc(1));
+        let first = take_job(&state).unwrap();
+        let applied = RefCell::new(0);
+        run_alpha_jobs_with(&state, first, |_| panic!("a bug in the mask code"), |_| *applied.borrow_mut() += 1);
+        let mut g = state.doc.guard();
+        let d = g.as_mut().unwrap();
+        assert!(!d.computing(), "no endless 'computing'");
+        assert_eq!(*applied.borrow(), 1, "the views are told to refresh");
+        d.add_stroke(Stroke { kind: StrokeKind::Keep, width: 5, points: vec![[42.5, 30.5]] });
+        assert!(d.take_alpha_job().is_some(), "the next edit starts a job again");
     }
 
     #[test]

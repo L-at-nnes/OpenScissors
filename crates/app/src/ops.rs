@@ -81,7 +81,7 @@ impl Ctl {
 
     pub fn open_dialog(self: &Arc<Self>) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             if !me.confirm_discard_sync() {
                 return;
             }
@@ -96,7 +96,7 @@ impl Ctl {
     /// Open from a path (file dialog, recent list, drag and drop), asking about unsaved changes first.
     pub fn open_path(self: &Arc<Self>, path: PathBuf) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             if me.confirm_discard_sync() {
                 me.open_path_sync(&path);
             }
@@ -173,7 +173,7 @@ impl Ctl {
     /// Ctrl+V: open the picture on the clipboard, or the file copied in a file manager.
     pub fn paste(self: &Arc<Self>) {
         let me = self.clone();
-        std::thread::spawn(move || match clipboard::read() {
+        self.spawn(move || match clipboard::read() {
             Ok(Pasted::Files(files)) => {
                 let ok = |p: &PathBuf| {
                     p.extension()
@@ -216,7 +216,7 @@ impl Ctl {
             return;
         }
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             // The document is locked only to take what the export needs; the rendering itself runs without the lock.
             let job = me.st.doc.guard().as_mut().map(|d| d.export_job());
             let Some(img) = job.map(|j| j.run()) else { return };
@@ -253,14 +253,14 @@ impl Ctl {
 
     pub fn save(self: &Arc<Self>) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             me.save_sync(false);
         });
     }
 
     pub fn save_as(self: &Arc<Self>) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             me.save_sync(true);
         });
     }
@@ -356,7 +356,7 @@ impl Ctl {
 
     pub fn save_project_dialog(self: &Arc<Self>) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             let name = me.doc_name();
             let file = format!("{}.osproj", stem(name.as_deref(), "project"));
             let Some(mut target) =
@@ -394,7 +394,7 @@ impl Ctl {
 
     pub fn load_marks_dialog(self: &Arc<Self>) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             let Some(p) = dialogs::open_file(me.last_dir().as_deref(), &t("Load marks…"), &[("Marks", &["psm"])]) else { return };
             let result = std::fs::read_to_string(&p).map_err(|e| e.to_string()).and_then(|text| {
                 let mut g = me.st.doc.guard();
@@ -416,7 +416,7 @@ impl Ctl {
 
     pub fn save_marks_dialog(self: &Arc<Self>) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             let file = format!("{}.psm", stem(me.doc_name().as_deref(), "marks"));
             let Some(mut target) = dialogs::save_file(me.last_dir().as_deref(), &t("Save marks…"), &file, &[("Marks", &["psm"])]) else {
                 return;
@@ -525,7 +525,7 @@ impl Ctl {
 
     pub fn pick_bg_image(self: &Arc<Self>) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             if let Some(p) = dialogs::open_file(me.last_dir().as_deref(), &t("Choose image…"), &[("Images", IMAGE_EXT)]) {
                 me.set_param("background.image_path", json!(p.display().to_string()));
                 me.set_param("background.mode", json!("image"));
@@ -620,7 +620,7 @@ impl Ctl {
 
     pub fn pick_folder(self: &Arc<Self>, source: bool) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             let start = {
                 let s = me.st.settings.guard();
                 (if source { s.batch_src.clone() } else { s.batch_dst.clone() }).or_else(|| s.last_dir.clone())
@@ -704,41 +704,49 @@ impl Ctl {
         }
         self.refresh(crate::ctl::R_BATCH);
         let me = self.clone();
-        std::thread::spawn(move || {
-            let opts = BatchOptions { dst, format, quality, params, skip_existing: false };
-            let predict = |img: &openscissors_core::types::Image| model.predict(img, true);
-            let report = batch::run_batch(
-                &files,
-                &opts,
-                &predict,
-                &mut |p| {
-                    {
-                        let mut ux = me.ux.guard();
-                        ux.batch.done = p.done;
-                        ux.batch.total = p.total;
-                        ux.batch.file = p.current.and_then(|c| c.file_name()).map(|n| n.to_string_lossy().into_owned());
-                    }
-                    me.refresh(crate::ctl::R_BATCH);
-                },
-                &cancel,
-            );
-            *me.st.batch.guard() = None;
-            let mut text = format!(
-                "{}. {}",
-                if report.cancelled { t("Cancelled") } else { t("Done") },
-                tf("{n} processed, {m} failed.", &[("n", &report.processed.to_string()), ("m", &report.failed.len().to_string())])
-            );
-            for f in report.failed.iter().take(5) {
-                text.push_str(&format!("\n{} {}", f.file, f.error));
-            }
-            {
-                let mut ux = me.ux.guard();
-                ux.batch.running = false;
-                ux.batch.file = None;
-                ux.batch.report = text;
-            }
-            me.refresh(crate::ctl::R_BATCH);
-        });
+        let owner = self.clone();
+        let reset = move || {
+            *owner.st.batch.guard() = None;
+            owner.ux.guard().batch.running = false;
+        };
+        self.spawn_or(
+            move || {
+                let opts = BatchOptions { dst, format, quality, params, skip_existing: false };
+                let predict = |img: &openscissors_core::types::Image| model.predict(img, true);
+                let report = batch::run_batch(
+                    &files,
+                    &opts,
+                    &predict,
+                    &mut |p| {
+                        {
+                            let mut ux = me.ux.guard();
+                            ux.batch.done = p.done;
+                            ux.batch.total = p.total;
+                            ux.batch.file = p.current.and_then(|c| c.file_name()).map(|n| n.to_string_lossy().into_owned());
+                        }
+                        me.refresh(crate::ctl::R_BATCH);
+                    },
+                    &cancel,
+                );
+                *me.st.batch.guard() = None;
+                let mut text = format!(
+                    "{}. {}",
+                    if report.cancelled { t("Cancelled") } else { t("Done") },
+                    tf("{n} processed, {m} failed.", &[("n", &report.processed.to_string()), ("m", &report.failed.len().to_string())])
+                );
+                for f in report.failed.iter().take(5) {
+                    text.push_str(&format!("\n{} {}", f.file, f.error));
+                }
+                {
+                    let mut ux = me.ux.guard();
+                    ux.batch.running = false;
+                    ux.batch.file = None;
+                    ux.batch.report = text;
+                }
+                me.refresh(crate::ctl::R_BATCH);
+            },
+            reset,
+        );
     }
 
     pub fn stop_batch(&self) {
@@ -751,7 +759,7 @@ impl Ctl {
 
     pub fn plugin_toggle(self: &Arc<Self>, index: usize, enabled: bool) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             let found = openscissors_core::plugin::discover(&me.st.paths.plugins);
             let Some(Ok(p)) = found.into_iter().nth(index).map(|d| d.plugin) else { return };
             if enabled {
@@ -780,7 +788,7 @@ impl Ctl {
 
     pub fn plugin_run(self: &Arc<Self>, index: usize) {
         let me = self.clone();
-        std::thread::spawn(move || {
+        self.spawn(move || {
             let Some(file) = me.ux.guard().last_saved.clone() else { return };
             let found = openscissors_core::plugin::discover(&me.st.paths.plugins);
             let Some(Ok(p)) = found.into_iter().nth(index).map(|d| d.plugin) else { return };

@@ -220,5 +220,7 @@
   "Click the picture to pick a colour. Esc cancels.": "Щёлкните по изображению, чтобы выбрать цвет. Esc — отмена.",
   "Pick a colour from the picture": "Взять цвет с изображения",
   "Before and after": "До и после",
-  "Before and after (C)": "До и после (C)"
+  "Before and after (C)": "До и после (C)",
+  "An internal error stopped this action; the details are in data/crash.log.": "Внутренняя ошибка прервала это действие; подробности в data/crash.log.",
+  "The model could not be loaded": "Не удалось загрузить модель"
 }

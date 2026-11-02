@@ -35,7 +35,7 @@ src/state.rs     portable folders, shared state
 src/i18n.rs      translations (keys are the English strings); .slint files use @tr, compiled from the same JSON
 ```
 
-**Threads.** The interface thread only reads state and sets properties. Everything slow (decoding, inference, export, downloads) runs on worker threads and reports back through `Ctl::refresh`, which coalesces requests and runs on the interface thread. Rendering has its own thread with a "latest request wins" slot per view, so a burst of pans costs one render.
+**Threads.** The interface thread only reads state and sets properties. Everything slow (decoding, inference, export, downloads) runs on worker threads and reports back through `Ctl::refresh`, which coalesces requests and runs on the interface thread. Rendering has its own thread with a "latest request wins" slot per view, so a burst of pans costs one render. Worker threads are started through `Ctl::spawn`: a panic there (a bug) is caught, the state it would have restored is put back (a running batch, a pending prediction, a mask still computing) and the status bar points to `data/crash.log`.
 
 **Pixels.** The window never holds the full image. It shows the last rendered region at the position the current pan and zoom give it (a Slint binding), and replaces it when the render thread delivers the next one.
 

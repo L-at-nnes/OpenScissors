@@ -125,7 +125,7 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
         }
         // The question is a dialog of the interface: it cannot be answered while this thread waits.
         let c = c.clone();
-        std::thread::spawn(move || {
+        c.clone().spawn(move || {
             if c.confirm_discard_sync() {
                 let _ = slint::invoke_from_event_loop(|| {
                     let _ = slint::quit_event_loop();

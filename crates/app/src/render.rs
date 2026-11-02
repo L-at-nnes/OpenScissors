@@ -52,7 +52,8 @@ impl Renderer {
                         g = cv.wait(g).expect("render wait");
                     }
                 };
-                if let Some(out) = render(&state, job) {
+                // A panic while rendering (a bug) must not end the thread: the views would never be drawn again.
+                if let Ok(Some(out)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(&state, job))) {
                     deliver(out);
                 }
             })

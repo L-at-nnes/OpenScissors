@@ -302,6 +302,26 @@ impl Ctl {
         })
     }
 
+    // -- worker threads
+
+    /// Run `f` on a worker thread. A panic there (a bug) must not leave the interface waiting for ever: it is said in
+    /// the status bar (the panic hook writes the details to data/crash.log).
+    pub fn spawn(self: &Arc<Self>, f: impl FnOnce() + Send + 'static) {
+        self.spawn_or(f, || {});
+    }
+
+    /// Like [`Ctl::spawn`]; `on_panic` puts back the state that `f` would have restored (a flag, a list).
+    pub fn spawn_or(self: &Arc<Self>, f: impl FnOnce() + Send + 'static, on_panic: impl FnOnce() + Send + 'static) {
+        let me = self.clone();
+        std::thread::spawn(move || {
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err() {
+                on_panic();
+                me.say(t("An internal error stopped this action; the details are in data/crash.log."), true);
+                me.refresh(R_ALL);
+            }
+        });
+    }
+
     // -- refreshing the interface
 
     /// Ask for the given parts of the interface to be rebuilt on the interface thread (coalesced).

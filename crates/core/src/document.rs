@@ -524,6 +524,20 @@ impl Document {
         true
     }
 
+    /// A job that could not finish (it panicked): the provisional mask of `rev` is kept as the result, so that the
+    /// document does not wait for ever and the next edit can start a new job.
+    pub fn abandon_alpha_job(&mut self, rev: u64) {
+        self.job_running = false;
+        if rev == self.mask_rev {
+            if self.alpha.is_none() {
+                let (w, h) = (self.image.w, self.image.h);
+                self.alpha = Some(compose_alpha(self.predicted.as_deref(), &self.strokes, w, h));
+            }
+            self.alpha_exact = rev;
+            self.rev += 1;
+        }
+    }
+
     /// The exact mask, computed now if necessary (export, tests). Blocks on heavy modes.
     pub fn alpha_blocking(&mut self) -> &Mask {
         self.prepare();
@@ -1077,6 +1091,32 @@ mod tests {
         let job = d.take_alpha_job().expect("a fresh job is possible after a stale one");
         assert!(d.finish_alpha_job(job.rev(), job.run()));
         assert!(!d.computing());
+    }
+
+    #[test]
+    fn an_abandoned_job_releases_the_document() {
+        let (w, h) = (80, 60);
+        let mut d = Document::new(9, disc_scene(w, h), None);
+        d.set_param("mask.graphcut", json!(true)).unwrap();
+        d.add_stroke(Stroke { kind: StrokeKind::Keep, width: 5, points: vec![[40.5, 30.5]] });
+        d.add_stroke(Stroke { kind: StrokeKind::Remove, width: 5, points: vec![[5.5, 5.5]] });
+        let provisional = d.alpha().clone();
+        let job = d.take_alpha_job().unwrap();
+        d.abandon_alpha_job(job.rev());
+        assert!(!d.computing(), "no longer waiting");
+        assert_eq!(d.alpha(), &provisional, "the provisional mask stands");
+        // The next edit gets a job again.
+        d.add_stroke(Stroke { kind: StrokeKind::Keep, width: 5, points: vec![[45.5, 30.5]] });
+        assert!(d.take_alpha_job().is_some());
+        // A stale job that is abandoned only frees the slot.
+        let mut e = Document::new(10, disc_scene(w, h), None);
+        e.set_param("mask.graphcut", json!(true)).unwrap();
+        e.add_stroke(Stroke { kind: StrokeKind::Keep, width: 5, points: vec![[40.5, 30.5]] });
+        e.add_stroke(Stroke { kind: StrokeKind::Remove, width: 5, points: vec![[5.5, 5.5]] });
+        let old = e.take_alpha_job().unwrap();
+        e.add_stroke(Stroke { kind: StrokeKind::Remove, width: 5, points: vec![[70.5, 50.5]] });
+        e.abandon_alpha_job(old.rev());
+        assert!(e.computing() && e.take_alpha_job().is_some());
     }
 
     #[test]
