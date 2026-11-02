@@ -51,6 +51,26 @@ pub fn resize_raw(src: &[u8], sw: usize, sh: usize, ch: usize, crop: Option<Rect
     dst.into_vec()
 }
 
+/// Most pixels a reduced working copy may have, whatever its shape (a panorama would otherwise keep millions).
+pub const WORKING_PIXELS_CAP: usize = 1_000_000;
+
+/// Size at which a heavy whole-picture computation (graph cut, matting) runs on a `w` x `h` picture: `None` when the
+/// picture has at most `threshold` pixels, or when reducing would not make it smaller; otherwise the short side is
+/// brought to `small_side` and the total kept under [`WORKING_PIXELS_CAP`]. A picture is never enlarged.
+pub fn working_size(w: usize, h: usize, threshold: usize, small_side: usize) -> Option<(usize, usize)> {
+    if w * h <= threshold || w == 0 || h == 0 {
+        return None;
+    }
+    let s = (small_side as f64 / w.min(h) as f64).min((WORKING_PIXELS_CAP as f64 / (w * h) as f64).sqrt());
+    if s >= 1.0 {
+        return None;
+    }
+    let size = |f: fn(f64) -> f64| ((f(w as f64 * s) as usize).max(3), (f(h as f64 * s) as usize).max(3));
+    let (sw, sh) = size(f64::round);
+    // Rounding up both sides can pass the cap by a few pixels: then round down.
+    Some(if sw * sh > WORKING_PIXELS_CAP { size(f64::floor) } else { (sw, sh) })
+}
+
 pub fn resize_image(src: &Image, dw: usize, dh: usize, interp: Interp) -> Image {
     Image { w: dw, h: dh, data: resize_raw(&src.data, src.w, src.h, 3, None, dw, dh, interp) }
 }
@@ -128,6 +148,21 @@ mod tests {
         let middle = &r.data[4..8];
         assert!(middle[3] > 0 && middle[3] < 255, "partly transparent: {middle:?}");
         assert!(middle[0] >= 198, "the colour stays the red of the subject: {middle:?}");
+    }
+
+    #[test]
+    fn the_working_size_never_enlarges_and_bounds_a_panorama() {
+        assert_eq!(working_size(500, 400, 360_000, 600), None, "small enough as it is");
+        assert_eq!(working_size(4000, 3000, 360_000, 600), Some((800, 600)), "a photo: short side to 600");
+        // A short side under 600 used to be enlarged (1200 x 350 became 2057 x 600).
+        assert_eq!(working_size(1200, 350, 360_000, 600), None);
+        let (w, h) = working_size(20_000, 1000, 360_000, 600).unwrap();
+        assert!(w * h <= WORKING_PIXELS_CAP && (w as f64 / h as f64 - 20.0).abs() < 0.2, "{w} x {h}");
+        for (w, h) in [(700, 600), (3000, 200), (100_000, 10), (6000, 3375)] {
+            if let Some((sw, sh)) = working_size(w, h, 360_000, 600) {
+                assert!(sw <= w && sh <= h && sw * sh <= WORKING_PIXELS_CAP, "{w} x {h} -> {sw} x {sh}");
+            }
+        }
     }
 
     #[test]

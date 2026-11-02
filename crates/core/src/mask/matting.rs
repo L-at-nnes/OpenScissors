@@ -6,10 +6,10 @@ use rayon::prelude::*;
 
 use crate::imaging::filter::box_blur_u8;
 use crate::imaging::guided::guided_filter;
-use crate::imaging::resize::{resize_image, resize_mask, Interp};
+use crate::imaging::resize::{resize_image, resize_mask, working_size, Interp};
 use crate::types::{Image, Mask};
 
-/// Images with at least this many pixels are solved on a reduced copy.
+/// Images with more than this many pixels are solved on a reduced copy (see [`working_size`]).
 const MAX_PIXELS: usize = 360_000;
 const SMALL_SIDE: usize = 600;
 /// Regularisation of the local colour model (colours in 0..1).
@@ -287,13 +287,9 @@ pub fn hair_matting(image: &Image, alpha: &Mask, hair: &Mask, feather: u32) -> M
     }
     let decided = if feather > 0 { box_blur_u8(&alpha.data, w, h, 1, feather as usize) } else { alpha.data.clone() };
 
-    let reduced = w * h >= MAX_PIXELS;
-    let (sw, sh) = if reduced {
-        let s = SMALL_SIDE as f64 / w.min(h) as f64;
-        (((w as f64 * s).round() as usize).max(3), ((h as f64 * s).round() as usize).max(3))
-    } else {
-        (w, h)
-    };
+    let working = working_size(w, h, MAX_PIXELS, SMALL_SIDE);
+    let reduced = working.is_some();
+    let (sw, sh) = working.unwrap_or((w, h));
     let (small, dec_s, hair_s) = if reduced {
         // Area average keeps thin strokes alive when shrinking.
         (

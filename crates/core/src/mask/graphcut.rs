@@ -4,7 +4,7 @@
 use super::grabcut::{grabcut, BGD, FGD, PR_BGD, PR_FGD};
 use crate::imaging::filter::median_blur_u8;
 use crate::imaging::morph::{morph_ellipse, MorphOp};
-use crate::imaging::resize::{resize_image, resize_mask, Interp};
+use crate::imaging::resize::{resize_image, resize_mask, working_size, Interp};
 use crate::model::predict::upsample_guided;
 use crate::types::{Image, Mask};
 
@@ -15,7 +15,8 @@ pub struct GraphcutOptions {
     /// Prediction values above this seed "probably foreground", others "probably background".
     pub prior_threshold: u8,
     pub iterations: usize,
-    /// Images larger than this many pixels are processed with their short side set to `small_side`.
+    /// Images larger than this many pixels are processed reduced: short side `small_side`, never enlarged, and at most
+    /// [`WORKING_PIXELS_CAP`](crate::imaging::resize::WORKING_PIXELS_CAP) pixels.
     pub max_pixels: usize,
     pub small_side: usize,
 }
@@ -48,13 +49,9 @@ pub fn graphcut_alpha(image: &Image, predicted: Option<&Mask>, fg: &Mask, bg: &M
         return None;
     }
     let (w, h) = (image.w, image.h);
-    let resized = w * h > opts.max_pixels;
-    let (sw, sh) = if resized {
-        let s = opts.small_side as f64 / w.min(h) as f64;
-        (((w as f64 * s).round() as usize).max(1), ((h as f64 * s).round() as usize).max(1))
-    } else {
-        (w, h)
-    };
+    let reduced = working_size(w, h, opts.max_pixels, opts.small_side);
+    let resized = reduced.is_some();
+    let (sw, sh) = reduced.unwrap_or((w, h));
     let (small, fg_s, bg_s, pred_s) = if resized {
         (
             resize_image(image, sw, sh, Interp::Area),
