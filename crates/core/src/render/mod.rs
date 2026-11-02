@@ -306,11 +306,40 @@ pub fn render_source_view(image: &Image, layers: &SourceLayers, region: Rect, ou
 }
 
 /// The crop as whole pixels: first column and row (negative when the canvas is extended past the picture) and size.
-/// Both edges are rounded, so a crop inside the picture never reaches a pixel past it.
-fn crop_pixels(r: Rect) -> (i64, i64, usize, usize) {
-    let (x0, y0) = (r.x0.round() as i64, r.y0.round() as i64);
-    let (x1, y1) = (r.x1.round() as i64, r.y1.round() as i64);
-    (x0, y0, (x1 - x0).max(1) as usize, (y1 - y0).max(1) as usize)
+/// With a ratio the height follows from the width, so the pixels have that ratio as closely as whole pixels allow
+/// (rounding the four edges one by one could give 971 x 972 for 1:1). A crop that lies inside the picture never
+/// reaches a pixel past it.
+fn crop_pixels(r: Rect, ratio: Option<(u32, u32)>, canvas: (usize, usize)) -> (i64, i64, usize, usize) {
+    let (cw_max, ch_max) = (canvas.0 as i64, canvas.1 as i64);
+    let inside_x = r.x0 >= -1e-6 && r.x1 <= canvas.0 as f64 + 1e-6;
+    let inside_y = r.y0 >= -1e-6 && r.y1 <= canvas.1 as f64 + 1e-6;
+    let round = |v: f64| (v.round() as i64).max(1);
+    let (cw, ch) = match ratio {
+        None => {
+            let cw = if inside_x { round(r.width()).min(cw_max) } else { round(r.width()) };
+            let ch = if inside_y { round(r.height()).min(ch_max) } else { round(r.height()) };
+            (cw, ch)
+        }
+        Some((a, b)) => {
+            let height_of = |w: i64| round(w as f64 * b as f64 / a as f64);
+            let mut cw = round(r.width());
+            while cw > 1 && ((inside_x && cw > cw_max) || (inside_y && height_of(cw) > ch_max)) {
+                cw -= 1;
+            }
+            (cw, height_of(cw))
+        }
+    };
+    let place = |centre: f64, size: i64, inside: bool, max: i64| {
+        let first = (centre - size as f64 / 2.0).round() as i64;
+        if inside {
+            first.clamp(0, (max - size).max(0))
+        } else {
+            first
+        }
+    };
+    let x0 = place((r.x0 + r.x1) / 2.0, cw, inside_x, cw_max);
+    let y0 = place((r.y0 + r.y1) / 2.0, ch, inside_y, ch_max);
+    (x0, y0, cw as usize, ch as usize)
 }
 
 /// Full-resolution result with the crop applied (what gets exported). Only the cropped region is rendered.
@@ -322,22 +351,28 @@ pub fn export_rgba(scene: &Scene) -> Rgba {
         .fit_to_result
         .then(|| finish_alpha_scaled(scene.alpha.clone(), scene.params.mask.offset, scene.params.foreground.feather, 1.0));
     let r = crop::effective_crop(scene.params, finished.as_ref(), (w as f64, h as f64));
-    let (x0, y0, cw, ch) = crop_pixels(r);
+    let ratio = crate::params::parse_ratio(&scene.params.background.aspect_ratio);
+    let (x0, y0, cw, ch) = crop_pixels(r, ratio, (w, h));
     let region = Rect::new(x0 as f64, y0 as f64, (x0 + cw as i64) as f64, (y0 + ch as i64) as f64);
     let cropped = render_region_with(&Scene { frame: Some(region), ..*scene }, region, cw, ch, usize::MAX);
-    resize_to_output_width(cropped, scene.params.background.output_width as usize)
+    resize_to_output_width(cropped, scene.params.background.output_width as usize, ratio)
 }
 
 /// Longest side of an exported picture; a very tall crop at a large width cannot ask for more.
 const MAX_OUTPUT_SIDE: usize = 20_000;
 
-/// Scale the result to `width` pixels wide (0 = leave it), keeping its proportions.
-fn resize_to_output_width(img: Rgba, width: usize) -> Rgba {
+/// Scale the result to `width` pixels wide (0 = leave it), keeping its proportions; with a ratio the height follows
+/// from the ratio, so a 1000 px 1:1 preset is exactly 1000 x 1000.
+fn resize_to_output_width(img: Rgba, width: usize, ratio: Option<(u32, u32)>) -> Rgba {
     if width == 0 || width == img.w {
         return img;
     }
     let k = (width as f64 / img.w as f64).min(MAX_OUTPUT_SIDE as f64 / img.w.max(img.h) as f64);
-    let (dw, dh) = (((img.w as f64 * k).round() as usize).max(1), ((img.h as f64 * k).round() as usize).max(1));
+    let dw = ((img.w as f64 * k).round() as usize).max(1);
+    let dh = match ratio {
+        Some((a, b)) => ((dw as f64 * b as f64 / a as f64).round() as usize).max(1),
+        None => ((img.h as f64 * k).round() as usize).max(1),
+    };
     resize_rgba(&img, dw, dh, if k < 1.0 { Interp::Area } else { Interp::Bicubic })
 }
 
@@ -371,7 +406,7 @@ pub fn export_deep(scene: &Scene, deep: &Image16) -> Option<Rgba16> {
     let alpha = finished_alpha(scene.alpha, p);
     let bg: Option<[u32; 3]> = (p.background.mode == BgMode::Color).then(|| p.background.color.map(|c| c as u32 * 257));
     let r = crop::effective_crop(p, p.background.fit_to_result.then_some(&alpha), (w as f64, h as f64));
-    let (x0, y0, cw, ch) = crop_pixels(r);
+    let (x0, y0, cw, ch) = crop_pixels(r, crate::params::parse_ratio(&p.background.aspect_ratio), (w, h));
     let mut data = vec![0u16; cw * ch * 4];
     data.par_chunks_mut(cw * 4).enumerate().for_each(|(y, row)| {
         let sy = y0 + y as i64;
@@ -753,6 +788,47 @@ mod tests {
         crate::params::PRESETS[0].apply(&mut params);
         assert_eq!(size(&params), (1000, 1000, 1000 * 1000 * 4));
         assert!(deep_blocker(&params).is_some());
+    }
+
+    #[test]
+    fn a_fractional_crop_keeps_the_exact_ratio_and_a_preset_its_exact_size() {
+        // A subject whose padded box falls between pixels: every edge of the crop is fractional.
+        let (img, _) = scene_parts();
+        let mut alpha = Mask::new(80, 60);
+        for y in 17..38 {
+            for x in 23..48 {
+                alpha.data[y * 80 + x] = 255;
+            }
+        }
+        let render = |p: &Params| export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None });
+        let render16 = |p: &Params| {
+            let deep = Image16 { w: 80, h: 60, data: img.data.iter().map(|&v| v as u16 * 257).collect() };
+            export_deep(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None }, &deep).unwrap()
+        };
+        for padding in [0, 3, 7, 11, 13, 29] {
+            for (ratio, (a, b)) in [("1:1", (1, 1)), ("16:9", (16, 9)), ("4:3", (4, 3)), ("5:4", (5, 4)), ("3:1", (3, 1))] {
+                let mut params = Params::default();
+                params.background.mode = BgMode::Color;
+                params.background.fit_to_result = true;
+                params.background.padding = padding;
+                params.background.aspect_ratio = ratio.into();
+                let out = render(&params);
+                let exact = (out.w * b as usize) as f64 / a as f64;
+                assert!((out.h as f64 - exact).abs() <= 0.5, "{ratio} padding {padding}: {} x {}", out.w, out.h);
+                let deep = render16(&params);
+                assert_eq!((deep.w, deep.h), (out.w, out.h), "8 and 16 bits agree");
+                params.background.output_width = 1920;
+                let wide = render(&params);
+                assert_eq!((wide.w, wide.h), (1920, (1920 * b as usize + a as usize / 2) / a as usize), "{ratio} padding {padding}");
+            }
+        }
+        for preset in crate::params::PRESETS {
+            let mut params = Params::default();
+            preset.apply(&mut params);
+            let (a, b) = crate::params::parse_ratio(preset.ratio).unwrap();
+            let out = render(&params);
+            assert_eq!((out.w, out.h), (preset.width as usize, preset.width as usize * b as usize / a as usize), "{}", preset.id);
+        }
     }
 
     #[test]
