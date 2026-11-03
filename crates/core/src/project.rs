@@ -5,7 +5,8 @@
 //! follow the layout used by other tools of this kind, so they can be exchanged.
 
 use std::io::{BufReader, Cursor};
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -158,10 +159,49 @@ fn join_normalized(dir: &Path, rel: &str) -> std::path::PathBuf {
     out
 }
 
+/// What a project file holds, taken from the document in a moment (the pictures are shared, not copied): encoding and
+/// writing the file can then run without holding the document.
+pub struct ProjectSnapshot {
+    image: Arc<Image>,
+    deep: Option<Arc<Image16>>,
+    predicted: Option<Arc<Mask>>,
+    orig: Option<PathBuf>,
+    srgb_tag: bool,
+    strokes: Vec<Stroke>,
+    params: Params,
+    edit_mark: u64,
+}
+
+impl ProjectSnapshot {
+    pub fn of(doc: &Document) -> Self {
+        let (image, deep, predicted) = doc.shared_pictures();
+        Self {
+            image,
+            deep,
+            predicted,
+            orig: doc.path().map(Path::to_path_buf),
+            srgb_tag: doc.srgb_tag(),
+            strokes: doc.strokes().to_vec(),
+            params: doc.params().clone(),
+            edit_mark: doc.edit_mark(),
+        }
+    }
+
+    /// The content that was saved, for [`Document::mark_clean_if`].
+    pub fn edit_mark(&self) -> u64 {
+        self.edit_mark
+    }
+}
+
 /// Write `doc` as a project. `model` records which model produced the prediction.
 pub fn save_project(doc: &Document, model: Option<ModelRef>, marker_size: u32, path: &Path) -> Result<()> {
-    let p = doc.params();
-    let orig = doc.path();
+    save_snapshot(&ProjectSnapshot::of(doc), model, marker_size, path)
+}
+
+/// Write a project from a [`ProjectSnapshot`].
+pub fn save_snapshot(doc: &ProjectSnapshot, model: Option<ModelRef>, marker_size: u32, path: &Path) -> Result<()> {
+    let p = &doc.params;
+    let orig = doc.orig.as_deref();
     let file = ProjectFile {
         format: PROJECT_FORMAT.into(),
         version: PROJECT_VERSION,
@@ -171,7 +211,7 @@ pub fn save_project(doc: &Document, model: Option<ModelRef>, marker_size: u32, p
             orig_path: orig.map(|p| p.display().to_string()),
             orig_rel: orig.zip(path.parent()).and_then(|(o, dir)| relative_path(o, dir)),
         },
-        image16: match doc.deep() {
+        image16: match doc.deep.as_deref() {
             Some(d) => {
                 let bytes: Vec<u8> = d.data.iter().flat_map(|v| v.to_ne_bytes()).collect();
                 Some(EncodedImage {
@@ -183,8 +223,8 @@ pub fn save_project(doc: &Document, model: Option<ModelRef>, marker_size: u32, p
             }
             None => None,
         },
-        srgb_tag: doc.srgb_tag(),
-        predicted: match doc.predicted() {
+        srgb_tag: doc.srgb_tag,
+        predicted: match doc.predicted.as_deref() {
             Some(m) => Some(EncodedImage {
                 encoding: "png-base64".into(),
                 data: png_base64(&m.data, m.w, m.h, image::ExtendedColorType::L8)?,
@@ -194,7 +234,7 @@ pub fn save_project(doc: &Document, model: Option<ModelRef>, marker_size: u32, p
             None => None,
         },
         model,
-        strokes: doc.strokes().to_vec(),
+        strokes: doc.strokes.clone(),
         layers: Layers {
             mask: p.mask.clone(),
             foreground: p.foreground.clone(),

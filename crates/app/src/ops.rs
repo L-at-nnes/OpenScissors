@@ -299,23 +299,25 @@ impl Ctl {
             let s = self.st.settings.guard();
             (s.jpeg_quality, s.export_16bit && matches!(format, Format::Png | Format::Tiff))
         };
-        let (exported, why, srgb_tag) = {
+        // The document is locked only to take what the export needs: the exact mask and the rendering are computed
+        // without it, so the interface keeps answering during a long export.
+        let (job, flatten, why, srgb_tag) = {
             let mut g = self.st.doc.guard();
             let d = g.as_mut().ok_or_else(|| t("No image is open."))?;
-            let tag = d.srgb_tag();
-            if let Some(deep) = want16.then(|| d.export_deep()).flatten() {
-                (Exported::Bits16(deep), None, tag)
+            let flatten = if matches!(d.params().background.mode, openscissors_core::params::BgMode::Color) {
+                d.params().background.color
             } else {
-                let flatten = if matches!(d.params().background.mode, openscissors_core::params::BgMode::Color) {
-                    d.params().background.color
-                } else {
-                    [255, 255, 255]
-                };
-                let why = if want16 { d.deep_blocker() } else { None };
-                (Exported::Bits8(d.export(), flatten), why, tag)
-            }
+                [255, 255, 255]
+            };
+            let why = if want16 { d.deep_blocker() } else { None };
+            (d.export_job(), flatten, why, d.srgb_tag())
+        };
+        let exported = match want16.then(|| job.run_deep()).flatten() {
+            Some(deep) => Exported::Bits16(deep),
+            None => Exported::Bits8(job.run(), flatten),
         };
         let bits16 = matches!(exported, Exported::Bits16(_));
+        let why = if bits16 { None } else { why };
         match exported {
             Exported::Bits16(img) => io::save_rgba16_tagged(target, &img, format, srgb_tag),
             Exported::Bits8(img, flatten) => io::save_rgba_tagged(target, &img, format, quality, flatten, srgb_tag),
@@ -326,7 +328,7 @@ impl Ctl {
         let (transparent, name) = {
             let mut g = self.st.doc.guard();
             if let Some(d) = g.as_mut() {
-                d.mark_clean();
+                d.mark_clean_if(job.edit_mark()); // an edit made during the export is not marked as saved
             }
             (
                 g.as_ref().is_some_and(|d| matches!(d.params().background.mode, openscissors_core::params::BgMode::Transparent)),
@@ -369,12 +371,15 @@ impl Ctl {
             }
             let marker = me.st.settings.guard().marker_size;
             let model = me.active_model_ref();
-            let result = {
-                let mut g = me.st.doc.guard();
-                match g.as_mut() {
-                    Some(d) => project::save_project(d, model, marker, &target).map(|_| d.mark_clean()).map_err(|e| e.to_string()),
-                    None => Err(t("No image is open.")),
-                }
+            // Taken in a moment under the lock; encoding and writing the file run without it.
+            let snapshot = me.st.doc.guard().as_ref().map(project::ProjectSnapshot::of);
+            let result = match snapshot {
+                Some(snap) => project::save_snapshot(&snap, model, marker, &target).map_err(|e| e.to_string()).map(|_| {
+                    if let Some(d) = me.st.doc.guard().as_mut() {
+                        d.mark_clean_if(snap.edit_mark());
+                    }
+                }),
+                None => Err(t("No image is open.")),
             };
             match result {
                 Ok(()) => {

@@ -87,6 +87,8 @@ pub struct Document {
     undo_limit: usize,
     index: usize,
     clean: Option<usize>,
+    /// Counts every change of the content (a step done, undone, redone or merged): see [`Document::edit_mark`].
+    edits: u64,
     /// Bumped on every visible change; the UI uses it to know when to re-fetch pixels.
     rev: u64,
     /// Bumped only when the composed mask changes.
@@ -102,10 +104,10 @@ pub struct Document {
     /// `mask_rev` for which `alpha` is the exact result (not a provisional one).
     alpha_exact: u64,
     job_running: bool,
-    bg: Option<(String, Image)>,
+    bg: Option<(String, Arc<Image>)>,
     /// Path of a background picture that failed to load, so that `prepare()` does not try again at every call.
     bg_failed: Option<String>,
-    filled: Option<(FillKey, Image)>,
+    filled: Option<(FillKey, Arc<Image>)>,
     /// The canvas of the result (the crop) for `rev`, kept while a background picture has to cover it.
     frame: Option<(u64, Rect)>,
 }
@@ -143,6 +145,7 @@ impl Document {
             undo_limit: UNDO_LIMIT_BYTES,
             index: 0,
             clean: Some(0),
+            edits: 0,
             rev: 0,
             mask_rev: 0,
             alpha: None,
@@ -199,6 +202,11 @@ impl Document {
     /// The 16-bit samples of the source, when the file had them.
     pub fn deep(&self) -> Option<&Image16> {
         self.deep.as_deref()
+    }
+
+    /// The pictures of the document, shared (no copy of the pixels): source, 16-bit source, AI prediction.
+    pub(crate) fn shared_pictures(&self) -> (Arc<Image>, Option<Arc<Image16>>, Option<Arc<Mask>>) {
+        (self.image.clone(), self.deep.clone(), self.predicted.clone())
     }
 
     pub fn with_params(mut self, params: Params) -> Self {
@@ -266,6 +274,21 @@ impl Document {
         self.rev += 1;
     }
 
+    /// A token for the content as it is now. A save that runs without the document lock takes it with what it writes,
+    /// then calls [`Document::mark_clean_if`]: an edit made meanwhile is not marked as saved.
+    pub fn edit_mark(&self) -> u64 {
+        self.edits
+    }
+
+    /// Mark the document saved when nothing was edited since `mark` was taken. Returns whether it did.
+    pub fn mark_clean_if(&mut self, mark: u64) -> bool {
+        let unchanged = self.edits == mark;
+        if unchanged {
+            self.mark_clean();
+        }
+        unchanged
+    }
+
     // -- commands
 
     fn push(&mut self, cmd: Command) {
@@ -276,6 +299,7 @@ impl Document {
         self.apply(&cmd, true);
         self.undo.push(cmd);
         self.index += 1;
+        self.edits += 1;
         self.trim_history();
     }
 
@@ -353,6 +377,7 @@ impl Document {
                 if p == path && now.duration_since(*at) < MERGE_WINDOW {
                     *new = value;
                     *at = now;
+                    self.edits += 1;
                     self.replace_params(next);
                     return Ok(());
                 }
@@ -382,6 +407,7 @@ impl Document {
             );
             self.apply(&cmd, false);
             self.undo[self.index] = cmd;
+            self.edits += 1;
         }
     }
 
@@ -394,6 +420,7 @@ impl Document {
             self.apply(&cmd, true);
             self.undo[self.index] = cmd;
             self.index += 1;
+            self.edits += 1;
         }
     }
 
@@ -556,7 +583,7 @@ impl Document {
         match path {
             Some(p) if !matches!(&self.bg, Some((cur, _)) if *cur == p) => {
                 let img = load_image(Path::new(&p))?;
-                self.bg = Some((p, img));
+                self.bg = Some((p, Arc::new(img)));
             }
             Some(_) => {}
             None => self.bg = None,
@@ -598,9 +625,8 @@ impl Document {
         if bgp.mode == BgMode::Original && bgp.fill_hole {
             let key: FillKey = (self.mask_rev, self.params.mask.offset, self.params.foreground.feather);
             if self.filled.as_ref().map(|(k, _)| *k) != Some(key) {
-                let finished = render::finished_alpha(self.alpha.as_ref().expect("alpha ready"), &self.params);
-                let hole = morph_ellipse(&finished, 7, MorphOp::Dilate);
-                self.filled = Some((key, inpaint::fill_hole(&self.image, &hole)));
+                let filled = fill_behind(&self.image, self.alpha.as_ref().expect("alpha ready"), &self.params);
+                self.filled = Some((key, Arc::new(filled)));
             }
         }
         if matches!(self.params.background.mode, BgMode::Image | BgMode::Gradient) && self.frame.as_ref().map(|(r, _)| *r) != Some(self.rev)
@@ -616,8 +642,8 @@ impl Document {
             image: &self.image,
             alpha: self.alpha.as_ref().expect("prepare() must run first"),
             params: &self.params,
-            bg_image: self.bg.as_ref().map(|(_, i)| i),
-            filled: self.filled.as_ref().map(|(_, i)| i),
+            bg_image: self.bg.as_ref().map(|(_, i)| &**i),
+            filled: self.filled.as_ref().map(|(_, i)| &**i),
             frame: self.frame.filter(|_| matches!(self.params.background.mode, BgMode::Image | BgMode::Gradient)).map(|(_, r)| r),
         }
     }
@@ -671,18 +697,28 @@ impl Document {
         render::export_rgba(&self.scene())
     }
 
-    /// Everything [`Document::export`] needs, detached from the document: the document can be unlocked while the (long)
-    /// rendering runs.
+    /// Everything [`Document::export`] and [`Document::export_deep`] need, detached from the document and taken in a
+    /// moment: the document can be unlocked while the exact mask (graph cut, hair matting) and the rendering are
+    /// computed by [`ExportJob::run`].
     pub fn export_job(&mut self) -> ExportJob {
-        self.alpha_blocking();
         self.prepare();
-        let scene = self.scene();
+        let pending = self.computing().then(|| AlphaJob {
+            rev: self.mask_rev,
+            image: self.image.clone(),
+            predicted: self.predicted.clone(),
+            strokes: self.strokes.clone(),
+            params: self.params.clone(),
+        });
+        let original = self.params.background.mode == BgMode::Original;
         ExportJob {
             image: self.image.clone(),
-            alpha: scene.alpha.clone(),
+            deep: self.deep.clone(),
+            alpha: if pending.is_some() { None } else { self.alpha.clone() },
+            pending,
             params: self.params.clone(),
-            bg_image: scene.bg_image.cloned(),
-            filled: scene.filled.cloned(),
+            bg_image: self.bg.as_ref().filter(|_| self.params.background.mode == BgMode::Image).map(|(_, i)| i.clone()),
+            filled: self.filled.as_ref().filter(|_| original && self.params.background.fill_hole).map(|(_, i)| i.clone()),
+            edit_mark: self.edits,
         }
     }
 
@@ -719,24 +755,61 @@ pub enum SelectionMode {
 /// A full-resolution export prepared by [`Document::export_job`].
 pub struct ExportJob {
     image: Arc<Image>,
-    alpha: Mask,
+    deep: Option<Arc<Image16>>,
+    /// The exact mask, or `None` while it still has to be computed by `pending`.
+    alpha: Option<Mask>,
+    pending: Option<AlphaJob>,
     params: Params,
-    bg_image: Option<Image>,
-    filled: Option<Image>,
+    bg_image: Option<Arc<Image>>,
+    filled: Option<Arc<Image>>,
+    edit_mark: u64,
 }
 
 impl ExportJob {
+    /// The 8-bit result.
     pub fn run(&self) -> Rgba {
-        let scene = Scene {
-            image: &self.image,
-            alpha: &self.alpha,
-            params: &self.params,
-            bg_image: self.bg_image.as_ref(),
-            filled: self.filled.as_ref(),
-            frame: None,
-        };
-        render::export_rgba(&scene)
+        self.with_scene(render::export_rgba)
     }
+
+    /// The 16-bit result, when the source is 16-bit and the settings allow it (see [`render::deep_blocker`]).
+    pub fn run_deep(&self) -> Option<Rgba16> {
+        let deep = self.deep.as_ref()?;
+        render::deep_blocker(&self.params).is_none().then(|| self.with_scene(|s| render::export_deep(s, deep)))?
+    }
+
+    /// The content the export shows, for [`Document::mark_clean_if`] once it is saved.
+    pub fn edit_mark(&self) -> u64 {
+        self.edit_mark
+    }
+
+    fn with_scene<R>(&self, f: impl FnOnce(&Scene) -> R) -> R {
+        let computed;
+        let alpha = match (&self.alpha, &self.pending) {
+            (Some(a), _) => a,
+            (None, Some(job)) => {
+                computed = job.run();
+                &computed
+            }
+            (None, None) => unreachable!("an export job has a mask or the job that computes it"),
+        };
+        // The filled original depends on the mask: with the exact mask computed here, it is filled again.
+        let refilled;
+        let filled = match (&self.pending, self.params.background.mode == BgMode::Original && self.params.background.fill_hole) {
+            (Some(_), true) => {
+                refilled = fill_behind(&self.image, alpha, &self.params);
+                Some(&refilled)
+            }
+            _ => self.filled.as_deref(),
+        };
+        f(&Scene { image: &self.image, alpha, params: &self.params, bg_image: self.bg_image.as_deref(), filled, frame: None })
+    }
+}
+
+/// The original with the subject (`alpha` after offset and feathering, grown a little) filled in from around it.
+fn fill_behind(image: &Image, alpha: &Mask, params: &Params) -> Image {
+    let finished = render::finished_alpha(alpha, params);
+    let hole = morph_ellipse(&finished, 7, MorphOp::Dilate);
+    inpaint::fill_hole(image, &hole)
 }
 
 /// A background computation of the exact mask, detached from the document.
@@ -1039,6 +1112,66 @@ mod tests {
         let out = job.run();
         assert_eq!((out.w, out.h), (30, 25));
         assert!(out == expected);
+    }
+
+    #[test]
+    fn an_export_job_computes_the_exact_mask_itself_and_matches_every_background() {
+        let (w, h) = (80, 60);
+        let dir = std::env::temp_dir().join(format!("osc-export-job-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let picture = dir.join("bg.png");
+        crate::io::save_rgba(&picture, &Rgba { w: 4, h: 4, data: vec![200; 64] }, crate::io::Format::Png, 95, [0; 3]).unwrap();
+        for (mode, extra) in [("transparent", None), ("image", Some(&picture)), ("gradient", None), ("original", None)] {
+            let mut d = Document::new(11, disc_scene(w, h), None);
+            d.set_param("mask.graphcut", json!(true)).unwrap();
+            d.add_stroke(Stroke { kind: StrokeKind::Keep, width: 5, points: vec![[40.5, 30.5]] });
+            d.add_stroke(Stroke { kind: StrokeKind::Remove, width: 5, points: vec![[5.5, 5.5]] });
+            if let Some(p) = extra {
+                d.set_param("background.image_path", json!(p.display().to_string())).unwrap();
+            }
+            d.set_param("background.mode", json!(mode)).unwrap();
+            d.set_param("background.fill_hole", json!(true)).unwrap();
+            d.set_param("background.fit_to_result", json!(true)).unwrap();
+            assert!(d.computing(), "{mode}: the exact mask is still to come");
+            let job = d.export_job();
+            assert!(d.computing(), "{mode}: taking the job does not compute it under the lock");
+            let from_job = job.run();
+            let direct = d.export();
+            assert!(from_job == direct, "{mode}: the job renders what export() renders");
+        }
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_save_marks_clean_only_the_content_it_wrote() {
+        let mut d = doc();
+        d.add_stroke(keep(5.5, 5.5, 3));
+        let mark = d.edit_mark();
+        d.add_stroke(keep(9.5, 9.5, 3)); // edited while the save was running
+        assert!(!d.mark_clean_if(mark) && !d.is_clean());
+        let mark = d.edit_mark();
+        assert!(d.mark_clean_if(mark) && d.is_clean());
+        // A merged edit of the same property changes the content too.
+        d.set_param("shadow.opacity", json!(10)).unwrap();
+        let mark = d.edit_mark();
+        d.set_param("shadow.opacity", json!(20)).unwrap();
+        assert!(!d.mark_clean_if(mark));
+        d.undo();
+        let mark = d.edit_mark();
+        d.redo();
+        assert!(!d.mark_clean_if(mark), "a redo is an edit");
+    }
+
+    #[test]
+    fn a_16_bit_export_job_follows_the_settings() {
+        let deep = Image16 { w: 50, h: 40, data: vec![30_000; 50 * 40 * 3] };
+        let mut d = doc().with_deep(Some(deep));
+        d.set_prediction(Some(Mask::filled(50, 40, 255)));
+        let out = d.export_job().run_deep().expect("16-bit");
+        assert_eq!((out.w, out.h, out.data[0]), (50, 40, 30_000));
+        d.set_param("shadow.enabled", json!(true)).unwrap();
+        assert!(d.export_job().run_deep().is_none(), "the shadow needs 8 bits");
+        assert!(doc().export_job().run_deep().is_none(), "an 8-bit source");
     }
 
     #[test]
