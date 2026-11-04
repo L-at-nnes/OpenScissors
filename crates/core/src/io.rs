@@ -320,22 +320,25 @@ pub fn save_rgba_tagged(path: &Path, rgba: &Rgba, format: Format, quality: u8, f
         }
     };
     if format.supports_alpha() {
-        let buf = image::RgbaImage::from_raw(w, h, rgba.data.clone()).ok_or_else(|| Error::msg("bad RGBA buffer"))?;
+        if rgba.data.len() != rgba.w * rgba.h * 4 {
+            return Err(Error::msg("bad RGBA buffer"));
+        }
+        let buf = rgba.data.as_slice();
         let color = image::ExtendedColorType::Rgba8;
         match format {
             Format::Png => {
                 let mut e = image::codecs::png::PngEncoder::new(&mut out);
                 tag(&mut e);
-                e.write_image(buf.as_raw(), w, h, color)?
+                e.write_image(buf, w, h, color)?
             }
             Format::Webp if quality >= 100 => {
                 let mut e = image::codecs::webp::WebPEncoder::new_lossless(&mut out);
                 tag(&mut e);
-                e.write_image(buf.as_raw(), w, h, color)?
+                e.write_image(buf, w, h, color)?
             }
             Format::Webp => {
                 // libwebp: the colours are compressed with loss, the transparency is kept exact.
-                let lossy = webp::Encoder::from_rgba(buf.as_raw(), w, h)
+                let lossy = webp::Encoder::from_rgba(buf, w, h)
                     .encode_simple(false, quality.max(10) as f32)
                     .map_err(|e| Error::msg(format!("WebP encoding failed: {e:?}")))?;
                 std::io::Write::write_all(&mut out, &lossy)?
@@ -343,12 +346,12 @@ pub fn save_rgba_tagged(path: &Path, rgba: &Rgba, format: Format, quality: u8, f
             Format::Avif => {
                 let mut e = image::codecs::avif::AvifEncoder::new_with_speed_quality(&mut out, AVIF_SPEED, quality.clamp(10, 100));
                 tag(&mut e);
-                e.write_image(buf.as_raw(), w, h, color)?
+                e.write_image(buf, w, h, color)?
             }
             _ => {
                 let mut e = image::codecs::tiff::TiffEncoder::new(&mut out);
                 tag(&mut e);
-                e.write_image(buf.as_raw(), w, h, color)?
+                e.write_image(buf, w, h, color)?
             }
         }
     } else {
