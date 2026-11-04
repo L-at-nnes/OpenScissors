@@ -802,6 +802,23 @@ impl ExportJob {
         render::deep_blocker(&self.params).is_none().then(|| self.with_scene(|s| render::export_deep(s, deep)))?
     }
 
+    /// Refuse the export when the machine has no room for it (see [`render::export_cost`]). The size of the result is
+    /// known from the settings alone: this costs nothing.
+    pub fn check_memory(&self) -> Result<()> {
+        // With the exact mask still to compute, the provisional one gives the same size within a pixel or two.
+        let provisional;
+        let alpha = match &self.alpha {
+            Some(a) => a,
+            None => {
+                let p = self.pending.as_ref().expect("an export job has a mask or the job that computes it");
+                provisional = compose_alpha(p.predicted.as_deref(), &p.strokes, self.image.w, self.image.h);
+                &provisional
+            }
+        };
+        let scene = Scene { image: &self.image, alpha, params: &self.params, bg_image: None, filled: None, frame: None };
+        crate::io::check_export_memory(render::export_cost(&scene).1)
+    }
+
     /// The content the export shows, for [`Document::mark_clean_if`] once it is saved.
     pub fn edit_mark(&self) -> u64 {
         self.edit_mark

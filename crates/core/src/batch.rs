@@ -162,7 +162,9 @@ fn process_one(file: &Path, name: &str, opts: &BatchOptions, predict: &dyn Fn(&I
     let flatten = if params.background.mode == BgMode::Color { params.background.color } else { [255; 3] };
     let mut doc = Document::new(0, image, Some(file.to_path_buf())).with_params(params);
     doc.set_prediction(Some(mask));
-    let out = doc.export();
+    let job = doc.export_job();
+    job.check_memory()?;
+    let out = job.run();
     let stem = name.strip_suffix(&format!(".{}", opts.format.extension())).unwrap_or(name);
     let target = unique_path(&opts.dst, stem, opts.format.extension());
     save_rgba(&target, &out, opts.format, opts.quality, flatten)?;

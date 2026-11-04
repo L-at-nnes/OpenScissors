@@ -342,12 +342,33 @@ fn crop_pixels(r: Rect, ratio: Option<(u32, u32)>, canvas: (usize, usize)) -> (i
     (x0, y0, cw as usize, ch as usize)
 }
 
-/// Full-resolution result with the crop applied (what gets exported). Only the cropped region is rendered.
-pub fn export_rgba(scene: &Scene) -> Rgba {
+/// Memory the rendering of an export holds per pixel of the cropped canvas, in bytes: the region of the picture, its
+/// background, the mask, the shadow and the working buffers of the blurs, the result.
+const EXPORT_BYTES_PER_PIXEL: u64 = 24;
+/// Per pixel of the exported picture: the result scaled to the output width and the encoded file.
+const OUTPUT_BYTES_PER_PIXEL: u64 = 8;
+
+/// The crop of an export in whole pixels: first column and row, and size.
+fn export_pixels(scene: &Scene) -> (i64, i64, usize, usize) {
     let (w, h) = (scene.image.w, scene.image.h);
     let r = crop::effective_crop(scene.params, result_box(scene.alpha, scene.params), (w as f64, h as f64));
+    crop_pixels(r, crate::params::parse_ratio(&scene.params.background.aspect_ratio), (w, h))
+}
+
+/// Size of the exported picture (after the output width) and the memory its export needs, in MB. An extended canvas
+/// can be four times the picture and an output width can enlarge it: this is checked before anything is allocated.
+pub fn export_cost(scene: &Scene) -> ((usize, usize), u64) {
+    let (_, _, cw, ch) = export_pixels(scene);
     let ratio = crate::params::parse_ratio(&scene.params.background.aspect_ratio);
-    let (x0, y0, cw, ch) = crop_pixels(r, ratio, (w, h));
+    let (ow, oh) = output_size(cw, ch, scene.params.background.output_width as usize, ratio);
+    let bytes = cw as u64 * ch as u64 * EXPORT_BYTES_PER_PIXEL + ow as u64 * oh as u64 * OUTPUT_BYTES_PER_PIXEL;
+    ((ow, oh), bytes >> 20)
+}
+
+/// Full-resolution result with the crop applied (what gets exported). Only the cropped region is rendered.
+pub fn export_rgba(scene: &Scene) -> Rgba {
+    let ratio = crate::params::parse_ratio(&scene.params.background.aspect_ratio);
+    let (x0, y0, cw, ch) = export_pixels(scene);
     let region = Rect::new(x0 as f64, y0 as f64, (x0 + cw as i64) as f64, (y0 + ch as i64) as f64);
     let cropped = render_region_with(&Scene { frame: Some(region), ..*scene }, region, cw, ch, usize::MAX);
     resize_to_output_width(cropped, scene.params.background.output_width as usize, ratio)
@@ -359,16 +380,26 @@ const MAX_OUTPUT_SIDE: usize = 20_000;
 /// Scale the result to `width` pixels wide (0 = leave it), keeping its proportions; with a ratio the height follows
 /// from the ratio, so a 1000 px 1:1 preset is exactly 1000 x 1000.
 fn resize_to_output_width(img: Rgba, width: usize, ratio: Option<(u32, u32)>) -> Rgba {
-    if width == 0 || width == img.w {
+    let (dw, dh) = output_size(img.w, img.h, width, ratio);
+    if (dw, dh) == (img.w, img.h) {
         return img;
     }
-    let k = (width as f64 / img.w as f64).min(MAX_OUTPUT_SIDE as f64 / img.w.max(img.h) as f64);
-    let dw = ((img.w as f64 * k).round() as usize).max(1);
+    let k = dw as f64 / img.w as f64;
+    resize_rgba(&img, dw, dh, if k < 1.0 { Interp::Area } else { Interp::Bicubic })
+}
+
+/// Size of a `w` x `h` result scaled to `width` (0 = kept); see [`resize_to_output_width`].
+fn output_size(w: usize, h: usize, width: usize, ratio: Option<(u32, u32)>) -> (usize, usize) {
+    if width == 0 || width == w {
+        return (w, h);
+    }
+    let k = (width as f64 / w as f64).min(MAX_OUTPUT_SIDE as f64 / w.max(h) as f64);
+    let dw = ((w as f64 * k).round() as usize).max(1);
     let dh = match ratio {
         Some((a, b)) => ((dw as f64 * b as f64 / a as f64).round() as usize).max(1),
-        None => ((img.h as f64 * k).round() as usize).max(1),
+        None => ((h as f64 * k).round() as usize).max(1),
     };
-    resize_rgba(&img, dw, dh, if k < 1.0 { Interp::Area } else { Interp::Bicubic })
+    (dw, dh)
 }
 
 /// Why a 16-bit export is not possible with the current settings, if it is not.
@@ -829,6 +860,30 @@ mod tests {
             let out = render(&params);
             assert_eq!((out.w, out.h), (preset.width as usize, preset.width as usize * b as usize / a as usize), "{}", preset.id);
         }
+    }
+
+    #[test]
+    fn the_cost_of_an_export_follows_the_canvas_and_the_output_width() {
+        let (img, alpha) = scene_parts(); // 80 x 60
+        let mut params = Params::default();
+        let cost = |p: &Params| export_cost(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None });
+        let size = |p: &Params| {
+            let o = export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None });
+            (o.w, o.h)
+        };
+        assert_eq!(cost(&params).0, size(&params));
+        params.crop = Some(Rect::new(-80.0, -60.0, 80.0, 60.0)); // twice the picture each way
+        assert_eq!(cost(&params).0, (160, 120));
+        params.background.output_width = 4000;
+        assert_eq!(cost(&params).0, size(&params), "the output width is predicted exactly");
+        // A big canvas costs what its pixels say.
+        let big = Image::new(4000, 3000);
+        let big_alpha = Mask::new(4000, 3000);
+        let mut p = Params { crop: Some(Rect::new(-4000.0, -3000.0, 4000.0, 3000.0)), ..Params::default() };
+        p.background.output_width = 16_000;
+        let (out, mb) = export_cost(&Scene { image: &big, alpha: &big_alpha, params: &p, bg_image: None, filled: None, frame: None });
+        assert_eq!(out, (16_000, 12_000));
+        assert!(mb > 2_000, "8000 x 6000 rendered and 16000 x 12000 written: {mb} MB");
     }
 
     #[test]

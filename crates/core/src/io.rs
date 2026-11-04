@@ -53,6 +53,36 @@ fn open_verdict(w: u64, h: u64, budget_mb: Option<u64>, free_mb: Option<u64>) ->
     Ok(())
 }
 
+/// Refuse work that needs `need_mb` more megabytes when the process already holds `held_mb`: over the budget of the
+/// application (`budget_mb`), or over the memory still free. `what` names it in the message.
+fn work_verdict(what: &str, need_mb: u64, held_mb: Option<u64>, budget_mb: Option<u64>, free_mb: Option<u64>) -> Result<()> {
+    if let (Some(budget), Some(held)) = (budget_mb, held_mb) {
+        if held + need_mb > budget {
+            return Err(Error::msg(format!(
+                "{what} needs about {need_mb} MB more, over the {budget} MB the application may use (the memory limit in the settings can be raised, or the output made smaller)"
+            )));
+        }
+    }
+    if let Some(free) = free_mb.filter(|&f| need_mb > f) {
+        return Err(Error::msg(format!(
+            "not enough free memory: {what} needs about {need_mb} MB and {free} MB are free; close other applications"
+        )));
+    }
+    Ok(())
+}
+
+/// Refuse an export that needs `need_mb` megabytes the machine does not have: a failed allocation would end the
+/// application at once, losing the work.
+pub fn check_export_memory(need_mb: u64) -> Result<()> {
+    work_verdict(
+        "this export",
+        need_mb,
+        crate::sysmem::process_memory_mb(),
+        crate::sysmem::budget_mb(),
+        crate::sysmem::available_memory_mb(),
+    )
+}
+
 /// Refuse a picture that would not fit, from its size alone and before anything is allocated for it: too big to be
 /// believable, over the memory budget of the application, or more than the memory that is free.
 pub fn check_dimensions(w: u64, h: u64) -> Result<()> {
@@ -666,6 +696,16 @@ mod tests {
         assert!(open_verdict(30_000, 30_000, None, None).is_err(), "900 megapixels is not believable");
         assert!(open_verdict(0, 5, None, None).is_err());
         assert_eq!(open_cost_mb(1000, 1000), 22);
+    }
+
+    #[test]
+    fn work_is_refused_over_the_budget_or_the_free_memory() {
+        assert!(work_verdict("x", 500, Some(1000), Some(2000), Some(4000)).is_ok());
+        let over = work_verdict("this export", 1500, Some(1000), Some(2000), Some(9000)).unwrap_err().to_string();
+        assert!(over.contains("1500 MB") && over.contains("2000 MB"), "{over}");
+        let busy = work_verdict("this export", 1500, Some(100), Some(8000), Some(1000)).unwrap_err().to_string();
+        assert!(busy.contains("free memory"), "{busy}");
+        assert!(work_verdict("x", 1 << 30, None, None, None).is_ok(), "nothing known: allowed");
     }
 
     #[test]

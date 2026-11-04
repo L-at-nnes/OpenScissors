@@ -218,8 +218,11 @@ impl Ctl {
         let me = self.clone();
         self.spawn(move || {
             // The document is locked only to take what the export needs; the rendering itself runs without the lock.
-            let job = me.st.doc.guard().as_mut().map(|d| d.export_job());
-            let Some(img) = job.map(|j| j.run()) else { return };
+            let Some(job) = me.st.doc.guard().as_mut().map(|d| d.export_job()) else { return };
+            if let Err(e) = job.check_memory() {
+                return me.say(e.to_string(), true);
+            }
+            let img = job.run();
             match clipboard::write(&img) {
                 Ok(()) => me.say(t("Copied the result to the clipboard"), false),
                 Err(ClipboardError::Empty) => me.say(t("The clipboard holds no image."), true),
@@ -313,6 +316,7 @@ impl Ctl {
             let why = if want16 { d.deep_blocker() } else { None };
             (d.export_job(), flatten, why, d.srgb_tag())
         };
+        job.check_memory().map_err(|e| e.to_string())?;
         let exported = match want16.then(|| job.run_deep()).flatten() {
             Some(deep) => Exported::Bits16(deep),
             None => Exported::Bits8(job.run(), flatten),
