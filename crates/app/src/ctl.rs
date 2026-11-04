@@ -156,6 +156,9 @@ pub struct Ctl {
     current_doc: Arc<AtomicU64>,
     /// A new document state is wanted: set by [`Ctl::refresh_doc`], served by the state thread.
     state_wanted: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    /// The plug-ins as the settings panel lists them, read again when the panel opens. Turning one on or running it
+    /// picks it from this list, so it is always the one the person clicked, even if the folder changed meanwhile.
+    plugins: Mutex<Option<Vec<openscissors_core::plugin::Discovered>>>,
 }
 
 pub const KIND_KEYS: [&str; 6] = ["none", "blur", "colorize", "grayscale", "negative", "pixelate"];
@@ -321,6 +324,7 @@ impl Ctl {
             status_epoch: AtomicU64::new(0),
             current_doc,
             state_wanted: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            plugins: Mutex::new(None),
         });
         ctl.start_state_thread();
         ctl
@@ -615,9 +619,19 @@ impl Ctl {
         b.set_batch_can_run(ready && !src.is_empty() && !dst.is_empty() && !ux.batch.running);
     }
 
+    /// Read the plug-ins folder again at the next refresh of the panel.
+    pub fn rescan_plugins(&self) {
+        *self.plugins.guard() = None;
+    }
+
+    /// The plug-ins as they are listed, read from the folder the first time.
+    pub fn plugins_listed(&self) -> Vec<openscissors_core::plugin::Discovered> {
+        self.plugins.guard().get_or_insert_with(|| openscissors_core::plugin::discover(&self.st.paths.plugins)).clone()
+    }
+
     fn plugin_rows(&self) -> Vec<PluginRow> {
         let enabled = self.st.settings.guard().plugins_enabled.clone();
-        openscissors_core::plugin::discover(&self.st.paths.plugins)
+        self.plugins_listed()
             .into_iter()
             .map(|d| match d.plugin {
                 Ok(p) => PluginRow {

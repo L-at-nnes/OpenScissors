@@ -789,8 +789,7 @@ impl Ctl {
     pub fn plugin_toggle(self: &Arc<Self>, index: usize, enabled: bool) {
         let me = self.clone();
         self.spawn(move || {
-            let found = openscissors_core::plugin::discover(&me.st.paths.plugins);
-            let Some(Ok(p)) = found.into_iter().nth(index).map(|d| d.plugin) else { return };
+            let Some(Ok(p)) = me.plugins_listed().into_iter().nth(index).map(|d| d.plugin) else { return };
             if enabled {
                 let ok = dialogs::confirm(
                     &tf("Turn on {name}?", &[("name", &p.manifest.name)]),
@@ -819,8 +818,7 @@ impl Ctl {
         let me = self.clone();
         self.spawn(move || {
             let Some(file) = me.ux.guard().last_saved.clone() else { return };
-            let found = openscissors_core::plugin::discover(&me.st.paths.plugins);
-            let Some(Ok(p)) = found.into_iter().nth(index).map(|d| d.plugin) else { return };
+            let Some(Ok(p)) = me.plugins_listed().into_iter().nth(index).map(|d| d.plugin) else { return };
             if !me.st.settings.guard().plugins_enabled.contains(&p.manifest.id) {
                 return me.say(t("This plug-in is not enabled."), true);
             }

@@ -49,10 +49,15 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
             c.st.rescan_models(); // a model dropped into the folder by hand shows up
             c.refresh(R_MODELS)
         }
-        2 => c.refresh(R_MENU),
+        2 | 4 => {
+            c.rescan_plugins();
+            c.refresh(R_MENU)
+        }
         3 => c.refresh(R_BATCH),
-        4 => c.refresh(R_MENU),
-        5 => c.refresh(R_MENU | R_MODELS),
+        5 => {
+            c.rescan_plugins();
+            c.refresh(R_MENU | R_MODELS)
+        }
         _ => {}
     });
 
