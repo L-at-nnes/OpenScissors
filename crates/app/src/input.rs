@@ -16,6 +16,24 @@ fn ratio_of(key: &str) -> Option<(u32, u32)> {
     openscissors_core::params::parse_ratio(key)
 }
 
+/// The key of a Ctrl shortcut as on a US keyboard, from the character Slint reports (it gives the character of the
+/// layout, not the physical key). Some platforms report Ctrl+letter as a control code; on a French (AZERTY) keyboard
+/// the digit row gives `à` for 0 and `ç` for 9 without Shift.
+fn ctrl_key(c: char) -> char {
+    match c {
+        c if c.is_ascii_control() && (c as u8) < 27 => ((c as u8) + 96) as char,
+        'à' => '0',
+        'ç' => '9',
+        c => c.to_ascii_lowercase(),
+    }
+}
+
+/// Whether the modifiers are AltGr: Windows reports it as Ctrl + Alt. A character typed with AltGr (`[` and `]` on
+/// an AZERTY keyboard) is a plain key, not a Ctrl shortcut.
+fn is_altgr(ctrl: bool, alt: bool) -> bool {
+    ctrl && alt
+}
+
 impl Ctl {
     pub fn pane_resized(self: &Arc<Self>, w: f64, h: f64) {
         {
@@ -271,6 +289,7 @@ impl Ctl {
             self.smart_cancel();
             return;
         }
+        let (ctrl, alt) = if is_altgr(ctrl, alt) { (false, false) } else { (ctrl, alt) };
         let has_prompts = !self.ux.guard().prompts.is_empty();
         if has_prompts {
             if c == '\n' || c == '\r' {
@@ -281,9 +300,7 @@ impl Ctl {
             }
         }
         if ctrl {
-            // Some platforms report Ctrl+letter as a control code.
-            let k = if c.is_ascii_control() && (c as u8) < 27 { ((c as u8) + 96) as char } else { c.to_ascii_lowercase() };
-            match k {
+            match ctrl_key(c) {
                 'o' => self.open_dialog(),
                 'v' => self.paste(),
                 'c' => self.copy_result(),
@@ -392,11 +409,21 @@ impl Ctl {
 
 #[cfg(test)]
 mod tests {
+    use super::{ctrl_key, is_altgr};
+
     #[test]
     fn control_codes_map_back_to_letters() {
-        let k = |c: char| if c.is_ascii_control() && (c as u8) < 27 { ((c as u8) + 96) as char } else { c.to_ascii_lowercase() };
-        assert_eq!(k('\u{f}'), 'o');
-        assert_eq!(k('\u{13}'), 's');
-        assert_eq!(k('Z'), 'z');
+        assert_eq!(ctrl_key('\u{f}'), 'o');
+        assert_eq!(ctrl_key('\u{13}'), 's');
+        assert_eq!(ctrl_key('Z'), 'z');
+    }
+
+    #[test]
+    fn the_zoom_shortcuts_work_on_a_french_keyboard() {
+        assert_eq!(ctrl_key('à'), '0', "Ctrl+0: 100 %");
+        assert_eq!(ctrl_key('ç'), '9', "Ctrl+9: fit");
+        assert_eq!((ctrl_key('0'), ctrl_key('9'), ctrl_key('=')), ('0', '9', '='));
+        assert!(is_altgr(true, true), "AltGr+5 gives [ on AZERTY: a plain key");
+        assert!(!is_altgr(true, false) && !is_altgr(false, true));
     }
 }
