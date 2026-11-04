@@ -158,8 +158,12 @@ impl Ctl {
 
     // -- loading a model
 
-    /// Load `id` on a background thread and make it the active model.
+    /// Load `id` on a background thread and make it the active model. Loads run one at a time; when several are asked
+    /// for in a row (clicking "Use" on two models, changing the processor setting) only the latest one is carried out.
     pub fn load_model_async(self: &Arc<Self>, id: String) {
+        let gen = self.st.model_gen.fetch_add(1, Ordering::SeqCst) + 1;
+        // The model in use is let go now: two models are never held at once (a running prediction keeps its own).
+        *self.st.model.guard() = None;
         *self.st.model_status.guard() = ModelStatus { active: Some(id.clone()), loading: true, ready: false, error: None, backend: None };
         self.refresh(R_MAIN | R_MODELS);
         let me = self.clone();
@@ -172,6 +176,11 @@ impl Ctl {
         self.spawn_or(
             move || {
                 let state = &me.st;
+                let _one_at_a_time = state.model_load.guard();
+                let latest = || state.model_gen.load(Ordering::SeqCst) == gen;
+                if !latest() {
+                    return; // a newer load was asked for meanwhile
+                }
                 let result = (|| -> Result<Predictor, String> {
                     let spec = state.models().into_iter().find(|s| s.id == id).ok_or_else(|| t("Unknown model."))?;
                     let path = state.model_path(&spec);
@@ -188,6 +197,9 @@ impl Ctl {
                     p.warmup().map_err(|e| e.to_string())?;
                     Ok(p)
                 })();
+                if !latest() {
+                    return; // asked for another model while this one loaded: it is dropped here
+                }
                 match result {
                     Ok(p) => {
                         let backend = Some(p.backend().to_string());

@@ -87,6 +87,10 @@ pub struct AppState {
     pub batch: Mutex<Option<Arc<AtomicBool>>>,
     /// Document id a prediction is running (or was already run) for.
     pub predicted_doc: Mutex<Option<u64>>,
+    /// Bumped by every model load that is asked for: a load that is no longer the latest is skipped or dropped.
+    pub model_gen: AtomicU64,
+    /// Held while a model loads, so that two models are never loaded at the same time.
+    pub model_load: Mutex<()>,
 }
 
 impl Default for AppState {
@@ -115,6 +119,8 @@ impl AppState {
             downloads: Mutex::new(HashMap::new()),
             batch: Mutex::new(None),
             predicted_doc: Mutex::new(None),
+            model_gen: AtomicU64::new(0),
+            model_load: Mutex::new(()),
         }
     }
 
