@@ -53,6 +53,24 @@ impl Ctl {
         }
     }
 
+    /// Write the settings a moment after the last change. A slider being dragged or a key held down changes them many
+    /// times a second, and every write goes to the disk (on the interface thread for those). Closing the application
+    /// writes what is still pending.
+    pub fn save_settings_soon(self: &Arc<Self>) {
+        use std::sync::atomic::Ordering;
+        self.st.settings_dirty.store(true, Ordering::SeqCst);
+        let gen = self.st.settings_gen.fetch_add(1, Ordering::SeqCst) + 1;
+        self.with_ui(move |me, _| {
+            let me = me.clone();
+            slint::Timer::single_shot(std::time::Duration::from_millis(600), move || {
+                if me.st.settings_gen.load(Ordering::SeqCst) == gen && me.st.settings_dirty.load(Ordering::SeqCst) {
+                    let worker = me.clone();
+                    me.spawn(move || worker.save_settings());
+                }
+            });
+        });
+    }
+
     pub fn doc_name(&self) -> Option<String> {
         self.ux.guard().doc.as_ref().and_then(|d| d.name.clone())
     }
@@ -623,7 +641,7 @@ impl Ctl {
             ux.marker = n;
         }
         self.st.settings.guard().marker_size = n;
-        self.save_settings();
+        self.save_settings_soon();
         self.refresh(R_MAIN | R_VIEW);
     }
 
@@ -862,7 +880,7 @@ impl Ctl {
 
     pub fn set_jpeg_quality(self: &Arc<Self>, q: i32) {
         self.st.settings.guard().jpeg_quality = q.clamp(10, 100) as u8;
-        self.save_settings();
+        self.save_settings_soon();
     }
 
     pub fn set_export16(self: &Arc<Self>, on: bool) {

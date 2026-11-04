@@ -38,6 +38,10 @@ pub fn run() -> Result<(), slint::PlatformError> {
         }
     }
     let result = ui.run();
+    // A setting changed in the last moment (a slider) is still to be written.
+    if let Err(e) = ctl.st.flush_settings() {
+        eprintln!("OpenScissors: cannot save the settings: {e}");
+    }
     // Quitting while an export or a save runs: its hidden temporary file is removed.
     openscissors_core::io::remove_unfinished_writes();
     result

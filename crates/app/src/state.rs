@@ -91,6 +91,10 @@ pub struct AppState {
     pub smart_gen: AtomicU64,
     /// Bumped by every prediction that starts: the result of an older one (another model) is dropped.
     pub predict_gen: AtomicU64,
+    /// The settings changed and are not written yet (see `Ctl::save_settings_soon`).
+    pub settings_dirty: AtomicBool,
+    /// Bumped by every delayed settings write that is asked for: only the last one writes.
+    pub settings_gen: AtomicU64,
     /// Exports and project saves in progress (closing the window asks first while one runs).
     pub saving: AtomicUsize,
     /// Bumped by every model load that is asked for: a load that is no longer the latest is skipped or dropped.
@@ -136,6 +140,8 @@ impl AppState {
             predicted_doc: Mutex::new(None),
             smart_gen: AtomicU64::new(0),
             predict_gen: AtomicU64::new(0),
+            settings_dirty: AtomicBool::new(false),
+            settings_gen: AtomicU64::new(0),
             saving: AtomicUsize::new(0),
             model_gen: AtomicU64::new(0),
             model_load: Mutex::new(()),
@@ -158,7 +164,16 @@ impl AppState {
     }
 
     pub fn save_settings(&self) -> std::io::Result<()> {
+        self.settings_dirty.store(false, Ordering::SeqCst);
         self.settings.guard().save(&self.settings_path())
+    }
+
+    /// Write the settings if a delayed write is still pending (the application is closing).
+    pub fn flush_settings(&self) -> std::io::Result<()> {
+        if self.settings_dirty.load(Ordering::SeqCst) {
+            self.save_settings()?;
+        }
+        Ok(())
     }
 
     /// Catalogue plus the development-only local file entry.
