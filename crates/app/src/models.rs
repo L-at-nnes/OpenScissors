@@ -278,6 +278,7 @@ impl Ctl {
                     }
                 };
                 let result = me.st.registry.download(&spec, &mut progress, &cancel);
+                me.st.rescan_models();
                 me.st.downloads.guard().remove(&spec.id);
                 me.ux.guard().downloads.remove(&spec.id);
                 match &result {
@@ -314,6 +315,7 @@ impl Ctl {
         if let Err(e) = self.st.registry.delete(&spec) {
             self.say(e.to_string(), true);
         }
+        self.st.rescan_models();
         self.refresh(R_MAIN | R_MODELS | R_BATCH);
     }
 
@@ -616,8 +618,7 @@ mod tests {
 
     fn state_with(doc: Document) -> AppState {
         let home = std::env::temp_dir().join(format!("osc-kick-{}", std::process::id()));
-        std::env::set_var("OPENSCISSORS_HOME", &home);
-        let state = AppState::new();
+        let state = AppState::at(&home);
         *state.doc.guard() = Some(doc);
         state
     }

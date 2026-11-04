@@ -45,7 +45,10 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     cb!(b, ctl, on_key_down, |c, text, ctrl, shift, alt| c.key_down(&text, ctrl, shift, alt));
     cb!(b, ctl, on_key_up, |c, text| c.key_up(&text));
     cb!(b, ctl, on_popover_changed, |c, which| match which {
-        1 => c.refresh(R_MODELS),
+        1 => {
+            c.st.rescan_models(); // a model dropped into the folder by hand shows up
+            c.refresh(R_MODELS)
+        }
         2 => c.refresh(R_MENU),
         3 => c.refresh(R_BATCH),
         4 => c.refresh(R_MENU),

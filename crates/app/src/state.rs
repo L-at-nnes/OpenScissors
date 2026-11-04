@@ -28,7 +28,11 @@ pub struct Paths {
 
 impl Paths {
     pub fn resolve() -> Self {
-        let root = openscissors_core::paths::root();
+        Self::under(openscissors_core::paths::root())
+    }
+
+    /// The folders under `root`, created when missing.
+    pub fn under(root: PathBuf) -> Self {
         let data = root.join("data");
         let models = root.join("models");
         let plugins = root.join("plugins");
@@ -91,6 +95,9 @@ pub struct AppState {
     pub smart_gen: AtomicU64,
     /// Bumped by every prediction that starts: the result of an older one (another model) is dropped.
     pub predict_gen: AtomicU64,
+    /// The catalogue and the models found on disk, read once and again when the models panel opens or a model is
+    /// downloaded or deleted (the interface asks for the list at every refresh).
+    pub models_cache: Mutex<Option<Vec<ModelSpec>>>,
     /// The settings changed and are not written yet (see `Ctl::save_settings_soon`).
     pub settings_dirty: AtomicBool,
     /// Bumped by every delayed settings write that is asked for: only the last one writes.
@@ -120,7 +127,15 @@ impl Default for AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let paths = Paths::resolve();
+        Self::with_paths(Paths::resolve())
+    }
+
+    /// The state of an application whose folder is `root` (tests use a folder of their own).
+    pub fn at(root: &std::path::Path) -> Self {
+        Self::with_paths(Paths::under(root.to_path_buf()))
+    }
+
+    fn with_paths(paths: Paths) -> Self {
         let settings = Settings::load(&paths.data.join("settings.json"));
         let registry = ModelRegistry::new(&paths.models);
         openscissors_core::sysmem::set_budget_percent(settings.ram_percent as u64);
@@ -140,6 +155,7 @@ impl AppState {
             predicted_doc: Mutex::new(None),
             smart_gen: AtomicU64::new(0),
             predict_gen: AtomicU64::new(0),
+            models_cache: Mutex::new(None),
             settings_dirty: AtomicBool::new(false),
             settings_gen: AtomicU64::new(0),
             saving: AtomicUsize::new(0),
@@ -178,11 +194,21 @@ impl AppState {
 
     /// Catalogue plus the development-only local file entry.
     pub fn models(&self) -> Vec<ModelSpec> {
-        let mut specs = self.registry.available();
-        if let Some(spec) = self.local_model_spec() {
-            specs.push(spec);
-        }
-        specs
+        self.models_cache
+            .guard()
+            .get_or_insert_with(|| {
+                let mut specs = self.registry.available();
+                if let Some(spec) = self.local_model_spec() {
+                    specs.push(spec);
+                }
+                specs
+            })
+            .clone()
+    }
+
+    /// Read the models folder again at the next [`AppState::models`] (a model was added, downloaded or deleted).
+    pub fn rescan_models(&self) {
+        *self.models_cache.guard() = None;
     }
 
     pub fn local_model_spec(&self) -> Option<ModelSpec> {
@@ -222,5 +248,25 @@ impl AppState {
             return self.model_path(spec).is_file();
         }
         self.registry.state(spec) == ModelState::Ready
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use openscissors_core::sync::LockExt;
+
+    #[test]
+    fn the_model_list_is_read_once_until_it_is_rescanned() {
+        let home = std::env::temp_dir().join(format!("osc-models-cache-{}", std::process::id()));
+        std::fs::create_dir_all(home.join("models").join("mine")).unwrap();
+        let st = AppState::at(&home);
+        let before = st.models().len();
+        std::fs::write(home.join("models/mine/model.json"), r#"{"id":"mine","name":"Mine","license":"MIT"}"#).unwrap();
+        assert_eq!(st.models().len(), before, "not read again at every call");
+        st.rescan_models();
+        assert_eq!(st.models().len(), before + 1, "a rescan finds the new model");
+        assert!(st.models_cache.guard().is_some());
+        std::fs::remove_dir_all(home).ok();
     }
 }
