@@ -87,6 +87,8 @@ pub struct AppState {
     pub batch: Mutex<Option<Arc<AtomicBool>>>,
     /// Document id a prediction is running (or was already run) for.
     pub predicted_doc: Mutex<Option<u64>>,
+    /// Bumped by every smart select run: only the latest one is shown.
+    pub smart_gen: AtomicU64,
     /// Bumped by every prediction that starts: the result of an older one (another model) is dropped.
     pub predict_gen: AtomicU64,
     /// Bumped by every model load that is asked for: a load that is no longer the latest is skipped or dropped.
@@ -121,6 +123,7 @@ impl AppState {
             downloads: Mutex::new(HashMap::new()),
             batch: Mutex::new(None),
             predicted_doc: Mutex::new(None),
+            smart_gen: AtomicU64::new(0),
             predict_gen: AtomicU64::new(0),
             model_gen: AtomicU64::new(0),
             model_load: Mutex::new(()),

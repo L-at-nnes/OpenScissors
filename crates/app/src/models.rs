@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use openscissors_core::document::{AlphaJob, SelectionMode};
-use openscissors_core::model::{Accelerator, ModelKind, ModelSpec, Predictor, Prompt, Sam2};
+use openscissors_core::model::{Accelerator, Embeddings, ModelKind, ModelSpec, Predictor, Prompt, Sam2};
 use openscissors_core::sysmem;
-use openscissors_core::types::Mask;
+use openscissors_core::types::{Image, Mask};
 
 use crate::ctl::{Ctl, Prediction, R_BATCH, R_MAIN, R_MODELS, R_VIEW};
 use crate::i18n::{t, tf};
@@ -130,8 +130,10 @@ fn run_alpha_jobs_with(state: &AppState, first: PendingJob, run: impl Fn(&AlphaJ
 
 const SAM_MISSING: &str = "SAM2_MISSING";
 
+/// SAM 2, loaded on first use. The slot stays locked while it loads: two quick clicks load it once.
 fn ensure_sam(state: &AppState) -> Result<Arc<Sam2>, String> {
-    if let Some(s) = state.sam.guard().clone() {
+    let mut slot = state.sam.guard();
+    if let Some(s) = slot.clone() {
         return Ok(s);
     }
     let spec = state.registry.available().into_iter().find(|s| s.kind == ModelKind::Sam2).ok_or(SAM_MISSING)?;
@@ -139,8 +141,20 @@ fn ensure_sam(state: &AppState) -> Result<Arc<Sam2>, String> {
         return Err(SAM_MISSING.into());
     }
     let sam = Arc::new(Sam2::load(&state.registry.model_dir(&spec)).map_err(|e| e.to_string())?);
-    *state.sam.guard() = Some(sam.clone());
+    *slot = Some(sam.clone());
     Ok(sam)
+}
+
+/// The encoder output for document `doc_id`, computed once: the cache stays locked while it is computed, so a second
+/// click waits for it instead of running the encoder again.
+fn embeddings(state: &AppState, sam: &Sam2, doc_id: u64, image: &Image) -> Result<Arc<Embeddings>, String> {
+    let mut cache = state.sam_cache.guard();
+    if let Some((_, e)) = cache.as_ref().filter(|(id, _)| *id == doc_id) {
+        return Ok(e.clone());
+    }
+    let e = Arc::new(sam.embed(image).map_err(|e| e.to_string())?);
+    *cache = Some((doc_id, e.clone()));
+    Ok(e)
 }
 
 impl Ctl {
@@ -487,6 +501,7 @@ impl Ctl {
             ux.smart_busy = true;
             ux.prompts.clone()
         };
+        let gen = self.st.smart_gen.fetch_add(1, Ordering::SeqCst) + 1;
         self.say(t("Analysing the image…"), false);
         self.refresh(R_MAIN | R_VIEW);
         let me = self.clone();
@@ -500,15 +515,13 @@ impl Ctl {
             move || {
                 let result = (|| -> Result<_, String> {
                     let sam = ensure_sam(&me.st)?;
-                    let cached = me.st.sam_cache.guard().as_ref().filter(|(id, _)| *id == doc_id).map(|(_, e)| e.clone());
-                    let emb = match cached {
-                        Some(e) => e,
-                        None => Arc::new(sam.embed(&image).map_err(|e| e.to_string())?),
-                    };
-                    let mask = sam.select(&emb, &prompts, &image).map_err(|e| e.to_string())?;
-                    *me.st.sam_cache.guard() = Some((doc_id, emb));
-                    Ok(mask)
+                    let emb = embeddings(&me.st, &sam, doc_id, &image)?;
+                    sam.select(&emb, &prompts, &image).map_err(|e| e.to_string())
                 })();
+                // A later click started another run: its selection (with more points) is the one to show.
+                if me.st.smart_gen.load(Ordering::SeqCst) != gen {
+                    return;
+                }
                 me.ux.guard().smart_busy = false;
                 match result {
                     Ok(mask) => {
