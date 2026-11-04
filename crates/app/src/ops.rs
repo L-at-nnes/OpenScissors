@@ -126,7 +126,7 @@ impl Ctl {
             ux.last_export = None;
             ux.prediction = if predicted { Prediction::Idle } else { Prediction::Running };
         }
-        self.refresh_doc();
+        self.refresh_doc_now();
         self.fit();
         self.refresh(R_ALL);
         self.maybe_predict();

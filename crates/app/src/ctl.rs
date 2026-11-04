@@ -151,6 +151,8 @@ pub struct Ctl {
     status_epoch: AtomicU64,
     /// Id of the open document (0 = none), read by the render delivery to drop stale images.
     current_doc: Arc<AtomicU64>,
+    /// A new document state is wanted: set by [`Ctl::refresh_doc`], served by the state thread.
+    state_wanted: Arc<(Mutex<bool>, std::sync::Condvar)>,
 }
 
 pub const KIND_KEYS: [&str; 6] = ["none", "blur", "colorize", "grayscale", "negative", "pixelate"];
@@ -264,7 +266,7 @@ impl Ctl {
                 }
             });
         });
-        Arc::new(Self {
+        let ctl = Arc::new(Self {
             st,
             ui: ui.as_weak(),
             ux: Mutex::new(Ux {
@@ -299,7 +301,30 @@ impl Ctl {
             pending: AtomicU32::new(0),
             status_epoch: AtomicU64::new(0),
             current_doc,
-        })
+            state_wanted: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+        });
+        ctl.start_state_thread();
+        ctl
+    }
+
+    /// The thread that reads the document state ([`Document::state`] may rebuild caches at full resolution: the mask
+    /// after an undo, the filled original). Requests made while it works are served by one more reading.
+    fn start_state_thread(self: &Arc<Self>) {
+        let me = self.clone();
+        std::thread::Builder::new()
+            .name("doc-state".into())
+            .spawn(move || loop {
+                {
+                    let (lock, cv) = &*me.state_wanted;
+                    let mut wanted = lock.guard();
+                    while !*wanted {
+                        wanted = cv.wait(wanted).unwrap_or_else(std::sync::PoisonError::into_inner);
+                    }
+                    *wanted = false;
+                }
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| me.refresh_doc_now()));
+            })
+            .expect("document state thread");
     }
 
     // -- worker threads
@@ -758,8 +783,17 @@ impl Ctl {
         }
     }
 
-    /// Read the document state into the interface state.
+    /// Ask for the document state to be read into the interface state, off the calling thread (usually the interface
+    /// thread, which must not wait for it).
     pub fn refresh_doc(self: &Arc<Self>) {
+        let (lock, cv) = &*self.state_wanted;
+        *lock.guard() = true;
+        cv.notify_one();
+    }
+
+    /// Read the document state into the interface state now, on this thread (opening a document, before the view is
+    /// fitted to it). A state older than the one already shown is dropped: two readings may finish out of order.
+    pub fn refresh_doc_now(self: &Arc<Self>) {
         let st = self.st.doc.guard().as_mut().map(|d| d.state());
         let new_error = st.as_ref().and_then(|s| s.bg_error.clone());
         {
@@ -769,7 +803,14 @@ impl Ctl {
                 ux.view = fit_area(canvas_of(d), ux.pane, 24.0);
             }
         }
-        let known_error = std::mem::replace(&mut self.ux.guard().doc, st).and_then(|d| d.bg_error);
+        let known_error = {
+            let mut ux = self.ux.guard();
+            let older = matches!((&ux.doc, &st), (Some(shown), Some(new)) if shown.id == new.id && new.rev < shown.rev);
+            if older {
+                return;
+            }
+            std::mem::replace(&mut ux.doc, st).and_then(|d| d.bg_error)
+        };
         self.refresh(R_MAIN | R_VIEW);
         if let Some(path) = new_error.filter(|p| known_error.as_ref() != Some(p)) {
             let name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path);
