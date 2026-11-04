@@ -392,6 +392,7 @@ impl Ctl {
             }
             *running = Some(id);
         }
+        let gen = self.st.predict_gen.fetch_add(1, Ordering::SeqCst) + 1;
         self.ux.guard().prediction = Prediction::Running;
         self.refresh(R_MAIN);
         let me = self.clone();
@@ -403,12 +404,17 @@ impl Ctl {
         self.spawn_or(
             move || {
                 let result = model.predict(&image, true);
+                // Another model was chosen while this one ran: its prediction is the one that counts.
+                let current = || me.st.predict_gen.load(Ordering::SeqCst) == gen;
+                if !current() {
+                    return;
+                }
                 match result {
                     Ok(mask) => {
                         let applied = {
                             let mut g = me.st.doc.guard();
                             match g.as_mut() {
-                                Some(doc) if doc.id == id => {
+                                Some(doc) if doc.id == id && current() => {
                                     // The proposal is not an edit of the person: it must not ask to save on closing.
                                     let was_clean = doc.is_clean();
                                     doc.set_prediction(Some(mask));
@@ -426,7 +432,15 @@ impl Ctl {
                             me.refresh_doc();
                         }
                     }
-                    Err(e) => me.prediction_failed(e.to_string()),
+                    Err(e) => {
+                        // Not "done" for this document: the next occasion (another model, more memory) tries again.
+                        let mut running = me.st.predicted_doc.guard();
+                        if *running == Some(id) {
+                            *running = None;
+                        }
+                        drop(running);
+                        me.prediction_failed(e.to_string());
+                    }
                 }
             },
             reset,
