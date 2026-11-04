@@ -110,7 +110,11 @@ pub struct Document {
     filled: Option<(FillKey, Arc<Image>)>,
     /// The canvas of the result (the crop) for `rev`, kept while a background picture has to cover it.
     frame: Option<(u64, Rect)>,
+    /// The box of the result ([`crop::finished_bbox`]) for a mask (`mask_rev`, exact or not) and its offset and feather.
+    result_box: Option<(ResultBoxKey, Option<Rect>)>,
 }
+
+type ResultBoxKey = (u64, bool, i32, u32);
 
 type FillKey = (u64, i32, u32);
 
@@ -159,6 +163,7 @@ impl Document {
             bg_failed: None,
             filled: None,
             frame: None,
+            result_box: None,
         }
     }
 
@@ -631,10 +636,32 @@ impl Document {
         }
         if matches!(self.params.background.mode, BgMode::Image | BgMode::Gradient) && self.frame.as_ref().map(|(r, _)| *r) != Some(self.rev)
         {
-            let alpha = self.alpha.as_ref().expect("alpha ready");
-            let finished = self.params.background.fit_to_result.then(|| render::finished_alpha(alpha, &self.params));
-            self.frame = Some((self.rev, crop::effective_crop(&self.params, finished.as_ref(), (w as f64, h as f64))));
+            let crop = self.crop_now();
+            self.frame = Some((self.rev, crop));
         }
+    }
+
+    /// The box of the result when the crop follows it, kept until the mask, the offset or the feather change.
+    fn result_box(&mut self) -> Option<Rect> {
+        if !self.params.background.fit_to_result {
+            return None;
+        }
+        let key: ResultBoxKey = (self.mask_rev, self.alpha_is_exact(), self.params.mask.offset, self.params.foreground.feather);
+        match self.result_box {
+            Some((k, b)) if k == key => b,
+            _ => {
+                let b = render::result_box(self.alpha.as_ref().expect("alpha ready"), &self.params);
+                self.result_box = Some((key, b));
+                b
+            }
+        }
+    }
+
+    /// The crop in effect, the mask being ready.
+    fn crop_now(&mut self) -> Rect {
+        let canvas = (self.image.w as f64, self.image.h as f64);
+        let bb = self.result_box();
+        crop::effective_crop(&self.params, bb, canvas)
     }
 
     fn scene(&self) -> Scene<'_> {
@@ -650,9 +677,7 @@ impl Document {
 
     pub fn state(&mut self) -> DocState {
         self.prepare();
-        let (w, h) = (self.image.w as f64, self.image.h as f64);
-        let finished =
-            self.params.background.fit_to_result.then(|| render::finished_alpha(self.alpha.as_ref().expect("alpha ready"), &self.params));
+        let crop = self.crop_now();
         DocState {
             id: self.id,
             rev: self.rev,
@@ -665,7 +690,7 @@ impl Document {
             has_prediction: self.predicted.is_some(),
             computing: self.computing(),
             params: self.params.clone(),
-            crop: crop::effective_crop(&self.params, finished.as_ref(), (w, h)),
+            crop,
             bg_error: self.bg_failed.clone().filter(|p| self.params.background.image_path.as_ref() == Some(p)),
         }
     }

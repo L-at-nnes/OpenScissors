@@ -345,12 +345,7 @@ fn crop_pixels(r: Rect, ratio: Option<(u32, u32)>, canvas: (usize, usize)) -> (i
 /// Full-resolution result with the crop applied (what gets exported). Only the cropped region is rendered.
 pub fn export_rgba(scene: &Scene) -> Rgba {
     let (w, h) = (scene.image.w, scene.image.h);
-    let finished = scene
-        .params
-        .background
-        .fit_to_result
-        .then(|| finish_alpha_scaled(scene.alpha.clone(), scene.params.mask.offset, scene.params.foreground.feather, 1.0));
-    let r = crop::effective_crop(scene.params, finished.as_ref(), (w as f64, h as f64));
+    let r = crop::effective_crop(scene.params, result_box(scene.alpha, scene.params), (w as f64, h as f64));
     let ratio = crate::params::parse_ratio(&scene.params.background.aspect_ratio);
     let (x0, y0, cw, ch) = crop_pixels(r, ratio, (w, h));
     let region = Rect::new(x0 as f64, y0 as f64, (x0 + cw as i64) as f64, (y0 + ch as i64) as f64);
@@ -405,7 +400,7 @@ pub fn export_deep(scene: &Scene, deep: &Image16) -> Option<Rgba16> {
     let (w, h) = (deep.w, deep.h);
     let alpha = finished_alpha(scene.alpha, p);
     let bg: Option<[u32; 3]> = (p.background.mode == BgMode::Color).then(|| p.background.color.map(|c| c as u32 * 257));
-    let r = crop::effective_crop(p, p.background.fit_to_result.then_some(&alpha), (w as f64, h as f64));
+    let r = crop::effective_crop(p, result_box(scene.alpha, p), (w as f64, h as f64));
     let (x0, y0, cw, ch) = crop_pixels(r, crate::params::parse_ratio(&p.background.aspect_ratio), (w, h));
     let mut data = vec![0u16; cw * ch * 4];
     data.par_chunks_mut(cw * 4).enumerate().for_each(|(y, row)| {
@@ -441,7 +436,12 @@ pub fn export_deep(scene: &Scene, deep: &Image16) -> Option<Rgba16> {
     Some(Rgba16 { w: cw, h: ch, data })
 }
 
-/// Alpha after offset and feathering at full resolution (used for the crop box).
+/// The box of the result when the crop follows it ("fit to result"), else `None`.
+pub fn result_box(alpha: &Mask, params: &Params) -> Option<Rect> {
+    params.background.fit_to_result.then(|| crop::finished_bbox(alpha, params.mask.offset, params.foreground.feather)).flatten()
+}
+
+/// Alpha after offset and feathering at full resolution.
 pub fn finished_alpha(alpha: &Mask, params: &Params) -> Mask {
     finish_alpha_scaled(alpha.clone(), params.mask.offset, params.foreground.feather, 1.0)
 }

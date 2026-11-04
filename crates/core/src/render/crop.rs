@@ -93,13 +93,32 @@ pub fn largest_ratio_rect(canvas: (f64, f64), ratio: (u32, u32)) -> Rect {
     Rect::new(x0, y0, x0 + w, y0 + h)
 }
 
-/// The crop actually applied by the preview overlay and by export.
-/// `finished_alpha` is only read when `fit_to_result` is on.
-pub fn effective_crop(params: &Params, finished_alpha: Option<&Mask>, canvas: (f64, f64)) -> Rect {
+/// The box of the result once the boundary offset and the feathering are applied, found from the mask before them:
+/// the box of the visible pixels, moved out (or in) by the reach of the offset and out by the feather radius, within
+/// the picture. It is exact for a hard mask without offset or feather and a pixel or two larger otherwise; filtering
+/// the whole mask to know it exactly cost hundreds of milliseconds on a large photo at every change.
+pub fn finished_bbox(alpha: &Mask, offset: i32, feather: u32) -> Option<Rect> {
+    let bb = alpha_bbox(alpha)?;
+    // The offset is an elliptical kernel of size k = |offset| + 2 (see `render::finished_alpha`): growing, it reaches
+    // k / 2 on one side; shrinking, it takes at least (k - 1) / 2 on every side (an even kernel is lopsided by one).
+    let k = offset.unsigned_abs() + 2;
+    let grow = match offset {
+        0 => 0.0,
+        o if o > 0 => (k / 2) as f64,
+        _ => -(((k - 1) / 2) as f64),
+    } + feather as f64;
+    let (w, h) = (alpha.w as f64, alpha.h as f64);
+    let r = Rect::new((bb.x0 - grow).max(0.0), (bb.y0 - grow).max(0.0), (bb.x1 + grow).min(w), (bb.y1 + grow).min(h));
+    (r.width() > 0.0 && r.height() > 0.0).then_some(r)
+}
+
+/// The crop actually applied by the preview overlay and by export. `result_box` is the box of the result
+/// ([`finished_bbox`]), only read when `fit_to_result` is on.
+pub fn effective_crop(params: &Params, result_box: Option<Rect>, canvas: (f64, f64)) -> Rect {
     let full = Rect::new(0.0, 0.0, canvas.0, canvas.1);
     let ratio = parse_ratio(&params.background.aspect_ratio);
     if params.background.fit_to_result {
-        if let Some(bb) = finished_alpha.and_then(alpha_bbox) {
+        if let Some(bb) = result_box {
             // A visible shadow is part of the result: keep it inside the crop.
             let bb = if params.shadow.enabled {
                 let (dx, dy, r) = (params.shadow.offset_x as f64, params.shadow.offset_y as f64, params.shadow.blur_radius as f64);
@@ -141,9 +160,9 @@ mod tests {
         let mut p = Params::default();
         p.background.fit_to_result = true;
         let empty = Mask::new(200, 100);
-        assert_eq!(effective_crop(&p, Some(&empty), (200.0, 100.0)), Rect::new(0.0, 0.0, 200.0, 100.0));
+        assert_eq!(effective_crop(&p, alpha_bbox(&empty), (200.0, 100.0)), Rect::new(0.0, 0.0, 200.0, 100.0));
         p.background.aspect_ratio = "1:1".into();
-        assert_eq!(effective_crop(&p, Some(&empty), (200.0, 100.0)), Rect::new(50.0, 0.0, 150.0, 100.0));
+        assert_eq!(effective_crop(&p, alpha_bbox(&empty), (200.0, 100.0)), Rect::new(50.0, 0.0, 150.0, 100.0));
     }
 
     #[test]
@@ -157,14 +176,40 @@ mod tests {
                 alpha.data[y * 200 + x] = 255;
             }
         }
-        let plain = effective_crop(&p, Some(&alpha), (200.0, 100.0));
+        let plain = effective_crop(&p, alpha_bbox(&alpha), (200.0, 100.0));
         assert_eq!(plain, Rect::new(80.0, 40.0, 100.0, 60.0));
         p.shadow.enabled = true;
         p.shadow.blur_radius = 5;
         p.shadow.offset_x = 20;
         p.shadow.offset_y = 0;
-        let with = effective_crop(&p, Some(&alpha), (200.0, 100.0));
+        let with = effective_crop(&p, alpha_bbox(&alpha), (200.0, 100.0));
         assert_eq!(with, Rect::new(80.0, 35.0, 125.0, 65.0), "the box grows right by the offset plus the blur, up and down by the blur");
+    }
+
+    #[test]
+    fn the_result_box_follows_the_offset_and_the_feather_like_the_filtered_mask() {
+        let mut alpha = Mask::new(100, 80);
+        for y in 30..50 {
+            for x in 40..60 {
+                alpha.data[y * 100 + x] = 255;
+            }
+        }
+        for (offset, feather) in [(0, 0), (6, 0), (-6, 0), (0, 5), (4, 3), (-3, 8)] {
+            let estimate = finished_bbox(&alpha, offset, feather).unwrap();
+            let p = Params { mask: crate::params::MaskParams { offset, graphcut: false }, ..Params::default() };
+            let mut p = p;
+            p.foreground.feather = feather;
+            let exact = alpha_bbox(&crate::render::finished_alpha(&alpha, &p)).unwrap();
+            for (e, x) in [(estimate.x0, exact.x0), (estimate.y0, exact.y0)] {
+                assert!(e <= x && x - e <= 2.0, "offset {offset} feather {feather}: {estimate:?} vs {exact:?}");
+            }
+            for (e, x) in [(estimate.x1, exact.x1), (estimate.y1, exact.y1)] {
+                assert!(e >= x && e - x <= 2.0, "offset {offset} feather {feather}: {estimate:?} vs {exact:?}");
+            }
+        }
+        assert_eq!(finished_bbox(&alpha, 0, 0), alpha_bbox(&alpha), "a hard mask: exact");
+        assert_eq!(finished_bbox(&Mask::filled(10, 10, 255), 5, 5), Some(Rect::new(0.0, 0.0, 10.0, 10.0)), "never past the picture");
+        assert!(finished_bbox(&Mask::new(10, 10), 5, 5).is_none());
     }
 
     #[test]
@@ -221,10 +266,10 @@ mod tests {
         let mut p = Params::default();
         p.background.fit_to_result = true;
         p.background.padding = 10;
-        let r = effective_crop(&p, Some(&alpha), (100.0, 100.0));
+        let r = effective_crop(&p, alpha_bbox(&alpha), (100.0, 100.0));
         assert_eq!(r, Rect::new(38.0, 38.0, 62.0, 62.0));
         p.background.aspect_ratio = "2:1".into();
-        let r = effective_crop(&p, Some(&alpha), (100.0, 100.0));
+        let r = effective_crop(&p, alpha_bbox(&alpha), (100.0, 100.0));
         assert!((ratio_of(r) - 2.0).abs() < 1e-9);
     }
 
@@ -296,20 +341,20 @@ mod tests {
         p.background.fit_to_result = true;
         p.background.padding = 0;
         p.background.aspect_ratio = "16:9".into();
-        let r = effective_crop(&p, Some(&alpha), (100.0, 100.0));
+        let r = effective_crop(&p, alpha_bbox(&alpha), (100.0, 100.0));
         assert!((ratio_of(r) - 16.0 / 9.0).abs() < 1e-9);
         assert!((r.height() - 100.0).abs() < 1e-9, "the subject keeps its full height: {r:?}");
         assert!(r.x0 < 0.0 && r.x1 > 100.0, "the canvas grows on both sides: {r:?}");
         // Without a ratio, the padding of a subject that touches the picture is no longer lost either.
         p.background.aspect_ratio = "free".into();
         p.background.padding = 10;
-        let r = effective_crop(&p, Some(&alpha), (100.0, 100.0));
+        let r = effective_crop(&p, alpha_bbox(&alpha), (100.0, 100.0));
         assert!((r.height() - 120.0).abs() < 1e-9 && r.y0 < 0.0 && r.y1 > 100.0, "{r:?}");
         // The growth is bounded.
         let sliver = Mask::filled(100, 10, 255);
         p.background.padding = 0;
         p.background.aspect_ratio = "1:1".into();
-        let r = effective_crop(&p, Some(&sliver), (100.0, 10.0));
+        let r = effective_crop(&p, alpha_bbox(&sliver), (100.0, 10.0));
         assert!(r.width() <= MAX_EXTENT * 100.0 + 1e-9 && r.height() <= MAX_EXTENT * 10.0 + 1e-9, "{r:?}");
         assert!((ratio_of(r) - 1.0).abs() < 1e-9, "the ratio is kept");
     }
