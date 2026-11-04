@@ -162,7 +162,7 @@ Create `models/<name>/model.onnx` and a `model.json` next to it:
 }
 ```
 
-`output` is `sigmoid` (the model returns logits), `minmax` (rescale the raw output) or `none` (already 0..1). Models are described by data only, so adding one never needs a code change.
+`output` is `sigmoid` (the model returns logits), `minmax` (rescale the raw output) or `none` (already 0..1). Models are described by data only, so adding one never needs a code change. The file names (`file_name`, `files`) are plain names inside that folder: a `model.json` that points anywhere else is ignored.
 
 ### Plug-ins
 

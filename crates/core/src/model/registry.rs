@@ -131,6 +131,12 @@ impl ModelSpec {
         }
     }
 
+    /// Whether every name this spec puts on disk stays inside the models folder: its folder and each of its files is
+    /// one plain path component (a `model.json` dropped in by hand could say `../somewhere`).
+    pub fn names_are_safe(&self) -> bool {
+        is_plain_name(self.folder.as_deref().unwrap_or(&self.id)) && self.all_files().iter().all(|f| is_plain_name(&f.name))
+    }
+
     /// Total download size in bytes.
     pub fn total_size(&self) -> u64 {
         self.all_files().iter().map(|f| f.size_bytes).sum()
@@ -313,9 +319,11 @@ impl ModelRegistry {
                 let json = e.path().join("model.json");
                 if let Ok(text) = fs::read_to_string(&json) {
                     if let Ok(mut spec) = serde_json::from_str::<ModelSpec>(&text) {
-                        if is_plain_name(&spec.id) && is_plain_name(&folder) && !specs.iter().any(|s| s.id == spec.id) {
+                        if is_plain_name(&spec.id) && !specs.iter().any(|s| s.id == spec.id) {
                             spec.folder = (folder != spec.id).then_some(folder);
-                            specs.push(spec);
+                            if spec.names_are_safe() {
+                                specs.push(spec);
+                            }
                         }
                     }
                 }
@@ -372,8 +380,8 @@ impl ModelRegistry {
         if https_only && files.iter().any(|f| !f.url.starts_with("https://")) {
             return Err(Error::Download("model URL must use HTTPS".into()));
         }
-        if !is_plain_name(spec.folder.as_deref().unwrap_or(&spec.id)) {
-            return Err(Error::Download(format!("model id '{}' is not a valid folder name", spec.id)));
+        if !spec.names_are_safe() {
+            return Err(Error::Download(format!("model '{}' names a folder or a file outside the models folder", spec.id)));
         }
         let dir = self.model_dir(spec);
         fs::create_dir_all(&dir)?;
@@ -669,6 +677,31 @@ mod tests {
         assert!(victim.exists(), "nothing outside the models folder was removed");
         assert!(matches!(reg.download(&spec, &mut |_, _| {}, &AtomicBool::new(false)), Err(Error::Download(_))));
         fs::remove_dir_all(victim).ok();
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn file_names_that_could_leave_the_model_folder_are_refused() {
+        let dir = tmp("filenames");
+        for (folder, json) in [
+            ("a", r#"{"id":"a","name":"A","license":"MIT","file_name":"../outside.onnx"}"#),
+            ("b", r#"{"id":"b","name":"B","license":"MIT","files":[{"name":"..\\evil.dll","url":"https://x/y","sha256":"00"}]}"#),
+            ("c", r#"{"id":"c","name":"C","license":"MIT","file_name":"sub/model.onnx"}"#),
+            ("ok", r#"{"id":"ok","name":"OK","license":"MIT","file_name":"my.model.onnx"}"#),
+        ] {
+            fs::create_dir_all(dir.join(folder)).unwrap();
+            fs::write(dir.join(folder).join("model.json"), json).unwrap();
+        }
+        let reg = ModelRegistry::new(&dir);
+        for id in ["a", "b", "c"] {
+            assert!(reg.get(id).is_none(), "{id} is not listed");
+        }
+        assert!(reg.get("ok").is_some());
+        // A spec built in code is refused too, before anything is written.
+        let mut spec = builtin_catalog().remove(0);
+        spec.file_name = "../../x.onnx".into();
+        assert!(matches!(reg.download(&spec, &mut |_, _| {}, &AtomicBool::new(false)), Err(Error::Download(_))));
+        assert!(!dir.parent().unwrap().join("x.onnx").exists());
         fs::remove_dir_all(dir).ok();
     }
 
