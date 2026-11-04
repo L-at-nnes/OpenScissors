@@ -76,18 +76,35 @@ impl Settings {
     /// field (the rest of the file is kept); when anything had to be dropped, the original file is first copied to
     /// `settings.json.bak` so nothing the user typed is lost for good.
     pub fn load(path: &Path) -> Self {
-        let Ok(text) = std::fs::read_to_string(path) else { return Self::default().sanitized() };
-        let (mut s, clean) = Self::from_json(&text);
-        if !clean {
-            let mut bak = path.as_os_str().to_owned();
-            bak.push(".bak");
-            match std::fs::copy(path, &bak) {
-                Ok(_) => eprintln!("OpenScissors: some settings were invalid; the original file is kept in {}", Path::new(&bak).display()),
-                Err(e) => eprintln!("OpenScissors: some settings were invalid and the backup failed: {e}"),
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Self::default().sanitized(),
+            Err(e) => {
+                // There but unreadable (locked, no permission): the defaults are used, and the file is copied first
+                // when possible, since the next save replaces it.
+                eprintln!("OpenScissors: cannot read the settings ({e})");
+                Self::back_up(path);
+                return Self::default().sanitized();
             }
+        };
+        // A file edited by hand may have been saved in another encoding: what can be read is kept.
+        let utf8 = std::str::from_utf8(&bytes).is_ok();
+        let (mut s, clean) = Self::from_json(&String::from_utf8_lossy(&bytes));
+        if !clean || !utf8 {
+            Self::back_up(path);
         }
         s.sanitize();
         s
+    }
+
+    /// Copy `path` to `path.bak`, so that a file that had to be changed or replaced is not lost.
+    fn back_up(path: &Path) {
+        let mut bak = path.as_os_str().to_owned();
+        bak.push(".bak");
+        match std::fs::copy(path, &bak) {
+            Ok(_) => eprintln!("OpenScissors: some settings could not be read; the original file is kept in {}", Path::new(&bak).display()),
+            Err(e) => eprintln!("OpenScissors: some settings could not be read and the backup failed: {e}"),
+        }
     }
 
     /// Parse `text` field by field, nested ones included. Returns the settings and whether every value was accepted.
@@ -219,6 +236,24 @@ mod tests {
         std::fs::write(&clean, "{ not json").unwrap();
         assert_eq!(Settings::load(&clean).locale, "en");
         assert_eq!(std::fs::read_to_string(dir.join("clean.json.bak")).unwrap(), "{ not json");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_file_saved_in_another_encoding_keeps_what_it_can_and_is_backed_up() {
+        let dir = std::env::temp_dir().join(format!("osc-settings-latin1-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("settings.json");
+        // Hand-edited in a Latin-1 editor: the folder name holds a byte that is not UTF-8.
+        let bytes = b"{\"locale\":\"fr\",\"jpeg_quality\":80,\"last_dir\":\"C:/Photos/\xe9t\xe9\"}".to_vec();
+        std::fs::write(&file, &bytes).unwrap();
+        let s = Settings::load(&file);
+        assert_eq!((s.locale.as_str(), s.jpeg_quality), ("fr", 80), "the readable values are kept");
+        assert_eq!(
+            std::fs::read(dir.join("settings.json.bak")).unwrap(),
+            bytes,
+            "the original bytes are saved before a save replaces them"
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 
