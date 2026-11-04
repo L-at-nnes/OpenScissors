@@ -222,5 +222,8 @@
   "Before and after": "Avant et après",
   "Before and after (C)": "Avant et après (C)",
   "An internal error stopped this action; the details are in data/crash.log.": "Une erreur interne a interrompu cette action ; les détails sont dans data/crash.log.",
-  "The model could not be loaded": "Le modèle n'a pas pu être chargé"
+  "The model could not be loaded": "Le modèle n'a pas pu être chargé",
+  "Quit OpenScissors?": "Quitter OpenScissors ?",
+  "A batch, a download or a save is still running; quitting stops it before it is finished.": "Un traitement par lot, un téléchargement ou un enregistrement est en cours ; quitter l'arrête avant qu'il soit terminé.",
+  "Quit anyway": "Quitter quand même"
 }

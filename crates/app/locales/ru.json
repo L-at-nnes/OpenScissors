@@ -222,5 +222,8 @@
   "Before and after": "До и после",
   "Before and after (C)": "До и после (C)",
   "An internal error stopped this action; the details are in data/crash.log.": "Внутренняя ошибка прервала это действие; подробности в data/crash.log.",
-  "The model could not be loaded": "Не удалось загрузить модель"
+  "The model could not be loaded": "Не удалось загрузить модель",
+  "Quit OpenScissors?": "Выйти из OpenScissors?",
+  "A batch, a download or a save is still running; quitting stops it before it is finished.": "Ещё идёт пакетная обработка, загрузка или сохранение; при выходе оно прервётся, не завершившись.",
+  "Quit anyway": "Всё равно выйти"
 }

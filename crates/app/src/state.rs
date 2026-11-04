@@ -3,7 +3,7 @@
 use openscissors_core::sync::LockExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use openscissors_core::document::Document;
@@ -91,10 +91,21 @@ pub struct AppState {
     pub smart_gen: AtomicU64,
     /// Bumped by every prediction that starts: the result of an older one (another model) is dropped.
     pub predict_gen: AtomicU64,
+    /// Exports and project saves in progress (closing the window asks first while one runs).
+    pub saving: AtomicUsize,
     /// Bumped by every model load that is asked for: a load that is no longer the latest is skipped or dropped.
     pub model_gen: AtomicU64,
     /// Held while a model loads, so that two models are never loaded at the same time.
     pub model_load: Mutex<()>,
+}
+
+/// See [`AppState::saving`].
+pub struct SavingGuard<'a>(&'a AtomicUsize);
+
+impl Drop for SavingGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Default for AppState {
@@ -125,9 +136,21 @@ impl AppState {
             predicted_doc: Mutex::new(None),
             smart_gen: AtomicU64::new(0),
             predict_gen: AtomicU64::new(0),
+            saving: AtomicUsize::new(0),
             model_gen: AtomicU64::new(0),
             model_load: Mutex::new(()),
         }
+    }
+
+    /// Whether a batch, a download or a save is still running (they stop unfinished if the application quits).
+    pub fn tasks_running(&self) -> bool {
+        self.batch.guard().is_some() || !self.downloads.guard().is_empty() || self.saving.load(Ordering::SeqCst) > 0
+    }
+
+    /// Count a save as running until the returned guard is dropped.
+    pub fn saving(&self) -> SavingGuard<'_> {
+        self.saving.fetch_add(1, Ordering::SeqCst);
+        SavingGuard(&self.saving)
     }
 
     pub fn settings_path(&self) -> PathBuf {

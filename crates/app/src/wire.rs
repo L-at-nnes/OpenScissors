@@ -120,13 +120,21 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
         if let Some(ui) = weak.upgrade() {
             t.borrow_mut().finish(&ui);
         }
-        if !c.is_modified() {
+        let busy = c.st.tasks_running();
+        if !c.is_modified() && !busy {
             return slint::CloseRequestResponse::HideWindow;
         }
-        // The question is a dialog of the interface: it cannot be answered while this thread waits.
+        // The questions are dialogs of the interface: they cannot be answered while this thread waits.
         let c = c.clone();
         c.clone().spawn(move || {
-            if c.confirm_discard_sync() {
+            let quit_anyway = !busy
+                || crate::dialogs::confirm(
+                    &crate::i18n::t("Quit OpenScissors?"),
+                    &crate::i18n::t("A batch, a download or a save is still running; quitting stops it before it is finished."),
+                    crate::i18n::t("Quit anyway"),
+                    crate::i18n::t("Cancel"),
+                );
+            if quit_anyway && c.confirm_discard_sync() {
                 let _ = slint::invoke_from_event_loop(|| {
                     let _ = slint::quit_event_loop();
                 });

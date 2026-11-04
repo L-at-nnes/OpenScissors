@@ -222,5 +222,8 @@
   "Before and after": "Vorher und nachher",
   "Before and after (C)": "Vorher und nachher (C)",
   "An internal error stopped this action; the details are in data/crash.log.": "Ein interner Fehler hat diese Aktion abgebrochen; die Details stehen in data/crash.log.",
-  "The model could not be loaded": "Das Modell konnte nicht geladen werden"
+  "The model could not be loaded": "Das Modell konnte nicht geladen werden",
+  "Quit OpenScissors?": "OpenScissors beenden?",
+  "A batch, a download or a save is still running; quitting stops it before it is finished.": "Eine Stapelverarbeitung, ein Download oder ein Speichervorgang läuft noch; beim Beenden wird er unvollständig abgebrochen.",
+  "Quit anyway": "Trotzdem beenden"
 }

@@ -294,6 +294,7 @@ impl Ctl {
     }
 
     pub fn export_to(self: &Arc<Self>, target: &Path) -> Result<(), String> {
+        let _saving = self.st.saving();
         let format = Format::from_path(target).ok_or_else(|| t("Unsupported file type: use png, jpg, webp, avif, bmp or tiff."))?;
         let (quality, want16) = {
             let s = self.st.settings.guard();
@@ -371,6 +372,7 @@ impl Ctl {
             }
             let marker = me.st.settings.guard().marker_size;
             let model = me.active_model_ref();
+            let _saving = me.st.saving();
             // Taken in a moment under the lock; encoding and writing the file run without it.
             let snapshot = me.st.doc.guard().as_ref().map(project::ProjectSnapshot::of);
             let result = match snapshot {
