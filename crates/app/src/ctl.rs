@@ -123,6 +123,9 @@ pub struct Ux {
     pub smart_mode: SelectionMode,
     pub smart_busy: bool,
     pub stroke: Option<Vec<(f64, f64)>>,
+    /// The drawn part of `stroke` as path commands, for the view it was drawn in: a long stroke only appends its new
+    /// points instead of writing every point again at each move.
+    pub stroke_svg: Option<(View, usize, String)>,
     pub pan_from: Option<(f64, f64)>,
     pub drag: Option<SmartDrag>,
     pub hover: Option<(i32, f64, f64)>,
@@ -195,6 +198,21 @@ pub fn canvas_of(doc: &DocState) -> Region {
         x1: doc.crop.x1.max(doc.width as f64),
         y1: doc.crop.y1.max(doc.height as f64),
     }
+}
+
+/// The path commands of the stroke `points` in the view `v`, reusing `cached` (commands already written for the first
+/// points in the same view) so that each new point costs one command, not the whole stroke again.
+fn stroke_commands(cached: Option<(View, usize, String)>, points: &[(f64, f64)], v: View) -> (View, usize, String) {
+    let (mut done, mut d) = match cached {
+        Some((view, n, d)) if view == v && n <= points.len() => (n, d),
+        _ => (0, String::new()),
+    };
+    for (x, y) in &points[done..] {
+        let (sx, sy) = to_screen(&v, *x, *y);
+        d.push_str(&format!("{}{:.1} {:.1} ", if done == 0 { "M" } else { "L" }, sx, sy));
+        done += 1;
+    }
+    (v, done, d)
 }
 
 pub fn params_v(p: &Params) -> ParamsV {
@@ -281,6 +299,7 @@ impl Ctl {
                 smart_mode: SelectionMode::Replace,
                 smart_busy: false,
                 stroke: None,
+                stroke_svg: None,
                 pan_from: None,
                 drag: None,
                 hover: None,
@@ -623,13 +642,15 @@ impl Ctl {
         b.set_cursor(self.cursor(&ux));
 
         // Mark being drawn.
-        let (path, color, width) = match (&ux.stroke, ux.tool) {
-            (Some(points), tool) if !points.is_empty() => {
-                let mut d = String::new();
-                for (i, (x, y)) in points.iter().enumerate() {
-                    let (sx, sy) = to_screen(&v, *x, *y);
-                    d.push_str(&format!("{}{:.1} {:.1} ", if i == 0 { "M" } else { "L" }, sx, sy));
-                }
+        let cached = ux.stroke_svg.take();
+        let svg = match &ux.stroke {
+            Some(points) if !points.is_empty() => Some(stroke_commands(cached, points, v)),
+            _ => None,
+        };
+        ux.stroke_svg = svg;
+        let (path, color, width) = match (&ux.stroke, ux.tool, &ux.stroke_svg) {
+            (Some(points), tool, Some((_, _, svg))) if !points.is_empty() => {
+                let mut d = svg.clone();
                 if points.len() == 1 {
                     let (sx, sy) = to_screen(&v, points[0].0, points[0].1);
                     d.push_str(&format!("L{:.1} {:.1}", sx + 0.01, sy));
@@ -816,5 +837,24 @@ impl Ctl {
             let name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path);
             self.say(tf("Cannot read the background picture: {file}", &[("file", &name)]), true);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_stroke_only_appends_its_new_points() {
+        let v = View { scale: 2.0, tx: 10.0, ty: 5.0, fit: false };
+        let points: Vec<(f64, f64)> = (0..50).map(|i| (i as f64, (i * 2) as f64)).collect();
+        let whole = stroke_commands(None, &points, v);
+        let first = stroke_commands(None, &points[..30], v);
+        let grown = stroke_commands(Some(first), &points, v);
+        assert_eq!(grown, whole, "appending gives what writing it all gives");
+        assert!(whole.2.starts_with("M10.0 5.0 L12.0 9.0 "));
+        // Another view (a zoom during the stroke) writes it again in that view.
+        let zoomed = View { scale: 4.0, ..v };
+        assert_eq!(stroke_commands(Some(whole), &points, zoomed), stroke_commands(None, &points, zoomed));
     }
 }
