@@ -111,8 +111,11 @@ pub fn write_atomic_with(
     write: impl FnOnce(&mut std::io::BufWriter<std::fs::File>) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     use std::io::Write;
+    // One temporary file per write, even for two writes of the same file at once (saving twice in a row).
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let tmp = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    let tmp = path.with_file_name(format!(".{name}.{}.{n}.tmp", std::process::id()));
     let result = (|| {
         let mut out = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
         write(&mut out)?;
@@ -534,6 +537,36 @@ mod tests {
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file is left");
         // A folder that does not exist is an error, not a silent loss.
         assert!(write_atomic(&dir.join("missing").join("b.json"), b"x").is_err());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn two_writes_of_the_same_file_at_once_never_mix() {
+        let dir = std::env::temp_dir().join(format!("osc-atomic-race-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("out.bin");
+        // Each write comes in pieces with pauses, as a big encoder output does: two of them overlap for sure.
+        let slow = |v: u8| {
+            move |out: &mut std::io::BufWriter<std::fs::File>| {
+                for _ in 0..8 {
+                    std::io::Write::write_all(out, &[v; 1 << 12])?;
+                    std::io::Write::flush(out)?;
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Ok(())
+            }
+        };
+        for _ in 0..3 {
+            std::thread::scope(|s| {
+                let f = &file;
+                let (ra, rb) = (s.spawn(move || write_atomic_with(f, slow(1))), s.spawn(move || write_atomic_with(f, slow(2))));
+                // Replacing a file another thread just replaced may be refused on Windows; it must never be mixed.
+                let _ = (ra.join().unwrap(), rb.join().unwrap());
+            });
+            let got = std::fs::read(&file).unwrap();
+            assert!(got.len() == 8 << 12 && (got.iter().all(|&v| v == 1) || got.iter().all(|&v| v == 2)), "never a mix");
+        }
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file is left");
         std::fs::remove_dir_all(dir).ok();
     }
 
