@@ -8,6 +8,7 @@ use image::{DynamicImage, ImageDecoder, ImageEncoder, ImageReader};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::sync::LockExt;
 use crate::types::{Image, Image16, Mask, Rgba, Rgba16};
 
 /// File extensions that can be opened (the formats the `image` crate is built with). The first frame of a GIF is read.
@@ -116,6 +117,7 @@ pub fn write_atomic_with(
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let tmp = path.with_file_name(format!(".{name}.{}.{n}.tmp", std::process::id()));
+    unfinished().guard().insert(tmp.clone());
     let result = (|| {
         let mut out = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
         write(&mut out)?;
@@ -127,7 +129,29 @@ pub fn write_atomic_with(
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
+    unfinished().guard().remove(&tmp);
     result
+}
+
+/// The temporary files of the writes in progress.
+fn unfinished() -> &'static std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>> {
+    static SET: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>> = std::sync::OnceLock::new();
+    SET.get_or_init(Default::default)
+}
+
+/// Remove the temporary files of the writes that have not finished: the application is closing while an export or a
+/// save still runs, and would otherwise leave a hidden `.name.tmp` next to the file.
+pub fn remove_unfinished_writes() {
+    remove_unfinished(|_| true);
+}
+
+fn remove_unfinished(which: impl Fn(&Path) -> bool) {
+    unfinished().guard().retain(|tmp| {
+        if which(tmp) {
+            let _ = std::fs::remove_file(tmp);
+        }
+        !which(tmp)
+    });
 }
 
 pub fn load_image(path: &Path) -> Result<Image> {
@@ -537,6 +561,33 @@ mod tests {
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file is left");
         // A folder that does not exist is an error, not a silent loss.
         assert!(write_atomic(&dir.join("missing").join("b.json"), b"x").is_err());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_write_cut_by_closing_leaves_no_temporary_file() {
+        let dir = std::env::temp_dir().join(format!("osc-atomic-close-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("big.png");
+        let started = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let go = started.clone();
+        let writer = {
+            let file = file.clone();
+            std::thread::spawn(move || {
+                write_atomic_with(&file, |out| {
+                    std::io::Write::write_all(out, b"half of it")?;
+                    std::io::Write::flush(out)?;
+                    go.wait();
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    std::io::Write::write_all(out, b" and the rest")
+                })
+            })
+        };
+        started.wait();
+        remove_unfinished(|p| p.starts_with(&dir)); // the application closes now (the other tests write too)
+        let _ = writer.join().unwrap(); // the write may fail or finish: it must not leave its temporary file behind
+        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).filter(|n| n != "big.png").collect();
+        assert!(left.is_empty(), "{left:?}");
         std::fs::remove_dir_all(dir).ok();
     }
 

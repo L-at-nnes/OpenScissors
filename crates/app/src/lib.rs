@@ -37,5 +37,8 @@ pub fn run() -> Result<(), slint::PlatformError> {
             slint::Timer::single_shot(std::time::Duration::from_millis(150), move || c.open_path(path));
         }
     }
-    ui.run()
+    let result = ui.run();
+    // Quitting while an export or a save runs: its hidden temporary file is removed.
+    openscissors_core::io::remove_unfinished_writes();
+    result
 }
