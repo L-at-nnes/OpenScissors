@@ -88,6 +88,9 @@ struct ProjectFile {
     /// Manual crop rectangle (an extension of the base layout).
     #[serde(default)]
     crop: Option<Rect>,
+    /// `layers.background.image_path` relative to the folder of the project (see `EncodedImage::orig_rel`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    background_rel: Option<String>,
     #[serde(default)]
     ui: Ui,
 }
@@ -142,6 +145,16 @@ fn relative_path(target: &Path, base: &Path) -> Option<String> {
     let mut parts: Vec<String> = vec!["..".into(); b.len() - common];
     parts.extend(t[common..].iter().map(|c| c.as_os_str().to_string_lossy().into_owned()));
     Some(parts.join("/"))
+}
+
+/// A file of a project that is not where it was saved (`stored`) but is found at `rel` from the project `project`
+/// (the folder holding both was moved or copied). `None` when `stored` is still there or nothing is found.
+fn beside_project(stored: Option<&str>, rel: Option<&str>, project: &Path) -> Option<String> {
+    if stored.is_some_and(|s| Path::new(s).is_file()) {
+        return None;
+    }
+    let found = join_normalized(project.parent()?, rel?);
+    found.is_file().then(|| found.display().to_string())
 }
 
 /// `dir` followed by the relative path `rel`, with the `..` and `.` parts worked out.
@@ -242,6 +255,7 @@ pub fn save_snapshot(doc: &ProjectSnapshot, model: Option<ModelRef>, marker_size
             shadow: p.shadow.clone(),
         },
         crop: p.crop,
+        background_rel: p.background.image_path.as_deref().zip(path.parent()).and_then(|(b, dir)| relative_path(Path::new(b), dir)),
         ui: Ui { graphcut: p.mask.graphcut, marker_size },
     };
     // Written as it is serialised: the pictures are already base64 text, the whole file is not built a second time.
@@ -327,16 +341,15 @@ pub fn load_project(path: &Path) -> Result<LoadedProject> {
         crop: clean_crop(file.crop, image.w, image.h),
     };
     params.sanitize();
+    // The background picture, like the source: where it was, else where it is relative to the project.
+    if let Some(found) = beside_project(params.background.image_path.as_deref(), file.background_rel.as_deref(), path) {
+        params.background.image_path = Some(found);
+    }
     let warning = (file.version > PROJECT_VERSION)
         .then(|| format!("This project was made by a newer version (format {}); some settings may be ignored.", file.version));
     // Where it was when the project was saved; if it is not there any more (the folder was moved or copied), where it
     // is relative to the project.
-    let stored = file.image.orig_path;
-    let beside = file.image.orig_rel.as_deref().zip(path.parent()).map(|(rel, dir)| join_normalized(dir, rel)).filter(|p| p.is_file());
-    let orig_path = match beside {
-        Some(p) if !stored.as_deref().is_some_and(|s| Path::new(s).is_file()) => Some(p.display().to_string()),
-        _ => stored,
-    };
+    let orig_path = beside_project(file.image.orig_path.as_deref(), file.image.orig_rel.as_deref(), path).or(file.image.orig_path);
     Ok(LoadedProject {
         image,
         deep,
@@ -534,6 +547,25 @@ mod tests {
         std::fs::rename(root.join("a"), root.join("b")).unwrap();
         let l = load_project(&root.join("b").join("work").join("p.osproj")).unwrap();
         assert_eq!(l.orig_path.as_deref(), Some(root.join("b").join("photos").join("me.png").display().to_string().as_str()));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn the_background_picture_is_found_again_when_the_folder_moves() {
+        let root = tmp("bgmove");
+        let (pics, work) = (root.join("a").join("pics"), root.join("a").join("work"));
+        std::fs::create_dir_all(&pics).unwrap();
+        std::fs::create_dir_all(&work).unwrap();
+        let bg = pics.join("beach.png");
+        crate::io::save_rgba(&bg, &crate::types::Rgba::new(2, 2), crate::io::Format::Png, 95, [0; 3]).unwrap();
+        let mut d = Document::new(1, Image::filled(8, 6, [1, 2, 3]), None);
+        d.set_param("background.image_path", json!(bg.display().to_string())).unwrap();
+        d.set_param("background.mode", json!("image")).unwrap();
+        save_project(&d, None, 30, &work.join("p.osproj")).unwrap();
+        std::fs::rename(root.join("a"), root.join("b")).unwrap();
+        let l = load_project(&root.join("b").join("work").join("p.osproj")).unwrap();
+        let moved = root.join("b").join("pics").join("beach.png");
+        assert_eq!(l.params.background.image_path.as_deref(), Some(moved.display().to_string().as_str()));
         std::fs::remove_dir_all(root).ok();
     }
 
