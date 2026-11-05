@@ -27,8 +27,9 @@ const USAGE: &str = "usage:
   openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>]
   openscissors-cli cut <in> <out.png|webp|avif|tiff> [--model <id|file.onnx>]
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif] [--quality 95]
-                         [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>]
-      cuts out every image of the folder; --defaults applies the layer settings saved in the app;
+                         [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>] [--8bit]
+      cuts out every image of the folder (a picture that is already cut out keeps its transparency, a 16-bit one
+      stays 16-bit in PNG unless --8bit); --defaults applies the layer settings saved in the app;
       --resume leaves alone the images whose result is already in <dst-folder>, so that running the same
       command again after an error or an interruption does only what is left; --report writes a JSON
       report (one entry per image: done, skipped or failed, the file written, the error, the time)";
@@ -170,8 +171,14 @@ fn run(args: Vec<String>) -> Result<(), String> {
             };
             let files = batch::validate(Path::new(src), Path::new(dst)).map_err(|e| e.to_string())?;
             let predictor = load_predictor(&registry, flag(&args, "--model"))?;
-            let opts =
-                BatchOptions { dst: PathBuf::from(dst), format, quality, params, skip_existing: args.iter().any(|a| a == "--resume") };
+            let opts = BatchOptions {
+                dst: PathBuf::from(dst),
+                format,
+                quality,
+                params,
+                skip_existing: args.iter().any(|a| a == "--resume"),
+                export_16bit: !args.iter().any(|a| a == "--8bit"),
+            };
             let predict = |img: &openscissors_core::types::Image| predictor.predict(img, true);
             let report = batch::run_batch(
                 &files,

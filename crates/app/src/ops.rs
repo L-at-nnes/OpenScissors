@@ -697,9 +697,15 @@ impl Ctl {
             self.say(t("No AI model is ready. Choose and download a model first."), true);
             return;
         };
-        let (src, dst, defaults, quality) = {
+        let (src, dst, defaults, quality, export_16bit) = {
             let s = self.st.settings.guard();
-            (s.batch_src.clone().unwrap_or_default(), s.batch_dst.clone().unwrap_or_default(), s.defaults.clone(), s.jpeg_quality)
+            (
+                s.batch_src.clone().unwrap_or_default(),
+                s.batch_dst.clone().unwrap_or_default(),
+                s.defaults.clone(),
+                s.jpeg_quality,
+                s.export_16bit,
+            )
         };
         // The look of the image being edited, when asked for and there is one; otherwise the saved defaults.
         let open_params = if self.ux.guard().batch.settings == 1 { self.st.doc.guard().as_ref().map(|d| d.params().clone()) } else { None };
@@ -740,7 +746,7 @@ impl Ctl {
         };
         self.spawn_or(
             move || {
-                let opts = BatchOptions { dst, format, quality, params, skip_existing: false };
+                let opts = BatchOptions { dst, format, quality, params, skip_existing: false, export_16bit };
                 let predict = |img: &openscissors_core::types::Image| model.predict(img, true);
                 let report = batch::run_batch(
                     &files,

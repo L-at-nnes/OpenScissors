@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::document::Document;
 use crate::error::{Error, Result};
-use crate::io::{load_image, save_rgba, Format, IMAGE_EXTENSIONS};
+use crate::io::{load_image_deep, save_rgba16_tagged, save_rgba_tagged, Format, IMAGE_EXTENSIONS};
 use crate::params::{BgMode, Params};
 use crate::types::{Image, Mask};
 
@@ -22,6 +22,8 @@ pub struct BatchOptions {
     /// Leave alone the images whose result (`name.ext`) is already in the destination: running the same batch again
     /// after an interruption or a failure then only does what is left.
     pub skip_existing: bool,
+    /// Write 16-bit PNG or TIFF for a 16-bit source when the settings allow it, as the interactive export does.
+    pub export_16bit: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -155,19 +157,27 @@ fn process_one(file: &Path, name: &str, opts: &BatchOptions, predict: &dyn Fn(&I
     if opts.skip_existing && existing.is_file() {
         return Ok(Outcome::AlreadyThere(existing));
     }
-    let image = load_image(file)?;
-    let mask = predict(&image)?;
+    // Opened as the window opens it: a picture that is already cut out keeps its own transparency (no model runs on
+    // it), a colour profile is converted to sRGB and said in the result, 16-bit samples are kept.
+    let loaded = load_image_deep(file)?;
+    let mask = match loaded.alpha {
+        Some(alpha) => alpha,
+        None => predict(&loaded.image)?,
+    };
     let mut params = opts.params.clone();
     params.crop = None; // a crop belongs to one image, not to a style
     let flatten = if params.background.mode == BgMode::Color { params.background.color } else { [255; 3] };
-    let mut doc = Document::new(0, image, Some(file.to_path_buf())).with_params(params);
+    let mut doc = Document::new(0, loaded.image, Some(file.to_path_buf())).with_deep(loaded.deep).with_params(params);
     doc.set_prediction(Some(mask));
     let job = doc.export_job();
     job.check_memory()?;
-    let out = job.run();
     let stem = name.strip_suffix(&format!(".{}", opts.format.extension())).unwrap_or(name);
     let target = unique_path(&opts.dst, stem, opts.format.extension());
-    save_rgba(&target, &out, opts.format, opts.quality, flatten)?;
+    let deep = (opts.export_16bit && matches!(opts.format, Format::Png | Format::Tiff)).then(|| job.run_deep()).flatten();
+    match deep {
+        Some(deep) => save_rgba16_tagged(&target, &deep, opts.format, loaded.converted)?,
+        None => save_rgba_tagged(&target, &job.run(), opts.format, opts.quality, flatten, loaded.converted)?,
+    }
     Ok(Outcome::Written(target))
 }
 
@@ -213,6 +223,7 @@ pub fn run_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::save_rgba;
     use crate::types::Rgba;
 
     fn tmp(name: &str) -> PathBuf {
@@ -242,7 +253,7 @@ mod tests {
     }
 
     fn opts(dst: &Path, format: Format) -> BatchOptions {
-        BatchOptions { dst: dst.into(), format, quality: 90, params: Params::default(), skip_existing: false }
+        BatchOptions { dst: dst.into(), format, quality: 90, params: Params::default(), skip_existing: false, export_16bit: true }
     }
 
     #[test]
@@ -360,6 +371,36 @@ mod tests {
         let again = run_batch(&files, &o, &half_mask, &mut |_| {}, &AtomicBool::new(false));
         assert_eq!((again.processed, again.skipped), (0, 3), "everything is found on the second run");
         assert_eq!(output_names(&[PathBuf::from("x.png"), PathBuf::from("y.png")], "webp"), ["x.webp", "y.webp"]);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_cut_out_or_16_bit_source_comes_out_as_the_window_would_export_it() {
+        let root = tmp("asopen");
+        let (src, dst) = (root.join("src"), root.join("dst"));
+        std::fs::create_dir_all(&src).unwrap();
+        // Already cut out: the model is not asked, the transparency is kept.
+        let mut cut = Rgba::new(8, 4);
+        for (i, p) in cut.data.chunks_exact_mut(4).enumerate() {
+            p.copy_from_slice(&[10, 20, 30, if i % 8 < 3 { 255 } else { 0 }]);
+        }
+        save_rgba(&src.join("cut.png"), &cut, Format::Png, 95, [255; 3]).unwrap();
+        // A 16-bit picture: its samples survive in a PNG result.
+        let deep = crate::types::Rgba16 { w: 6, h: 3, data: [40_000, 40_000, 40_000, 65_535].repeat(6 * 3) };
+        crate::io::save_rgba16(&src.join("deep.png"), &deep, Format::Png).unwrap();
+        let files = validate(&src, &dst).unwrap();
+        let asked = std::cell::Cell::new(0);
+        let predict = |img: &Image| {
+            asked.set(asked.get() + 1);
+            Ok(Mask::filled(img.w, img.h, 255))
+        };
+        let r = run_batch(&files, &opts(&dst, Format::Png), &predict, &mut |_| {}, &AtomicBool::new(false));
+        assert_eq!((r.processed, asked.get()), (2, 1), "only the picture without transparency needs the model");
+        let out = image::open(dst.join("cut.png")).unwrap().to_rgba8();
+        assert_eq!((out.get_pixel(1, 0).0[3], out.get_pixel(5, 0).0[3]), (255, 0));
+        let d = image::open(dst.join("deep.png")).unwrap();
+        assert!(matches!(d, image::DynamicImage::ImageRgba16(_)), "16-bit result");
+        assert_eq!(d.to_rgba16().get_pixel(1, 1).0[0], 40_000);
         std::fs::remove_dir_all(root).ok();
     }
 
