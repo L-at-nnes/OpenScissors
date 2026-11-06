@@ -26,7 +26,7 @@ const USAGE: &str = "usage:
       and how much each pair agrees
   openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>]
   openscissors-cli cut <in> <out.png|webp|avif|tiff> [--model <id|file.onnx>]
-  openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif] [--quality 95]
+  openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif|tiff|bmp] [--quality 95]
                          [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>] [--8bit]
       cuts out every image of the folder (a picture that is already cut out keeps its transparency, a 16-bit one
       stays 16-bit in PNG unless --8bit); --defaults applies the layer settings saved in the app;
@@ -45,6 +45,50 @@ fn models_dir() -> PathBuf {
 
 fn flag(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+}
+
+/// Refuse an option the command does not know (a typo such as `--resum` would otherwise be ignored without a word)
+/// and an option that needs a value but has none. `with_value` options take the next argument.
+fn check_options(args: &[String], with_value: &[&str], switches: &[&str]) -> Result<(), String> {
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        if a.starts_with("--") {
+            if with_value.contains(&a) {
+                if args.get(i + 1).is_none_or(|v| v.starts_with("--")) {
+                    return Err(format!("{a} needs a value"));
+                }
+                i += 1;
+            } else if !switches.contains(&a) {
+                return Err(format!("unknown option '{a}'\n\n{USAGE}"));
+            }
+        }
+        i += 1;
+    }
+    Ok(())
+}
+
+/// The quality option: 10 to 100.
+fn parse_quality(value: Option<String>) -> Result<u8, String> {
+    match value {
+        None => Ok(95),
+        Some(v) => {
+            v.parse::<u8>().ok().filter(|q| (10..=100).contains(q)).ok_or_else(|| "quality must be a number from 10 to 100".to_string())
+        }
+    }
+}
+
+/// The format option of a batch.
+fn parse_format(value: Option<&str>) -> Result<Format, String> {
+    match value.unwrap_or("png") {
+        "png" => Ok(Format::Png),
+        "jpg" | "jpeg" => Ok(Format::Jpeg),
+        "webp" => Ok(Format::Webp),
+        "avif" => Ok(Format::Avif),
+        "tif" | "tiff" => Ok(Format::Tiff),
+        "bmp" => Ok(Format::Bmp),
+        other => Err(format!("unsupported format '{other}'")),
+    }
 }
 
 fn load_predictor(registry: &ModelRegistry, choice: Option<String>) -> Result<Predictor, String> {
@@ -75,7 +119,12 @@ fn load_predictor(registry: &ModelRegistry, choice: Option<String>) -> Result<Pr
 
 fn run(args: Vec<String>) -> Result<(), String> {
     let registry = ModelRegistry::new(models_dir());
+    let rest = args.get(1..).unwrap_or_default();
     match args.first().map(String::as_str) {
+        Some("--help" | "-h" | "help") => {
+            println!("{USAGE}");
+            Ok(())
+        }
         Some("models") if args.get(1).map(String::as_str) == Some("download") => {
             let id = args.get(2).ok_or("model id expected")?;
             let spec = registry.get(id).ok_or_else(|| format!("unknown model '{id}'"))?;
@@ -103,6 +152,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             }
         }
         Some("compare") => {
+            check_options(rest, &["--models"], &[])?;
             let (input, out_dir) = (args.get(1).ok_or("input expected")?, args.get(2).ok_or("output folder expected")?);
             let ids: Vec<String> = match flag(&args, "--models") {
                 Some(list) => list.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
@@ -152,18 +202,10 @@ fn run(args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         Some("batch") => {
+            check_options(rest, &["--format", "--quality", "--model", "--report"], &["--defaults", "--resume", "--8bit"])?;
             let (src, dst) = (args.get(1).ok_or("source folder expected")?, args.get(2).ok_or("destination folder expected")?);
-            let format = match flag(&args, "--format").as_deref().unwrap_or("png") {
-                "png" => Format::Png,
-                "jpg" | "jpeg" => Format::Jpeg,
-                "webp" => Format::Webp,
-                "avif" => Format::Avif,
-                other => return Err(format!("unsupported format '{other}'")),
-            };
-            let quality = flag(&args, "--quality")
-                .map(|q| q.parse::<u8>().map_err(|_| "quality must be a number from 10 to 100"))
-                .transpose()?
-                .unwrap_or(95);
+            let format = parse_format(flag(&args, "--format").as_deref())?;
+            let quality = parse_quality(flag(&args, "--quality"))?;
             let params = if args.iter().any(|a| a == "--defaults") {
                 Settings::load(&home_dir().join("data").join("settings.json")).defaults
             } else {
@@ -205,6 +247,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             }
         }
         Some(cmd @ ("predict" | "cut")) => {
+            check_options(rest, &["--model"], &[])?;
             let (input, output) = (args.get(1).ok_or("input expected")?, args.get(2).ok_or("output expected")?);
             let predictor = load_predictor(&registry, flag(&args, "--model"))?;
             let image = load_image(Path::new(input)).map_err(|e| e.to_string())?;
@@ -232,5 +275,42 @@ fn main() -> ExitCode {
             eprintln!("{e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn unknown_or_incomplete_options_are_refused() {
+        let known = (&["--format", "--model"][..], &["--resume"][..]);
+        assert!(check_options(&args(&["a", "b", "--format", "png", "--resume"]), known.0, known.1).is_ok());
+        assert!(check_options(&args(&["a", "--resum"]), known.0, known.1).unwrap_err().contains("--resum"));
+        assert!(check_options(&args(&["a", "--format"]), known.0, known.1).unwrap_err().contains("needs a value"));
+        assert!(check_options(&args(&["a", "--model", "--resume"]), known.0, known.1).is_err());
+    }
+
+    #[test]
+    fn quality_and_format_are_checked() {
+        assert_eq!(parse_quality(None), Ok(95));
+        assert_eq!(parse_quality(Some("80".into())), Ok(80));
+        for bad in ["5", "101", "200", "x"] {
+            assert!(parse_quality(Some(bad.into())).is_err(), "{bad}");
+        }
+        assert_eq!(parse_format(Some("tiff")), Ok(Format::Tiff));
+        assert_eq!(parse_format(Some("bmp")), Ok(Format::Bmp));
+        assert_eq!(parse_format(None), Ok(Format::Png));
+        assert!(parse_format(Some("gif")).is_err());
+    }
+
+    #[test]
+    fn help_is_not_an_error() {
+        assert!(run(args(&["--help"])).is_ok());
+        assert!(run(args(&["nonsense"])).is_err());
     }
 }
