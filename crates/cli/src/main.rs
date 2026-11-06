@@ -11,7 +11,7 @@ use std::sync::atomic::AtomicBool;
 use openscissors_core::batch::{self, BatchOptions};
 use openscissors_core::compare;
 use openscissors_core::io::{load_image, save_mask_png, save_rgba, write_atomic, Format};
-use openscissors_core::model::{ModelRegistry, ModelState, Predictor};
+use openscissors_core::model::{ModelKind, ModelRegistry, ModelState, Predictor};
 use openscissors_core::params::Params;
 use openscissors_core::settings::Settings;
 use openscissors_core::types::Rgba;
@@ -105,11 +105,20 @@ fn load_predictor(registry: &ModelRegistry, choice: Option<String>) -> Result<Pr
     }
     let spec = match &choice {
         Some(id) => registry.get(id).ok_or_else(|| format!("unknown model '{id}'"))?,
-        None => registry
-            .available()
-            .into_iter()
-            .find(|s| registry.state(s) == ModelState::Ready)
-            .ok_or("no model downloaded; run `openscissors-cli models download isnet-general-use`")?,
+        None => {
+            // As the application picks: the model chosen there, otherwise the lightest one that fits the memory.
+            let budget = openscissors_core::sysmem::budget_mb();
+            let ready: Vec<_> = registry
+                .available()
+                .into_iter()
+                .filter(|s| s.kind == ModelKind::Segmenter && registry.state(s) == ModelState::Ready)
+                .filter(|s| budget.is_none_or(|b| s.ram_mb as u64 <= b))
+                .collect();
+            let chosen = Settings::load(&home_dir().join("data").join("settings.json")).chosen_model;
+            openscissors_core::model::default_model(&ready, chosen.as_deref())
+                .cloned()
+                .ok_or("no model downloaded; run `openscissors-cli models download isnet-general-use`")?
+        }
     };
     if registry.state(&spec) != ModelState::Ready {
         return Err(format!("model '{}' is not downloaded", spec.id));

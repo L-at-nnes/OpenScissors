@@ -282,6 +282,16 @@ pub fn builtin_catalog() -> Vec<ModelSpec> {
     ]
 }
 
+/// The model to use when none is named: `chosen` (the one picked with "Use" in the window) when it is one of
+/// `candidates`, otherwise the lightest of them; models without a measured memory figure come last. The application
+/// and the command line pick the same way.
+pub fn default_model<'a>(candidates: &'a [ModelSpec], chosen: Option<&str>) -> Option<&'a ModelSpec> {
+    if let Some(c) = chosen.and_then(|id| candidates.iter().find(|s| s.id == id)) {
+        return Some(c);
+    }
+    candidates.iter().min_by_key(|s| if s.ram_mb == 0 { u32::MAX } else { s.ram_mb })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelState {
@@ -597,6 +607,18 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn the_default_model_is_the_chosen_one_else_the_lightest() {
+        let cat = builtin_catalog();
+        let segmenters: Vec<ModelSpec> = cat.into_iter().filter(|s| s.kind == ModelKind::Segmenter).collect();
+        assert_eq!(default_model(&segmenters, None).unwrap().id, "isnet-general-use", "the lightest");
+        assert_eq!(default_model(&segmenters, Some("birefnet-lite")).unwrap().id, "birefnet-lite", "the chosen one");
+        assert_eq!(default_model(&segmenters, Some("gone")).unwrap().id, "isnet-general-use", "a chosen model no longer there");
+        let unmeasured: Vec<ModelSpec> = segmenters.iter().filter(|s| s.ram_mb == 0).cloned().collect();
+        assert!(default_model(&unmeasured, None).is_some());
+        assert!(default_model(&[], None).is_none());
     }
 
     #[test]

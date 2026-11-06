@@ -53,17 +53,12 @@ pub fn fits_budget(spec: &ModelSpec, fast: bool) -> bool {
 /// (the basic model is enough most of the time; heavier ones are opt-in).
 pub fn pick_default_model(state: &AppState) -> Option<String> {
     let wanted = state.settings.guard().chosen_model.clone();
-    let mut ready: Vec<_> = state
+    let ready: Vec<_> = state
         .models()
         .into_iter()
         .filter(|s| s.kind == ModelKind::Segmenter && state.is_ready(s) && (s.id == LOCAL_MODEL_ID || fits_budget(s, false)))
         .collect();
-    if let Some(id) = wanted.filter(|id| ready.iter().any(|s| s.id == *id)) {
-        return Some(id);
-    }
-    // Models without a measured figure (0) come last.
-    ready.sort_by_key(|s| if s.ram_mb == 0 { u32::MAX } else { s.ram_mb });
-    ready.first().map(|s| s.id.clone())
+    openscissors_core::model::default_model(&ready, wanted.as_deref()).map(|s| s.id.clone())
 }
 
 /// Working memory of the prediction around the network, in MB: the image is resized and guided-filtered
