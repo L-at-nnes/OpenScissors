@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use ort::session::Session;
-use ort::value::Tensor;
+use ort::value::{Tensor, TensorRef};
 use rayon::prelude::*;
 use serde::Deserialize;
 
@@ -135,9 +135,10 @@ impl Sam2 {
             "input_points" => Tensor::from_array(([1usize, 1, np, 2], points))?,
             "input_labels" => Tensor::from_array(([1usize, 1, np], labels))?,
             "input_boxes" => Tensor::from_array(([1usize, nb, 4], boxes))?,
-            "image_embeddings.0" => Tensor::from_array(([1usize, 32, 256, 256], emb.e0.clone()))?,
-            "image_embeddings.1" => Tensor::from_array(([1usize, 64, 128, 128], emb.e1.clone()))?,
-            "image_embeddings.2" => Tensor::from_array(([1usize, 256, 64, 64], emb.e2.clone()))?,
+            // Views of the kept encoder output: no copy of its 16 MB at every click.
+            "image_embeddings.0" => TensorRef::from_array_view(([1usize, 32, 256, 256], emb.e0.as_slice()))?,
+            "image_embeddings.1" => TensorRef::from_array_view(([1usize, 64, 128, 128], emb.e1.as_slice()))?,
+            "image_embeddings.2" => TensorRef::from_array_view(([1usize, 256, 64, 64], emb.e2.as_slice()))?,
         ])?;
         let scores = out["iou_scores"].try_extract_tensor::<f32>()?.1.to_vec();
         let low = best_mask(&scores, out["pred_masks"].try_extract_tensor::<f32>()?.1)?;
