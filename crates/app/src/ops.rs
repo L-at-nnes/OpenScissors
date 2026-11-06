@@ -89,7 +89,7 @@ impl Ctl {
             return true;
         }
         match dialogs::confirm_discard() {
-            Answer::Save => self.save_sync(true),
+            Answer::Save => self.save_work_sync(),
             Answer::Discard => true,
             Answer::Cancel => false,
         }
@@ -142,6 +142,7 @@ impl Ctl {
             ux.live_crop = None;
             ux.tool = Tool::Move; // the brush is chosen on purpose, never the pointer's default
             ux.last_export = None;
+            ux.project = None;
             ux.prediction = if predicted { Prediction::Idle } else { Prediction::Running };
         }
         self.refresh_doc_now();
@@ -266,17 +267,37 @@ impl Ctl {
         self.save_settings();
         self.ux.guard().marker = loaded.marker_size;
         self.after_open(predicted);
+        self.ux.guard().project = Some(path.to_path_buf());
         self.kick_alpha();
         Ok(loaded.warning)
     }
 
     // -- saving
 
+    /// Save (Ctrl+S): the project when one is open, otherwise the result to the file of the last export.
     pub fn save(self: &Arc<Self>) {
         let me = self.clone();
         self.spawn(move || {
-            me.save_sync(false);
+            let project = me.ux.guard().project.clone();
+            match project {
+                Some(p) => {
+                    me.save_project_to(&p);
+                }
+                None => {
+                    me.save_sync(false);
+                }
+            }
         });
+    }
+
+    /// Keep the work before the document is closed: the project when one is open, otherwise export the result (asking
+    /// where). Returns whether something was written.
+    pub fn save_work_sync(self: &Arc<Self>) -> bool {
+        let project = self.ux.guard().project.clone();
+        match project {
+            Some(p) => self.save_project_to(&p),
+            None => self.save_sync(true),
+        }
     }
 
     pub fn save_as(self: &Arc<Self>) {
@@ -350,7 +371,9 @@ impl Ctl {
         self.save_settings();
         let (transparent, name) = {
             let mut g = self.st.doc.guard();
-            if let Some(d) = g.as_mut() {
+            // The image keeps the result, not the marks: with a project open, the work is saved only in the project.
+            let project_open = self.ux.guard().project.is_some();
+            if let Some(d) = g.as_mut().filter(|_| !project_open) {
                 d.mark_clean_if(job.edit_mark()); // an edit made during the export is not marked as saved
             }
             (
@@ -392,27 +415,40 @@ impl Ctl {
             if !target.extension().is_some_and(|e| e.eq_ignore_ascii_case("osproj")) {
                 target.set_extension("osproj");
             }
-            let marker = me.st.settings.guard().marker_size;
-            let model = me.active_model_ref();
-            let _saving = me.st.saving();
-            // Taken in a moment under the lock; encoding and writing the file run without it.
-            let snapshot = me.st.doc.guard().as_ref().map(project::ProjectSnapshot::of);
-            let result = match snapshot {
-                Some(snap) => project::save_snapshot(&snap, model, marker, &target).map_err(|e| e.to_string()).map(|_| {
-                    if let Some(d) = me.st.doc.guard().as_mut() {
-                        d.mark_clean_if(snap.edit_mark());
-                    }
-                }),
-                None => Err(t("No image is open.")),
-            };
-            match result {
-                Ok(()) => {
-                    me.refresh_doc();
-                    me.say(tf("Saved {name}", &[("name", &file_label(&target))]), false);
-                }
-                Err(e) => me.say(e, true),
-            }
+            me.save_project_to(&target);
         });
+    }
+
+    /// Write the project to `target`; it becomes the project of the document. Returns whether it was written.
+    pub fn save_project_to(self: &Arc<Self>, target: &Path) -> bool {
+        let marker = self.st.settings.guard().marker_size;
+        let model = self.active_model_ref();
+        let _saving = self.st.saving();
+        // Taken in a moment under the lock; encoding and writing the file run without it.
+        let snapshot = self.st.doc.guard().as_ref().map(project::ProjectSnapshot::of);
+        let result = match snapshot {
+            Some(snap) => project::save_snapshot(&snap, model, marker, target).map_err(|e| e.to_string()).map(|_| {
+                if let Some(d) = self.st.doc.guard().as_mut() {
+                    d.mark_clean_if(snap.edit_mark());
+                }
+            }),
+            None => Err(t("No image is open.")),
+        };
+        match result {
+            Ok(()) => {
+                self.ux.guard().project = Some(target.to_path_buf());
+                self.st.settings.guard().push_recent(&target.display().to_string());
+                self.save_settings();
+                self.refresh_doc();
+                self.refresh(R_MENU);
+                self.say(tf("Saved {name}", &[("name", &file_label(target))]), false);
+                true
+            }
+            Err(e) => {
+                self.say(e, true);
+                false
+            }
+        }
     }
 
     fn active_model_ref(&self) -> Option<ModelRef> {

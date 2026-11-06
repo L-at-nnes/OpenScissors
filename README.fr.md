@@ -116,7 +116,7 @@ Supprimez `data/` pour repartir de zéro, `models/` pour libérer de la place. R
 | <kbd>F</kbd> garder · <kbd>B</kbd> supprimer (en *Grouper par couleur*) · <kbd>E</kbd> gomme | <kbd>S</kbd> sélection intelligente · <kbd>H</kbd> cheveux · <kbd>Maj</kbd>+<kbd>H</kbd> gomme cheveux |
 | <kbd>M</kbd> déplacer · <kbd>Espace</kbd> maintenu pour faire glisser | <kbd>[</kbd> <kbd>]</kbd> taille du pinceau |
 | <kbd>Alt</kbd>+flèches déplacent le recadrage de 1 px (<kbd>Maj</kbd> : 10 px) | les flèches déplacent les vues · <kbd>C</kbd> avant / après |
-| <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir · <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer · <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>S</kbd> enregistrer sous | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> annuler / rétablir |
+| <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir · <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer (le projet s'il y en a un, sinon le résultat) · <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>S</kbd> enregistrer le résultat sous | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> annuler / rétablir |
 | <kbd>Ctrl</kbd>+<kbd>V</kbd> coller une image | <kbd>Ctrl</kbd>+<kbd>C</kbd> copier le résultat |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> ajuster · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | molette : déplacer, <kbd>Ctrl</kbd>+molette : zoomer |
 | <kbd>Entrée</kbd> appliquer une sélection · <kbd>Retour arrière</kbd> retirer le dernier clic · <kbd>Échap</kbd> annuler | |

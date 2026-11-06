@@ -118,7 +118,7 @@ Delete `data/` to start over, delete `models/` to free space. Nothing is written
 | <kbd>F</kbd> keep · <kbd>B</kbd> remove (in *Group by color*) · <kbd>E</kbd> erase | <kbd>S</kbd> smart select · <kbd>H</kbd> hair · <kbd>Shift</kbd>+<kbd>H</kbd> erase hair |
 | <kbd>M</kbd> move · hold <kbd>Space</kbd> to pan | <kbd>[</kbd> <kbd>]</kbd> brush size |
 | <kbd>Alt</kbd>+arrows move the crop by 1 px (<kbd>Shift</kbd>: 10 px) | arrows pan the views · <kbd>C</kbd> before / after |
-| <kbd>Ctrl</kbd>+<kbd>O</kbd> open · <kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> save as | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> undo / redo |
+| <kbd>Ctrl</kbd>+<kbd>O</kbd> open · <kbd>Ctrl</kbd>+<kbd>S</kbd> save (the project when one is open, else the result) · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> save the result as | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> undo / redo |
 | <kbd>Ctrl</kbd>+<kbd>V</kbd> paste an image | <kbd>Ctrl</kbd>+<kbd>C</kbd> copy the result |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> fit · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | wheel pans, <kbd>Ctrl</kbd>+wheel zooms |
 | <kbd>Enter</kbd> apply a smart selection · <kbd>Backspace</kbd> remove the last click · <kbd>Esc</kbd> cancel | |

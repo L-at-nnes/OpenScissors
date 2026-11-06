@@ -136,6 +136,9 @@ pub struct Ux {
     pub prediction: Prediction,
     pub last_export: Option<String>,
     pub last_saved: Option<String>,
+    /// The project file of the open document (opened from it or saved to it): Save writes it, and exporting an image
+    /// does not count as saving the work.
+    pub project: Option<std::path::PathBuf>,
     pub downloads: HashMap<String, (u64, u64)>,
     pub batch: BatchUx,
     pub status: (String, bool),
@@ -312,6 +315,7 @@ impl Ctl {
                 prediction: Prediction::Idle,
                 last_export: None,
                 last_saved: None,
+                project: None,
                 downloads: HashMap::new(),
                 batch: BatchUx::default(),
                 status: (String::new(), false),
