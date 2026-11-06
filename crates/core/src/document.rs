@@ -392,6 +392,18 @@ impl Document {
         Ok(())
     }
 
+    /// Use the picture at `path` as the background, as one undoable step (the picture and the background mode change
+    /// together). The picture is read first: one that cannot be read changes nothing.
+    pub fn set_background_picture(&mut self, path: &str) -> Result<()> {
+        self.bg_failed = None;
+        self.load_bg(Some(path.to_string()))?;
+        let mut p = self.params.clone();
+        p.background.image_path = Some(path.to_string());
+        p.background.mode = BgMode::Image;
+        self.set_params(p);
+        Ok(())
+    }
+
     /// Replace every property (e.g. reset to defaults).
     pub fn set_params(&mut self, params: Params) {
         let mut new = params;
@@ -1459,6 +1471,23 @@ mod tests {
         assert_eq!(d.alpha(), &m);
         let wrong = Document::new(1, Image::filled(50, 40, [9, 9, 9]), None).with_prediction(Some(Mask::new(3, 3)));
         assert!(!wrong.has_prediction(), "a mask of another size is ignored");
+    }
+
+    #[test]
+    fn choosing_a_background_picture_is_one_step() {
+        let dir = std::env::temp_dir().join(format!("osc-bg-one-step-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("bg.png");
+        crate::io::save_rgba(&file, &Rgba::new(2, 2), crate::io::Format::Png, 95, [0; 3]).unwrap();
+        let mut d = doc();
+        d.set_background_picture(&file.display().to_string()).unwrap();
+        assert_eq!(d.params().background.mode, BgMode::Image);
+        d.undo();
+        assert_eq!((d.params().background.mode, d.params().background.image_path.clone()), (BgMode::Transparent, None));
+        assert!(!d.can_undo(), "one step undoes both");
+        assert!(d.set_background_picture(&dir.join("missing.png").display().to_string()).is_err());
+        assert_eq!(d.params().background.mode, BgMode::Transparent, "an unreadable picture changes nothing");
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

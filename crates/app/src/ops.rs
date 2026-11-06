@@ -582,8 +582,12 @@ impl Ctl {
         let me = self.clone();
         self.spawn(move || {
             if let Some(p) = dialogs::open_file(me.last_dir().as_deref(), &t("Choose image…"), &[("Images", IMAGE_EXT)]) {
-                me.set_param("background.image_path", json!(p.display().to_string()));
-                me.set_param("background.mode", json!("image"));
+                // The picture and the background mode change together: one step to undo.
+                let result = me.st.doc.guard().as_mut().map(|d| d.set_background_picture(&p.display().to_string()));
+                if let Some(Err(e)) = result {
+                    me.say(tr_message(&e.to_string()), true);
+                }
+                me.refresh_doc();
             }
         });
     }
