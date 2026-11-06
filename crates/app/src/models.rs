@@ -208,7 +208,10 @@ impl Ctl {
                     };
                     check_memory(&spec, fast)?;
                     let p = Predictor::load_with_memory(&spec, &path, accel, fast).map_err(|e| e.to_string())?;
-                    p.warmup().map_err(|e| e.to_string())?;
+                    // A GPU session was already run once by the loader (that run is how it is checked).
+                    if p.backend() == "CPU" {
+                        p.warmup().map_err(|e| e.to_string())?;
+                    }
                     Ok(p)
                 })();
                 if !latest() {
