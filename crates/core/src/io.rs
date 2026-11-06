@@ -89,6 +89,12 @@ pub fn check_dimensions(w: u64, h: u64) -> Result<()> {
     open_verdict(w, h, crate::sysmem::budget_mb(), crate::sysmem::available_memory_mb())
 }
 
+/// Largest allocation a decoder may make, in bytes: the memory budget of the application, never less than the
+/// decoder's own default (512 MB), 16 GB when the budget is unknown.
+fn decode_alloc_limit(budget_mb: Option<u64>) -> u64 {
+    budget_mb.map_or(16 << 30, |mb| (mb << 20).max(512 << 20))
+}
+
 /// An opened image: the 8-bit working copy, plus the 16-bit samples when the file has them.
 pub struct Loaded {
     pub image: Image,
@@ -191,10 +197,11 @@ pub fn load_image(path: &Path) -> Result<Image> {
 /// Like [`load_image`], and keeps the 16-bit samples of 16-bit PNG and TIFF files.
 pub fn load_image_deep(path: &Path) -> Result<Loaded> {
     let mut reader = ImageReader::open(path)?.with_guessed_format()?;
-    // The size is checked from the header ([`check_dimensions`]); the decoder's own default allocation limit is lifted
-    // so that a large 16-bit picture that fits the budget can be opened.
+    // The size is checked from the header ([`check_dimensions`]). The decoder's own allocation limit (512 MB) would
+    // refuse a large 16-bit picture that fits the budget, so it follows the budget instead; it still stops a file
+    // whose metadata (a profile, a text chunk) claims more than the machine allows.
     let mut limits = image::Limits::default();
-    limits.max_alloc = None;
+    limits.max_alloc = Some(decode_alloc_limit(crate::sysmem::budget_mb()));
     reader.limits(limits);
     let mut decoder = reader.into_decoder()?;
     let (w, h) = decoder.dimensions();
@@ -699,6 +706,13 @@ mod tests {
         assert!(open_verdict(30_000, 30_000, None, None).is_err(), "900 megapixels is not believable");
         assert!(open_verdict(0, 5, None, None).is_err());
         assert_eq!(open_cost_mb(1000, 1000), 22);
+    }
+
+    #[test]
+    fn the_decoders_may_allocate_up_to_the_budget_and_no_more() {
+        assert_eq!(decode_alloc_limit(Some(4096)), 4096 << 20);
+        assert_eq!(decode_alloc_limit(Some(100)), 512 << 20, "never below the decoder's default");
+        assert_eq!(decode_alloc_limit(None), 16 << 30);
     }
 
     #[test]
