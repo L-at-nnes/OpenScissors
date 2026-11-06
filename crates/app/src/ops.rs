@@ -310,7 +310,7 @@ impl Ctl {
         let path = match (ask, last) {
             (false, Some(p)) => PathBuf::from(p),
             _ => {
-                let file = format!("{}.png", stem(name.as_deref(), "cutout"));
+                let file = export_name(name.as_deref());
                 match dialogs::save_file(self.last_dir().as_deref(), &t("Save as…"), &file, SAVE_FILTERS) {
                     Some(p) => p,
                     None => return false,
@@ -928,6 +928,27 @@ impl Ctl {
     }
 }
 
+/// The file name offered for the result: `photo-cutout.png` for `photo.jpg`, never the name of the source itself (the
+/// result would replace the photo with one Enter press when both are in the same folder).
+fn export_name(doc_name: Option<&str>) -> String {
+    match doc_name {
+        Some(_) => format!("{}-cutout.png", stem(doc_name, "image")),
+        None => "cutout.png".into(),
+    }
+}
+
 pub fn file_label(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.display().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_result_is_never_offered_the_name_of_the_source() {
+        assert_eq!(export_name(Some("photo.png")), "photo-cutout.png");
+        assert_eq!(export_name(Some("my.holiday.jpg")), "my.holiday-cutout.png");
+        assert_eq!(export_name(None), "cutout.png");
+    }
 }
