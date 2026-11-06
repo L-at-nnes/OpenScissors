@@ -274,5 +274,6 @@
   "download failed: {error}": "échec du téléchargement : {error}",
   "checksum mismatch for model '{id}'": "la somme de contrôle du modèle « {id} » ne correspond pas",
   "model runtime error: {error}": "erreur du moteur de modèles : {error}",
-  "JSON error: {error}": "erreur JSON : {error}"
+  "JSON error: {error}": "erreur JSON : {error}",
+  "One picture opens at a time: the first one dropped was opened. Drop a folder to process several.": "Une seule image s'ouvre à la fois : la première déposée a été ouverte. Déposez un dossier pour en traiter plusieurs."
 }

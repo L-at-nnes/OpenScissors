@@ -274,5 +274,6 @@
   "download failed: {error}": "загрузка не удалась: {error}",
   "checksum mismatch for model '{id}'": "контрольная сумма модели «{id}» не совпадает",
   "model runtime error: {error}": "ошибка среды выполнения модели: {error}",
-  "JSON error: {error}": "ошибка JSON: {error}"
+  "JSON error: {error}": "ошибка JSON: {error}",
+  "One picture opens at a time: the first one dropped was opened. Drop a folder to process several.": "Открывается только одно изображение: открыто первое из перетащенных. Перетащите папку, чтобы обработать несколько."
 }

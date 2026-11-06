@@ -12,6 +12,7 @@ use serde_json::json;
 use slint::ComponentHandle;
 
 use crate::ctl::{Ctl, Tool, R_ALL, R_BATCH, R_MAIN, R_MENU, R_MODELS};
+use crate::i18n::t;
 use crate::window::Tracker;
 use crate::{Backend, MainWindow};
 
@@ -123,10 +124,10 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     // Closing the window asks about unsaved changes first.
     let c = ctl.clone();
     let weak = ui.as_weak();
-    let t = tracker.clone();
+    let closing_tracker = tracker.clone();
     ui.window().on_close_requested(move || {
         if let Some(ui) = weak.upgrade() {
-            t.borrow_mut().finish(&ui);
+            closing_tracker.borrow_mut().finish(&ui);
         }
         let busy = c.st.tasks_running();
         if !c.is_modified() && !busy {
@@ -137,10 +138,10 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
         c.clone().spawn(move || {
             let quit_anyway = !busy
                 || crate::dialogs::confirm(
-                    &crate::i18n::t("Quit OpenScissors?"),
-                    &crate::i18n::t("A batch, a download or a save is still running; quitting stops it before it is finished."),
-                    crate::i18n::t("Quit anyway"),
-                    crate::i18n::t("Cancel"),
+                    &t("Quit OpenScissors?"),
+                    &t("A batch, a download or a save is still running; quitting stops it before it is finished."),
+                    t("Quit anyway"),
+                    t("Cancel"),
                 );
             if quit_anyway && c.confirm_discard_sync() {
                 let _ = slint::invoke_from_event_loop(|| {
@@ -155,12 +156,22 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     {
         use slint::winit_030::{winit::event::WindowEvent, EventResult, WinitWindowAccessor};
         let c = ctl.clone();
+        // Several files dropped at once arrive one event each: the first one opens, the others are said to be left.
+        let mut last_drop: Option<Instant> = None;
         ui.window().on_winit_window_event(move |_, event| {
             match event {
                 WindowEvent::HoveredFile(_) => c.set_drop_active(true),
                 WindowEvent::HoveredFileCancelled => c.set_drop_active(false),
                 WindowEvent::DroppedFile(path) => {
                     c.set_drop_active(false);
+                    let now = Instant::now();
+                    let same_drop = last_drop.is_some_and(|t| now.duration_since(t) < Duration::from_millis(500));
+                    last_drop = Some(now);
+                    if same_drop {
+                        let text = t("One picture opens at a time: the first one dropped was opened. Drop a folder to process several.");
+                        c.say(text, false);
+                        return EventResult::Propagate;
+                    }
                     let ok = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
                         let e = e.to_ascii_lowercase();
                         e == "osproj" || crate::dialogs::IMAGE_EXT.contains(&e.as_str())
