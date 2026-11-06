@@ -15,17 +15,7 @@ use serde_json::{json, Value};
 use crate::clipboard::{self, ClipboardError, Pasted};
 use crate::ctl::{Ctl, Prediction, Tool, KIND_KEYS, MODE_KEYS, R_ALL, R_MAIN, R_MENU, R_VIEW};
 use crate::dialogs::{self, Answer, IMAGE_EXT};
-use crate::i18n::{t, tf};
-
-/// Reasons the exporter gives for a 16-bit source saved as 8-bit, as translatable keys.
-fn why_8bit(reason: &str) -> String {
-    match reason {
-        "the background is a picture, a gradient or the original" => t("the background is a picture, a gradient or the original"),
-        "a foreground effect is active" => t("a foreground effect is active"),
-        "the shadow is on" => t("the shadow is on"),
-        other => other.to_string(),
-    }
-}
+use crate::i18n::{t, tf, tr_message};
 
 const SAVE_FILTERS: &[(&str, &[&str])] = &[
     ("PNG (transparency)", &["png"]),
@@ -125,7 +115,7 @@ impl Ctl {
         let is_project = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("osproj"));
         let result = if is_project { self.open_project_sync(path) } else { self.open_image_sync(path) };
         match result {
-            Ok(Some(warning)) => self.say(warning, true),
+            Ok(Some(warning)) => self.say(tr_message(&warning), true),
             Ok(None) => {
                 let name = self.doc_name().unwrap_or_else(|| path.display().to_string());
                 self.say(tf("Opened {name}", &[("name", &name)]), false);
@@ -162,7 +152,7 @@ impl Ctl {
 
     fn open_image_sync(self: &Arc<Self>, path: &Path) -> Result<Option<String>, String> {
         let loaded = io::load_image_deep(path)
-            .map_err(|e| tf("Cannot read file {file}: {error}", &[("file", &file_label(path)), ("error", &e.to_string())]))?;
+            .map_err(|e| tf("Cannot read file {file}: {error}", &[("file", &file_label(path)), ("error", &tr_message(&e.to_string()))]))?;
         let id = self.st.next_doc_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (mut defaults, group) = {
             let s = self.st.settings.guard();
@@ -210,7 +200,7 @@ impl Ctl {
                 }
             }
             Err(ClipboardError::Empty) => me.say(t("The clipboard holds no image."), true),
-            Err(ClipboardError::System(e)) => me.say(tf("Cannot use the clipboard: {error}", &[("error", &e)]), true),
+            Err(ClipboardError::System(e)) => me.say(tf("Cannot use the clipboard: {error}", &[("error", &tr_message(&e))]), true),
         });
     }
 
@@ -239,7 +229,7 @@ impl Ctl {
             // The document is locked only to take what the export needs; the rendering itself runs without the lock.
             let Some(job) = me.st.doc.guard().as_mut().map(|d| d.export_job()) else { return };
             if let Err(e) = job.check_memory() {
-                return me.say(e.to_string(), true);
+                return me.say(tr_message(&e.to_string()), true);
             }
             let img = job.run();
             match clipboard::write(&img) {
@@ -251,7 +241,8 @@ impl Ctl {
     }
 
     fn open_project_sync(self: &Arc<Self>, path: &Path) -> Result<Option<String>, String> {
-        let loaded = project::load_project(path).map_err(|e| tf("Cannot open project: {error}", &[("error", &e.to_string())]))?;
+        let loaded =
+            project::load_project(path).map_err(|e| tf("Cannot open project: {error}", &[("error", &tr_message(&e.to_string()))]))?;
         let id = self.st.next_doc_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let image_path = loaded.orig_path.map(PathBuf::from);
         let predicted = loaded.predicted.is_some();
@@ -355,7 +346,7 @@ impl Ctl {
             let why = if want16 { d.deep_blocker() } else { None };
             (d.export_job(), flatten, why, d.srgb_tag())
         };
-        job.check_memory().map_err(|e| e.to_string())?;
+        job.check_memory().map_err(|e| tr_message(&e.to_string()))?;
         let exported = match want16.then(|| job.run_deep()).flatten() {
             Some(deep) => Exported::Bits16(deep),
             None => Exported::Bits8(job.run(), flatten),
@@ -366,7 +357,7 @@ impl Ctl {
             Exported::Bits16(img) => io::save_rgba16_tagged(target, &img, format, srgb_tag),
             Exported::Bits8(img, flatten) => io::save_rgba_tagged(target, &img, format, quality, flatten, srgb_tag),
         }
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| tr_message(&e.to_string()))?;
         self.st.settings.guard().last_dir = target.parent().map(|d| d.display().to_string());
         self.save_settings();
         let (transparent, name) = {
@@ -394,7 +385,7 @@ impl Ctl {
         } else if bits16 {
             tf("Saved {name} (16-bit)", &[("name", &name)])
         } else if let Some(r) = why {
-            tf("Saved {name} as 8-bit: {reason}", &[("name", &name), ("reason", &why_8bit(r))])
+            tf("Saved {name} as 8-bit: {reason}", &[("name", &name), ("reason", &tr_message(r))])
         } else {
             tf("Saved {name}", &[("name", &name)])
         };
@@ -427,7 +418,7 @@ impl Ctl {
         // Taken in a moment under the lock; encoding and writing the file run without it.
         let snapshot = self.st.doc.guard().as_ref().map(project::ProjectSnapshot::of);
         let result = match snapshot {
-            Some(snap) => project::save_snapshot(&snap, model, marker, target).map_err(|e| e.to_string()).map(|_| {
+            Some(snap) => project::save_snapshot(&snap, model, marker, target).map_err(|e| tr_message(&e.to_string())).map(|_| {
                 if let Some(d) = self.st.doc.guard().as_mut() {
                     d.mark_clean_if(snap.edit_mark());
                 }
@@ -464,7 +455,7 @@ impl Ctl {
             let result = std::fs::read_to_string(&p).map_err(|e| e.to_string()).and_then(|text| {
                 let mut g = me.st.doc.guard();
                 let d = g.as_mut().ok_or_else(|| t("No image is open."))?;
-                let strokes = project::marks_from_json(&text, d.image.w, d.image.h).map_err(|e| e.to_string())?;
+                let strokes = project::marks_from_json(&text, d.image.w, d.image.h).map_err(|e| tr_message(&e.to_string()))?;
                 d.load_marks(strokes);
                 Ok::<_, String>(())
             });
@@ -755,7 +746,7 @@ impl Ctl {
         let (src, dst) = (PathBuf::from(src), PathBuf::from(dst));
         let files = match batch::validate(&src, &dst) {
             Ok(f) => f,
-            Err(e) => return self.say(e.to_string(), true),
+            Err(e) => return self.say(tr_message(&e.to_string()), true),
         };
         let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
         {
@@ -806,7 +797,7 @@ impl Ctl {
                     tf("{n} processed, {m} failed.", &[("n", &report.processed.to_string()), ("m", &report.failed.len().to_string())])
                 );
                 for f in report.failed.iter().take(5) {
-                    text.push_str(&format!("\n{} {}", f.file, f.error));
+                    text.push_str(&format!("\n{} {}", f.file, tr_message(&f.error)));
                 }
                 {
                     let mut ux = me.ux.guard();
@@ -882,7 +873,7 @@ impl Ctl {
                         me.say(tf("{name} failed: {output}", &[("name", &name), ("output", &last)]), true);
                     }
                 }
-                Err(e) => me.say(e.to_string(), true),
+                Err(e) => me.say(tr_message(&e.to_string()), true),
             }
         });
     }

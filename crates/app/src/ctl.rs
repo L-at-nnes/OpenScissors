@@ -644,7 +644,12 @@ impl Ctl {
                     description: p.manifest.description.into(),
                     error: SharedString::new(),
                 },
-                Err(e) => PluginRow { name: d.folder.into(), description: SharedString::new(), enabled: false, error: e.into() },
+                Err(e) => PluginRow {
+                    name: d.folder.into(),
+                    description: SharedString::new(),
+                    enabled: false,
+                    error: crate::i18n::tr_message(&e).into(),
+                },
             })
             .collect()
     }

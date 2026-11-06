@@ -47,4 +47,4 @@ src/i18n.rs      translations (keys are the English strings); .slint files use @
 
 ## Translations
 
-`crates/app/locales/*.json` map the English string to its translation. A test checks that every string used by the code exists in every language, that placeholders and shortcuts survive, and that nothing is left over.
+`crates/app/locales/*.json` map the English string to its translation. Messages of the core (errors, refusals) are English templates listed in `i18n::CORE_MESSAGES`; `tr_message` recognises them where the interface shows an error and translates them with their values. A test checks that every string used by the code exists in every language, that placeholders and shortcuts survive, and that nothing is left over.

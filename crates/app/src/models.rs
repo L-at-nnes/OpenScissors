@@ -11,7 +11,7 @@ use openscissors_core::sysmem;
 use openscissors_core::types::{Image, Mask};
 
 use crate::ctl::{Ctl, Prediction, R_BATCH, R_MAIN, R_MODELS, R_VIEW};
-use crate::i18n::{t, tf};
+use crate::i18n::{t, tf, tr_message};
 use crate::state::{AppState, ModelStatus, LOCAL_MODEL_ID};
 
 /// Refuse to load a model the machine has no room for: a failed allocation would end the whole
@@ -283,8 +283,12 @@ impl Ctl {
                 me.ux.guard().downloads.remove(&spec.id);
                 match &result {
                     Ok(_) => me.say(t("Model downloaded"), false),
-                    Err(e) if e.to_string() != "cancelled" => me.say(tf("Download failed: {error}", &[("error", &e.to_string())]), true),
-                    Err(_) => {}
+                    Err(openscissors_core::Error::Cancelled) => {}
+                    // The kind of error is already said by "Download failed": only its own message follows.
+                    Err(openscissors_core::Error::Download(m)) => {
+                        me.say(tf("Download failed: {error}", &[("error", &tr_message(m))]), true)
+                    }
+                    Err(e) => me.say(tf("Download failed: {error}", &[("error", &tr_message(&e.to_string()))]), true),
                 }
                 me.refresh(R_MODELS | R_MAIN);
                 // Nothing is activated here: the model is picked when an image needs it (the user's choice,
@@ -313,7 +317,7 @@ impl Ctl {
             self.save_settings();
         }
         if let Err(e) = self.st.registry.delete(&spec) {
-            self.say(e.to_string(), true);
+            self.say(tr_message(&e.to_string()), true);
         }
         self.st.rescan_models();
         self.refresh(R_MAIN | R_MODELS | R_BATCH);
@@ -465,7 +469,7 @@ impl Ctl {
 
     fn prediction_failed(self: &Arc<Self>, message: String) {
         self.ux.guard().prediction = Prediction::Failed;
-        self.say(tf("Prediction failed: {message}", &[("message", &message)]), true);
+        self.say(tf("Prediction failed: {message}", &[("message", &tr_message(&message))]), true);
     }
 
     // -- smart select (SAM 2)
@@ -543,7 +547,7 @@ impl Ctl {
                                 me.refresh(R_MODELS);
                             });
                         } else {
-                            me.say(e, true);
+                            me.say(tr_message(&e), true);
                         }
                         me.refresh(R_MAIN | R_VIEW);
                     }

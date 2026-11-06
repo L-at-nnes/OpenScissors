@@ -44,12 +44,159 @@ pub fn code() -> &'static str {
 
 /// Translate `key`.
 pub fn t(key: &str) -> String {
-    dictionaries().get(code()).and_then(|d| d.get(key)).cloned().unwrap_or_else(|| key.to_string())
+    t_in(code(), key)
+}
+
+/// [`t`] in the language `lang`.
+fn t_in(lang: &str, key: &str) -> String {
+    dictionaries().get(lang).and_then(|d| d.get(key)).cloned().unwrap_or_else(|| key.to_string())
+}
+
+/// Messages that come from the core, in English, with `{name}` for their variable parts. They reach the interface as
+/// error texts and are translated by [`tr_message`].
+pub const CORE_MESSAGES: &[&str] = &[
+    // opening, memory
+    "the picture is empty",
+    "the picture is {w} x {h} pixels; the application accepts up to {max} megapixels",
+    "a {w} x {h} px picture needs about {need} MB, more than the {budget} MB the application may use (the memory limit in the settings can be raised)",
+    "not enough free memory for a {w} x {h} px picture: about {need} MB are needed and {free} MB are free; close other applications",
+    // export
+    "this export needs about {need} MB more, over the {budget} MB the application may use (the memory limit in the settings can be raised, or the output made smaller)",
+    "not enough free memory: this export needs about {need} MB and {free} MB are free; close other applications",
+    "WebP cannot hold a {w} x {h} px picture (at most {max} px per side): choose PNG, TIFF or AVIF, or an output width",
+    "the background is a picture, a gradient or the original",
+    "a fixed output width is set",
+    "the colour adjustments are on",
+    "the edge clean-up is on",
+    "a foreground effect is active",
+    "the shadow is on",
+    // batch
+    "The source folder does not exist.",
+    "The source and destination folders must be different.",
+    "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif).",
+    // projects and marks
+    "project file is too large",
+    "this is not an OpenScissors project",
+    "unsupported image encoding '{encoding}'",
+    "corrupt image data: {error}",
+    "the stored prediction does not match the image size",
+    "the stored 16-bit picture does not match the image size",
+    "This project was made by a newer version (format {version}); some settings may be ignored.",
+    "unsupported marks file version",
+    "these marks were made for an image of a different size",
+    // models and downloads
+    "GPU acceleration is not available on this platform yet",
+    "refusing to delete the folder of model '{id}'",
+    "file '{file}' of model '{id}' has no pinned sha256",
+    "model URL must use HTTPS",
+    "model '{id}' names a folder or a file outside the models folder",
+    "the server announces {total} bytes for '{file}', the catalogue says {size}",
+    "nothing was received for {seconds} seconds; the download can be resumed",
+    "the connection was lost",
+    "'{file}' is larger than the {size} bytes the catalogue says",
+    "the connection closed after {done} of {total} bytes; the download can be resumed",
+    "give at least one point or box",
+    "too many prompts",
+    // plug-ins
+    "the file to process does not exist",
+    "this plug-in handles: {extensions}",
+    "the plug-in did not finish within {seconds} seconds and was stopped",
+    "no plugin.json",
+    "plugin.json: {error}",
+    "the plug-in id may only use a-z, 0-9, '-' and '_'",
+    "the command must be a file inside the plug-in folder",
+    "command file '{file}' not found",
+    "the command resolves outside the plug-in folder",
+    // the kinds of errors (`openscissors_core::Error`), around a message of their own
+    "I/O error: {error}",
+    "image error: {error}",
+    "download failed: {error}",
+    "checksum mismatch for model '{id}'",
+    "model runtime error: {error}",
+    "JSON error: {error}",
+];
+
+/// One piece of a message template: text as it is, or a `{name}` variable.
+enum Piece<'a> {
+    Text(&'a str),
+    Var(&'a str),
+}
+
+/// The pieces of `template`. A `{` that does not open a `{name}` (letters, digits, `_`) is text.
+fn pieces(template: &str) -> Vec<Piece<'_>> {
+    let mut out = Vec::new();
+    let (mut start, mut i) = (0, 0);
+    let bytes = template.as_bytes();
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            let len = template[i + 1..].find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(0);
+            if len > 0 && template[i + 1 + len..].starts_with('}') {
+                if start < i {
+                    out.push(Piece::Text(&template[start..i]));
+                }
+                out.push(Piece::Var(&template[i + 1..i + 1 + len]));
+                i += len + 2;
+                start = i;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    if start < template.len() {
+        out.push(Piece::Text(&template[start..]));
+    }
+    out
+}
+
+/// The values of the variables of `template` in `msg`, when `msg` is that template filled in.
+fn match_template(template: &str, msg: &str) -> Option<Vec<(String, String)>> {
+    let pieces = pieces(template);
+    let mut rest = msg;
+    let mut vars = Vec::new();
+    for (i, piece) in pieces.iter().enumerate() {
+        match piece {
+            Piece::Text(t) => rest = rest.strip_prefix(t)?,
+            Piece::Var(name) => {
+                let end = match pieces.get(i + 1) {
+                    Some(Piece::Text(next)) => rest.find(next)?,
+                    Some(Piece::Var(_)) => return None,
+                    None => rest.len(),
+                };
+                vars.push((name.to_string(), rest[..end].to_string()));
+                rest = &rest[end..];
+            }
+        }
+    }
+    rest.is_empty().then_some(vars)
+}
+
+/// Translate a message of the core (see [`CORE_MESSAGES`]): the template it fills in is translated and the variable
+/// parts are put back, each translated too when it is itself a message ("I/O error: …"). Anything else is returned
+/// as it is (a message of the system is already in its language).
+pub fn tr_message(msg: &str) -> String {
+    tr_message_in(code(), msg)
+}
+
+/// [`tr_message`] in the language `lang`.
+fn tr_message_in(lang: &str, msg: &str) -> String {
+    for template in CORE_MESSAGES {
+        if let Some(vars) = match_template(template, msg) {
+            let vars: Vec<(String, String)> = vars.into_iter().map(|(k, v)| (k, tr_message_in(lang, &v))).collect();
+            let refs: Vec<(&str, &str)> = vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            return fill(&t_in(lang, template), &refs);
+        }
+    }
+    msg.to_string()
 }
 
 /// Translate `key`, replacing `{name}` placeholders.
 pub fn tf(key: &str, vars: &[(&str, &str)]) -> String {
-    let mut text = t(key);
+    fill(&t(key), vars)
+}
+
+/// `text` with its `{name}` placeholders replaced by `vars`.
+fn fill(text: &str, vars: &[(&str, &str)]) -> String {
+    let mut text = text.to_string();
     for (k, v) in vars {
         text = text.replace(&format!("{{{k}}}"), v);
     }
@@ -110,10 +257,11 @@ mod tests {
                 }
             }
         }
-        // Catalogue descriptions are translated at run time with `t(&description)`.
+        // Catalogue descriptions are translated at run time with `t(&description)`, core messages with `tr_message`.
         for spec in openscissors_core::model::builtin_catalog() {
             keys.insert(spec.description);
         }
+        keys.extend(CORE_MESSAGES.iter().map(|m| m.to_string()));
         keys
     }
 
@@ -169,6 +317,42 @@ mod tests {
             }
             assert!((same as f64) / (keys.len() as f64) < 0.2, "{code} looks untranslated");
         }
+    }
+
+    #[test]
+    fn messages_of_the_core_are_translated_with_their_values() {
+        // In French, without changing the language of the process (other tests read English texts meanwhile).
+        let fr = |m: &str| tr_message_in("fr", m);
+        let t = |k: &str| t_in("fr", k);
+        // Real messages from the core.
+        let missing = openscissors_core::batch::validate(Path::new("/no/such/folder"), &std::env::temp_dir()).unwrap_err().to_string();
+        assert_eq!(fr(&missing), t("The source folder does not exist."));
+        assert_ne!(fr(&missing), missing);
+        let marks = openscissors_core::project::marks_from_json(r#"{"version":1}"#, 1, 1).unwrap_err().to_string();
+        assert_ne!(fr(&marks), marks);
+        let empty = openscissors_core::io::check_dimensions(0, 5).unwrap_err().to_string();
+        assert_ne!(fr(&empty), empty);
+        // Values are put back, and a message inside another is translated too.
+        let big = "the picture is 30000 x 30000 pixels; the application accepts up to 500 megapixels";
+        let got = fr(big);
+        assert!(got.contains("30000") && got.contains("500") && got != big, "{got}");
+        let io = openscissors_core::io::load_image(Path::new("/no/such/picture.png")).unwrap_err().to_string();
+        assert!(io.starts_with("I/O error: ") && !fr(&io).starts_with("I/O error: "), "{io} -> {}", fr(&io));
+        let wrapped = fr("download failed: the connection was lost");
+        assert_eq!(wrapped, fill(&t("download failed: {error}"), &[("error", &t("the connection was lost"))]));
+        // A message that is not one of them stays as it is.
+        assert_eq!(fr("Accès refusé. (os error 5)"), "Accès refusé. (os error 5)");
+        assert_eq!(fr("unbalanced '{' in args"), "unbalanced '{' in args");
+    }
+
+    #[test]
+    fn templates_match_only_what_they_describe() {
+        assert_eq!(
+            match_template("'{file}' is larger than the {size} bytes", "'a.onnx' is larger than the 12 bytes"),
+            Some(vec![("file".into(), "a.onnx".into()), ("size".into(), "12".into())])
+        );
+        assert_eq!(match_template("the picture is empty", "the picture is empty!"), None);
+        assert_eq!(match_template("x {a} y", "x 1 z"), None);
     }
 
     #[test]
