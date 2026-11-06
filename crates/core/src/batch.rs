@@ -91,19 +91,21 @@ pub fn list_images(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-/// Check the folders and return the images to process. The destination is created when missing.
+/// Check the folders and return the images to process. The destination is created when missing, once everything
+/// else is known to be right (a refused batch leaves no empty folder behind).
 pub fn validate(src: &Path, dst: &Path) -> Result<Vec<PathBuf>> {
     if !src.is_dir() {
         return Err(Error::msg("The source folder does not exist."));
     }
-    std::fs::create_dir_all(dst)?;
-    if std::fs::canonicalize(src)? == std::fs::canonicalize(dst)? {
+    // A destination that does not exist yet cannot be the source, which does.
+    if dst.exists() && std::fs::canonicalize(src)? == std::fs::canonicalize(dst)? {
         return Err(Error::msg("The source and destination folders must be different."));
     }
     let files = list_images(src)?;
     if files.is_empty() {
         return Err(Error::msg("The source folder contains no supported image (jpg, png, bmp, tif, webp, gif)."));
     }
+    std::fs::create_dir_all(dst)?;
     Ok(files)
 }
 
@@ -264,6 +266,7 @@ mod tests {
         assert!(validate(&root.join("missing"), &dst).is_err(), "source must exist");
         assert!(validate(&src, &src).is_err(), "folders must differ");
         assert!(validate(&src, &dst).is_err(), "no image yet");
+        assert!(!dst.exists(), "a refused batch creates no folder");
         std::fs::write(src.join("notes.txt"), "x").unwrap();
         assert!(validate(&src, &dst).is_err(), "text files are not images");
         write_png(&src.join("B.PNG"), 8, 8);
