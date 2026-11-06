@@ -458,7 +458,8 @@ pub fn marks_from_json(text: &str, w: usize, h: usize) -> Result<Vec<Stroke>> {
     let mut strokes = Vec::new();
     parse_actions(&v["scribble"], false, &mut strokes);
     parse_actions(&v["matting"], true, &mut strokes);
-    Ok(strokes)
+    // As for a project: a number too large for the brush (1e60 becomes infinite) is no usable point.
+    Ok(clean_strokes(strokes))
 }
 
 #[cfg(test)]
@@ -634,6 +635,16 @@ mod tests {
         std::fs::write(dir.join("badimg.osproj"), v.to_string()).unwrap();
         assert!(load_project(&dir.join("badimg.osproj")).is_err());
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_marks_file_cannot_bring_points_out_of_range() {
+        let text = r##"{"version":2,"width":10,"height":10,"scribble":{"actions":[
+            {"type":"marker","lineWidth":9,"color":"#00ff00","points":[[1,1],[1e60,2]]},
+            {"type":"marker","lineWidth":9,"color":"#00ff00","points":[[-1e300,1e300]]}]}}"##;
+        let got = marks_from_json(text, 10, 10).unwrap();
+        assert_eq!(got.len(), 1, "the stroke left with no usable point is dropped");
+        assert_eq!(got[0].points, vec![[1.0, 1.0]]);
     }
 
     #[test]
