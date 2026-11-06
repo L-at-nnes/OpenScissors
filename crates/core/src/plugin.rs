@@ -30,6 +30,8 @@ pub const RUN_TIMEOUT: Duration = Duration::from_secs(60);
 /// running keeps them open; past this delay that program is stopped instead of freezing the application.
 const PIPE_GRACE: Duration = Duration::from_secs(2);
 const OUTPUT_TAIL: usize = 2000;
+/// Bytes of output kept while a plug-in runs: only its end is shown, a chatty program must not fill the memory.
+const OUTPUT_KEEP: usize = 64 << 10;
 
 fn default_args() -> Vec<String> {
     vec!["{input}".into()]
@@ -207,7 +209,7 @@ pub fn run(plugin: &Plugin, input: &Path, timeout: Duration) -> Result<RunOutput
     Ok(RunOutput { success: status.success(), output: tail })
 }
 
-/// Copy everything `r` produces into `into`, as it comes.
+/// Copy what `r` produces into `into`, as it comes, keeping only the last [`OUTPUT_KEEP`] bytes or so.
 fn drain(mut r: impl Read + Send + 'static, into: Arc<Mutex<Vec<u8>>>) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let mut chunk = [0u8; 4096];
@@ -215,7 +217,12 @@ fn drain(mut r: impl Read + Send + 'static, into: Arc<Mutex<Vec<u8>>>) -> JoinHa
             if n == 0 {
                 break;
             }
-            into.guard().extend_from_slice(&chunk[..n]);
+            let mut out = into.guard();
+            out.extend_from_slice(&chunk[..n]);
+            if out.len() > 2 * OUTPUT_KEEP {
+                let cut = out.len() - OUTPUT_KEEP;
+                out.drain(..cut);
+            }
         }
     })
 }
@@ -328,6 +335,17 @@ mod tests {
         m["command"] = serde_json::json!(name);
         std::fs::write(dir.join("plugin.json"), m.to_string()).unwrap();
         dir
+    }
+
+    #[test]
+    fn only_the_end_of_a_long_output_is_kept() {
+        let mut text = vec![b'x'; 5 << 20];
+        text.extend_from_slice(b"the last line");
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        drain(std::io::Cursor::new(text), kept.clone()).join().unwrap();
+        let kept = kept.guard();
+        assert!(kept.len() <= 2 * OUTPUT_KEEP, "{} bytes kept", kept.len());
+        assert!(kept.ends_with(b"the last line"));
     }
 
     #[test]
