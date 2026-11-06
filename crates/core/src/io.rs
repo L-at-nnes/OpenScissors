@@ -409,9 +409,14 @@ pub fn save_rgba16_tagged(path: &Path, rgba: &Rgba16, format: Format, srgb_tag: 
     Ok(())
 }
 
+/// Save a mask as a grey PNG, atomically like [`save_rgba`].
 pub fn save_mask_png(path: &Path, mask: &crate::types::Mask) -> Result<()> {
-    let buf = image::GrayImage::from_raw(mask.w as u32, mask.h as u32, mask.data.clone()).ok_or_else(|| Error::msg("bad mask buffer"))?;
-    buf.save_with_format(path, image::ImageFormat::Png)?;
+    if mask.data.len() != mask.w * mask.h {
+        return Err(Error::msg("bad mask buffer"));
+    }
+    let mut out = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut out).write_image(&mask.data, mask.w as u32, mask.h as u32, image::ExtendedColorType::L8)?;
+    write_atomic(path, &out)?;
     Ok(())
 }
 
@@ -706,6 +711,20 @@ mod tests {
         assert!(open_verdict(30_000, 30_000, None, None).is_err(), "900 megapixels is not believable");
         assert!(open_verdict(0, 5, None, None).is_err());
         assert_eq!(open_cost_mb(1000, 1000), 22);
+    }
+
+    #[test]
+    fn a_mask_is_saved_atomically() {
+        let dir = std::env::temp_dir().join(format!("osc-mask-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("m.png");
+        std::fs::write(&file, b"previous").unwrap();
+        assert!(save_mask_png(&file, &Mask { w: 3, h: 3, data: vec![0; 2] }).is_err());
+        assert_eq!(std::fs::read(&file).unwrap(), b"previous", "a failure keeps the old file");
+        save_mask_png(&file, &Mask::filled(3, 2, 200)).unwrap();
+        assert_eq!(image::open(&file).unwrap().to_luma8().get_pixel(2, 1).0[0], 200);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

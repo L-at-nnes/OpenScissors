@@ -483,9 +483,8 @@ impl Ctl {
             let result = {
                 let g = me.st.doc.guard();
                 match g.as_ref() {
-                    Some(d) => {
-                        std::fs::write(&target, project::marks_to_json(d.strokes(), d.image.w, d.image.h)).map_err(|e| e.to_string())
-                    }
+                    Some(d) => io::write_atomic(&target, project::marks_to_json(d.strokes(), d.image.w, d.image.h).as_bytes())
+                        .map_err(|e| e.to_string()),
                     None => Err(t("No image is open.")),
                 }
             };
