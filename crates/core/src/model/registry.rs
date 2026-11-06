@@ -484,7 +484,7 @@ impl ModelRegistry {
         if announced.is_some() && done != total {
             return Err(Error::Download(format!("the connection closed after {done} of {total} bytes; the download can be resumed")));
         }
-        if hex::encode(hasher.finalize()) != file.sha256 {
+        if !hex::encode(hasher.finalize()).eq_ignore_ascii_case(&file.sha256) {
             let _ = fs::remove_file(&part);
             return Err(Error::Checksum(id.to_string()));
         }
@@ -850,6 +850,20 @@ mod tests {
         let result = reg.download_file("m", &file, &dir.join("model.onnx"), &mut |_, _| {}, &cancel);
         assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
         assert!(started.elapsed() < Duration::from_secs(5), "cancelled in {:?}", started.elapsed());
+    }
+
+    #[test]
+    fn a_hash_written_in_capitals_is_accepted() {
+        let dir = tmp("uppercase");
+        let data = body();
+        let (url, _) = serve(data.clone(), 0, true);
+        let mut file = file_for(url, &data);
+        file.sha256 = file.sha256.to_uppercase(); // as a model.json written by hand may hold it
+        let dest = dir.join("model.onnx");
+        let reg = ModelRegistry::new(&dir);
+        reg.download_file("m", &file, &dest, &mut |_, _| {}, &AtomicBool::new(false)).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), data);
+        fs::remove_dir_all(dir).ok();
     }
 
     #[test]
