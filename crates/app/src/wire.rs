@@ -160,6 +160,8 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
         let mut last_drop: Option<Instant> = None;
         ui.window().on_winit_window_event(move |_, event| {
             match event {
+                // Space held while the window loses the focus: its release goes to another window.
+                WindowEvent::Focused(false) => c.space(false),
                 WindowEvent::HoveredFile(_) => c.set_drop_active(true),
                 WindowEvent::HoveredFileCancelled => c.set_drop_active(false),
                 WindowEvent::DroppedFile(path) => {
