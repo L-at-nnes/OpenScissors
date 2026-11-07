@@ -1,9 +1,7 @@
-//! Mask composition, simple mode: prediction, then keep/erase strokes in order,
-//! then boundary offset and feathering.
+//! Mask composition, simple mode: prediction, then keep/erase strokes in order. The boundary offset and the
+//! feathering come later, when the result is rendered (`render::finished_alpha`).
 
 use super::strokes::{paint_stroke, Stroke, StrokeKind};
-use crate::imaging::filter::box_blur_u8;
-use crate::imaging::morph::{morph_ellipse, MorphOp};
 use crate::types::Mask;
 
 /// Apply one stroke to `alpha` in place (strokes of other kinds are ignored).
@@ -19,21 +17,6 @@ pub fn compose_alpha(predicted: Option<&Mask>, strokes: &[Stroke], w: usize, h: 
         apply_stroke(&mut alpha, s);
     }
     alpha
-}
-
-/// Boundary offset (positive grows the subject, negative shrinks it; elliptical kernel of
-/// size `|offset| + 2`) followed by a box-blur feather of radius `feather`.
-pub fn finish_alpha(alpha: &Mask, offset: i32, feather: u32) -> Mask {
-    let mut m = if offset == 0 {
-        alpha.clone()
-    } else {
-        let k = offset.unsigned_abs() as usize + 2;
-        morph_ellipse(alpha, k, if offset > 0 { MorphOp::Dilate } else { MorphOp::Erode })
-    };
-    if feather > 0 {
-        m.data = box_blur_u8(&m.data, m.w, m.h, 1, feather as usize);
-    }
-    m
 }
 
 #[cfg(test)]
@@ -63,6 +46,14 @@ mod tests {
     #[test]
     fn no_prediction_starts_empty() {
         assert!(compose_alpha(None, &[], 4, 4).is_empty_mask());
+    }
+
+    /// The offset and the feathering of the result, as the renderer applies them.
+    fn finish_alpha(alpha: &Mask, offset: i32, feather: u32) -> Mask {
+        let mut p = crate::params::Params::default();
+        p.mask.offset = offset;
+        p.foreground.feather = feather;
+        crate::render::finished_alpha(alpha, &p)
     }
 
     #[test]
