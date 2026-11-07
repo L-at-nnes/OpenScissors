@@ -6,6 +6,7 @@ use rayon::prelude::*;
 
 use crate::imaging::filter::box_blur_u8;
 use crate::imaging::guided::guided_filter;
+use crate::imaging::linalg::{det3, inv3};
 use crate::imaging::resize::{resize_image, resize_mask, working_size, Interp};
 use crate::types::{Image, Mask};
 
@@ -29,29 +30,6 @@ struct Window {
     mean: [f64; 3],
     /// Inverse of (covariance + epsilon / 9), symmetric.
     inv: [[f64; 3]; 3],
-}
-
-fn inv3(c: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
-    let det = c[0][0] * (c[1][1] * c[2][2] - c[1][2] * c[2][1]) - c[0][1] * (c[1][0] * c[2][2] - c[1][2] * c[2][0])
-        + c[0][2] * (c[1][0] * c[2][1] - c[1][1] * c[2][0]);
-    let d = 1.0 / det;
-    [
-        [
-            (c[1][1] * c[2][2] - c[1][2] * c[2][1]) * d,
-            (c[0][2] * c[2][1] - c[0][1] * c[2][2]) * d,
-            (c[0][1] * c[1][2] - c[0][2] * c[1][1]) * d,
-        ],
-        [
-            (c[1][2] * c[2][0] - c[1][0] * c[2][2]) * d,
-            (c[0][0] * c[2][2] - c[0][2] * c[2][0]) * d,
-            (c[0][2] * c[1][0] - c[0][0] * c[1][2]) * d,
-        ],
-        [
-            (c[1][0] * c[2][1] - c[1][1] * c[2][0]) * d,
-            (c[0][1] * c[2][0] - c[0][0] * c[2][1]) * d,
-            (c[0][0] * c[1][1] - c[0][1] * c[1][0]) * d,
-        ],
-    ]
 }
 
 struct Problem<'a> {
@@ -103,7 +81,7 @@ impl<'a> Problem<'a> {
                 for (a, row) in cov.iter_mut().enumerate() {
                     row[a] += EPSILON / 9.0;
                 }
-                windows.push(Window { pixels, mean, inv: inv3(&cov) });
+                windows.push(Window { pixels, mean, inv: inv3(&cov, det3(&cov)) });
             }
         }
         Problem { img, windows, unknown_index, unknowns: n }
