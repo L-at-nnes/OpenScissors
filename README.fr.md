@@ -47,7 +47,7 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 - **Profils colorimétriques** : une image avec un profil intégré (Display P3, Adobe RGB...) est convertie en sRGB à l'ouverture, donc les couleurs sont justes (les gamuts larges sont écrêtés à sRGB) ; les exports d'une telle image portent le profil sRGB.
 - **Images déjà détourées** (un PNG ou WebP avec transparence) : elles s'ouvrent avec leur propre transparence, sans modèle ; on peut affiner le masque ou changer le fond.
 - **Avant et après** : le bouton à côté du zoom (ou <kbd>C</kbd>) fusionne les deux vues en une seule, avec une barre à faire glisser : l'original d'un côté, le résultat de l'autre.
-- **Copier-coller** : <kbd>Ctrl</kbd>+<kbd>V</kbd> ouvre l'image du presse-papiers (ou un fichier image copié dans l'explorateur) ; un clic, ou <kbd>Ctrl</kbd>+<kbd>C</kbd>, copie le résultat avec sa transparence.
+- **Copier-coller** : <kbd>Ctrl</kbd>+<kbd>V</kbd> ouvre l'image du presse-papiers, avec sa transparence si elle est déjà détourée (ou un fichier image copié dans l'explorateur) ; un clic, ou <kbd>Ctrl</kbd>+<kbd>C</kbd>, copie le résultat avec sa transparence.
 - **Traitement par lot** d'un dossier entier : déposez le dossier sur la fenêtre, avec vos réglages enregistrés ou ceux de l'image en cours, en PNG, JPEG, WebP ou AVIF.
 - **4 langues** : English (par défaut), Français, Deutsch, Русский.
 - **Plug-ins** (optionnels, désactivés tant que vous ne les activez pas) : de petits programmes lancés sur le fichier que vous venez d'enregistrer.

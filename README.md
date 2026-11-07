@@ -49,7 +49,7 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 - **Colour profiles**: a picture with an embedded profile (Display P3, Adobe RGB...) is converted to sRGB when it opens, so the colours are right (wide gamuts are clipped to sRGB); exports of such a picture carry the sRGB profile.
 - **Pictures that are already cut out** (a PNG or WebP with transparency) open with their own transparency: no model runs, you can refine the mask or change the background.
 - **Before and after**: the button next to the zoom controls (or <kbd>C</kbd>) turns both views into one big view with a divider you drag: the original on one side, the result on the other.
-- **Copy and paste**: <kbd>Ctrl</kbd>+<kbd>V</kbd> opens the picture on the clipboard (or an image file copied in your file manager); one click, or <kbd>Ctrl</kbd>+<kbd>C</kbd>, copies the result with its transparency.
+- **Copy and paste**: <kbd>Ctrl</kbd>+<kbd>V</kbd> opens the picture on the clipboard, keeping its transparency if it is already cut out (or an image file copied in your file manager); one click, or <kbd>Ctrl</kbd>+<kbd>C</kbd>, copies the result with its transparency.
 - **Batch mode** for a whole folder: drop the folder on the window, use your saved settings or those of the image you are editing, save as PNG, JPEG, WebP or AVIF.
 - **4 languages**: English (default), Français, Deutsch, Русский.
 - **Plug-ins** (optional, off until you turn them on): small programs that run on the file you just saved.

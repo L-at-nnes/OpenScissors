@@ -194,9 +194,9 @@ impl Ctl {
                     None => me.say(t("The clipboard holds no image."), true),
                 }
             }
-            Ok(Pasted::Image(image)) => {
+            Ok(Pasted::Image(image, alpha)) => {
                 if me.confirm_discard_sync() {
-                    me.open_pasted(image);
+                    me.open_pasted(image, alpha);
                 }
             }
             Err(ClipboardError::Empty) => me.say(t("The clipboard holds no image."), true),
@@ -204,18 +204,20 @@ impl Ctl {
         });
     }
 
-    /// A picture that comes from the clipboard has no file: it opens as an unnamed document.
-    fn open_pasted(self: &Arc<Self>, image: openscissors_core::types::Image) {
+    /// A picture that comes from the clipboard has no file: it opens as an unnamed document. A transparent one starts
+    /// from its own transparency, as a cut-out file does.
+    fn open_pasted(self: &Arc<Self>, image: openscissors_core::types::Image, alpha: Option<openscissors_core::types::Mask>) {
         let id = self.st.next_doc_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (mut defaults, group) = {
             let s = self.st.settings.guard();
             (s.defaults.clone(), s.group_by_color)
         };
         defaults.mask.graphcut = group;
-        *self.st.doc.guard() = Some(Document::new(id, image, None).with_params(defaults));
+        let cut_out = alpha.is_some();
+        *self.st.doc.guard() = Some(Document::new(id, image, None).with_prediction(alpha).with_params(defaults));
         *self.st.sam_cache.guard() = None;
         *self.st.predicted_doc.guard() = None;
-        self.after_open(false);
+        self.after_open(cut_out);
         self.say(t("Pasted the image from the clipboard"), false);
     }
 

@@ -8,13 +8,13 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use arboard::{Clipboard, Error, ImageData};
-use openscissors_core::io::flatten;
 use openscissors_core::sync::LockExt;
-use openscissors_core::types::{Image, Rgba};
+use openscissors_core::types::{Image, Mask, Rgba};
 
 /// What a paste found.
 pub enum Pasted {
-    Image(Image),
+    /// A picture, with its transparency when it has some (a picture that is already cut out).
+    Image(Image, Option<Mask>),
     /// Files copied in a file manager.
     Files(Vec<PathBuf>),
 }
@@ -48,7 +48,8 @@ fn with<R>(f: impl FnOnce(&mut Clipboard) -> Result<R, Error>) -> Result<R, Clip
     Ok(f(slot.as_mut().expect("just created"))?)
 }
 
-/// The picture on the clipboard, drawn over white where it is transparent; or the files copied in a file manager.
+/// The picture on the clipboard (its transparency kept, as when a cut-out file is opened); or the files copied in a
+/// file manager.
 pub fn read() -> Result<Pasted, ClipboardError> {
     enum Found {
         Rgba(usize, usize, Vec<u8>),
@@ -60,7 +61,7 @@ pub fn read() -> Result<Pasted, ClipboardError> {
         Err(e) => Err(e),
     })?;
     match found {
-        Found::Rgba(w, h, bytes) => from_rgba(w, h, &bytes).map(Pasted::Image).map_err(ClipboardError::System),
+        Found::Rgba(w, h, bytes) => from_rgba(w, h, &bytes).map(|(img, alpha)| Pasted::Image(img, alpha)).map_err(ClipboardError::System),
         Found::Files(files) => Ok(Pasted::Files(files)),
     }
 }
@@ -70,13 +71,17 @@ pub fn write(img: &Rgba) -> Result<(), ClipboardError> {
     with(|cb| cb.set_image(ImageData { width: img.w, height: img.h, bytes: Cow::Borrowed(&img.data) }))
 }
 
-/// An RGBA buffer (as the clipboard hands it out) as an opaque image.
-fn from_rgba(w: usize, h: usize, bytes: &[u8]) -> Result<Image, String> {
+/// An RGBA buffer (as the clipboard hands it out) as a picture and, when it is transparent somewhere, its alpha.
+fn from_rgba(w: usize, h: usize, bytes: &[u8]) -> Result<(Image, Option<Mask>), String> {
     openscissors_core::io::check_dimensions(w as u64, h as u64).map_err(|e| e.to_string())?;
     if bytes.len() != w * h * 4 {
         return Err("the clipboard picture has an unexpected size".into());
     }
-    Ok(flatten(&Rgba { w, h, data: bytes.to_vec() }, [255, 255, 255]))
+    let pixels = bytes.as_chunks::<4>().0;
+    let rgb = pixels.iter().flat_map(|p| [p[0], p[1], p[2]]).collect();
+    let alpha: Vec<u8> = pixels.iter().map(|p| p[3]).collect();
+    let transparent = alpha.iter().any(|&a| a < 255);
+    Ok((Image::from_raw(w, h, rgb), transparent.then(|| Mask::from_raw(w, h, alpha))))
 }
 
 #[cfg(test)]
@@ -84,13 +89,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_pasted_picture_is_drawn_over_white() {
+    fn a_pasted_cut_out_keeps_its_transparency_and_an_opaque_picture_has_none() {
         // One opaque red pixel, one fully transparent pixel, one half transparent black pixel.
-        let img = from_rgba(3, 1, &[200, 0, 0, 255, 10, 20, 30, 0, 0, 0, 0, 128]).unwrap();
+        let (img, alpha) = from_rgba(3, 1, &[200, 0, 0, 255, 10, 20, 30, 0, 0, 0, 0, 128]).unwrap();
         assert_eq!((img.w, img.h), (3, 1));
-        assert_eq!(&img.data[0..3], &[200, 0, 0]);
-        assert_eq!(&img.data[3..6], &[255, 255, 255], "transparent becomes white, not the hidden colour");
-        assert!(img.data[6] > 100 && img.data[6] < 155, "half transparent black is mid grey: {}", img.data[6]);
+        assert_eq!(img.data, vec![200, 0, 0, 10, 20, 30, 0, 0, 0], "the colours as they are, as for an opened file");
+        assert_eq!(alpha.unwrap().data, vec![255, 0, 128]);
+        let (_, none) = from_rgba(1, 1, &[1, 2, 3, 255]).unwrap();
+        assert!(none.is_none(), "an opaque picture is not a cut-out");
     }
 
     #[test]
@@ -106,7 +112,7 @@ mod tests {
         let img = Rgba { w: 2, h: 1, data: vec![200, 0, 0, 255, 0, 0, 200, 255] };
         assert!(write(&img).is_ok());
         match read() {
-            Ok(Pasted::Image(back)) => assert_eq!(back.data, vec![200, 0, 0, 0, 0, 200]),
+            Ok(Pasted::Image(back, _)) => assert_eq!(back.data, vec![200, 0, 0, 0, 0, 200]),
             _ => panic!("the picture did not come back"),
         }
     }
