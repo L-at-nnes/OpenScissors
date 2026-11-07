@@ -273,6 +273,8 @@ pub struct SourceLayers<'a> {
     pub hair: Option<&'a Mask>,
     /// Pending smart selection (cyan).
     pub selection: Option<&'a Mask>,
+    /// Where the eraser wiped the prediction out (255): the prediction is not tinted there.
+    pub erased: Option<&'a Mask>,
 }
 
 /// Left view: the source image with the chosen layers tinted over it.
@@ -281,8 +283,15 @@ pub fn render_source_view(image: &Image, layers: &SourceLayers, region: Rect, ou
     let interp = interp_for(scale);
     let src = crop_resize_image(image, region, out_w, out_h, interp);
     let sample = |m: Option<&Mask>| m.map(|m| crop_resize_mask(m, region, out_w, out_h, interp));
+    // The prediction as the person corrected it: what the eraser wiped out is no longer shown as kept.
+    let predicted = sample(layers.predicted).map(|mut p| {
+        if let Some(e) = sample(layers.erased) {
+            p.data.iter_mut().zip(&e.data).for_each(|(v, &e)| *v = ((*v as u32 * (255 - e as u32) + 127) / 255) as u8);
+        }
+        p
+    });
     let tints = [
-        (sample(layers.predicted), OVERLAY_RGB),
+        (predicted, OVERLAY_RGB),
         (sample(layers.keep), OVERLAY_RGB),
         (sample(layers.remove), REMOVE_RGB),
         (sample(layers.hair), HAIR_RGB),

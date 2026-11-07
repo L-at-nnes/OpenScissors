@@ -97,6 +97,9 @@ pub struct Document {
     marks: Option<Mask>,
     /// Remove marks (255), shown in red in graph-cut mode.
     bg_marks: Option<Mask>,
+    /// Pixels the eraser wiped out and no later mark covered (255): the left view no longer tints the AI prediction
+    /// there.
+    erased: Option<Mask>,
     /// Hair marks (255) with hair erasers removing them.
     hair_marks: Option<Mask>,
     /// Pending smart selection (not part of the document until applied; not undoable).
@@ -155,6 +158,7 @@ impl Document {
             alpha: None,
             marks: None,
             bg_marks: None,
+            erased: None,
             hair_marks: None,
             selection: None,
             alpha_exact: u64::MAX,
@@ -462,11 +466,16 @@ impl Document {
                             paint_stroke(m, s, s.kind.value());
                         }
                     }
+                    if let (Some(m), true) = (&mut self.erased, matches!(s.kind, StrokeKind::Keep | StrokeKind::Remove | StrokeKind::Erase))
+                    {
+                        paint_stroke(m, s, if s.kind == StrokeKind::Erase { 255 } else { 0 });
+                    }
                 } else {
                     self.strokes.pop();
                     self.alpha = None;
                     self.marks = None;
                     self.bg_marks = None;
+                    self.erased = None;
                     self.hair_marks = None;
                 }
                 self.touch(true);
@@ -493,6 +502,7 @@ impl Document {
                 self.alpha = None;
                 self.marks = None;
                 self.bg_marks = None;
+                self.erased = None;
                 self.hair_marks = None;
                 self.touch(true);
             }
@@ -626,6 +636,9 @@ impl Document {
         if self.marks.is_none() {
             self.marks = Some(rasterize(&self.strokes, w, h, &[StrokeKind::Keep, StrokeKind::Erase]));
         }
+        if self.erased.is_none() {
+            self.erased = Some(erased_mask(&self.strokes, w, h));
+        }
         if self.bg_marks.is_none() {
             self.bg_marks = Some(rasterize(&self.strokes, w, h, &[StrokeKind::Remove, StrokeKind::Erase]));
         }
@@ -718,6 +731,7 @@ impl Document {
             predicted: self.predicted.as_deref(),
             keep: (!hair_mode).then(|| self.marks.as_ref().expect("marks ready")),
             remove: (!hair_mode && self.params.mask.graphcut).then(|| self.bg_marks.as_ref().expect("marks ready")),
+            erased: self.erased.as_ref(),
             hair: hair_mode.then(|| self.hair_marks.as_ref().expect("marks ready")),
             selection: self.selection.as_ref(),
         };
@@ -1124,6 +1138,26 @@ mod tests {
             }
         }
         img
+    }
+
+    #[test]
+    fn the_original_view_stops_tinting_what_the_eraser_wiped_out() {
+        let mut d = Document::new(12, Image::filled(50, 40, [100, 100, 100]), None);
+        d.set_prediction(Some(Mask::filled(50, 40, 255)));
+        let region = Rect::new(0.0, 0.0, 50.0, 40.0);
+        let at = |o: &Rgba, x: usize, y: usize| o.data[(y * 50 + x) * 4..][..3].to_vec();
+        let before = d.render_source(region, 50, 40, false);
+        assert_ne!(at(&before, 10, 10), vec![100, 100, 100], "the prediction is tinted");
+        d.add_stroke(Stroke { kind: StrokeKind::Erase, width: 9, points: vec![[10.5, 10.5]] });
+        let after = d.render_source(region, 50, 40, false);
+        assert_eq!(at(&after, 10, 10), vec![100, 100, 100], "the erased part shows the picture as it is");
+        assert_eq!(at(&after, 40, 30), at(&before, 40, 30), "the rest is still tinted");
+        // A later green mark over it tints it again, and an undo too.
+        d.add_stroke(keep(10.5, 10.5, 3));
+        assert_ne!(at(&d.render_source(region, 50, 40, false), 10, 10), vec![100, 100, 100]);
+        d.undo();
+        d.undo();
+        assert_eq!(at(&d.render_source(region, 50, 40, false), 10, 10), at(&before, 10, 10));
     }
 
     #[test]
