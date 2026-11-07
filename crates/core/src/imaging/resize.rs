@@ -79,24 +79,20 @@ pub fn resize_mask(src: &Mask, dw: usize, dh: usize, interp: Interp) -> Mask {
     Mask { w: dw, h: dh, data: resize_raw(&src.data, src.w, src.h, 1, None, dw, dh, interp) }
 }
 
-/// Resize straight-alpha RGBA. The colours are weighted by their alpha while they are averaged, so the colour hidden
-/// under a transparent pixel (often black) never leaks into the edge of the subject.
+/// Resize straight-alpha RGBA. The resizer weights the colours by their alpha while it averages them (its `use_alpha`
+/// option, on by default), so the colour hidden under a transparent pixel (often black) never leaks into the edge of
+/// the subject. It works on 16 bits: on 8 bits a nearly transparent pixel (a soft edge, a hair) kept only a few levels
+/// of its colour and came back wrong. (The colours used to be weighted here as well, which counted the alpha twice.)
 pub fn resize_rgba(src: &Rgba, dw: usize, dh: usize, interp: Interp) -> Rgba {
-    let mut data = src.data.clone();
-    for p in data.chunks_exact_mut(4) {
-        let a = p[3] as u32;
-        for c in &mut p[..3] {
-            *c = ((*c as u32 * a + 127) / 255) as u8;
-        }
+    if dw == 0 || dh == 0 {
+        return Rgba { w: dw, h: dh, data: Vec::new() };
     }
-    let mut out = resize_raw(&data, src.w, src.h, 4, None, dw, dh, interp);
-    for p in out.chunks_exact_mut(4) {
-        let a = p[3] as u32;
-        for c in &mut p[..3] {
-            *c = (*c as u32 * 255 + a / 2).checked_div(a).map_or(0, |v| v.min(255) as u8);
-        }
-    }
-    Rgba { w: dw, h: dh, data: out }
+    let wide: Vec<u8> = src.data.iter().flat_map(|&v| (v as u16 * 257).to_ne_bytes()).collect();
+    let view = ImageRef::new(src.w as u32, src.h as u32, &wide, PixelType::U16x4).expect("source view");
+    let mut dst = FirImage::new(dw as u32, dh as u32, PixelType::U16x4);
+    Resizer::new().resize(&view, &mut dst, &ResizeOptions::new().resize_alg(alg(interp))).expect("resize");
+    let data = dst.into_vec().chunks_exact(2).map(|b| ((u16::from_ne_bytes([b[0], b[1]]) as u32 + 128) / 257) as u8).collect();
+    Rgba { w: dw, h: dh, data }
 }
 
 pub fn crop_resize_image(src: &Image, crop: Rect, dw: usize, dh: usize, interp: Interp) -> Image {
@@ -132,6 +128,19 @@ mod tests {
         assert!(r.data.iter().all(|&v| v == 200));
         let l = crop_resize_mask(&m, Rect::new(0.0, 0.0, 4.0, 8.0), 4, 4, Interp::Area);
         assert!(l.data.iter().all(|&v| v == 0));
+    }
+
+    #[test]
+    fn a_nearly_transparent_pixel_keeps_its_colour() {
+        // Alpha 3: weighting the colour by its alpha in 8 bits left 2 / 255 of it, and dividing back gave 170.
+        let img = Rgba { w: 4, h: 4, data: [200, 100, 50, 3].repeat(16) };
+        for interp in [Interp::Area, Interp::Bilinear, Interp::Bicubic] {
+            let r = resize_rgba(&img, 7, 3, interp);
+            for p in r.data.chunks_exact(4) {
+                assert_eq!(p[3], 3, "{interp:?}");
+                assert!(p[0].abs_diff(200) <= 2 && p[1].abs_diff(100) <= 2 && p[2].abs_diff(50) <= 2, "{interp:?}: {p:?}");
+            }
+        }
     }
 
     #[test]
