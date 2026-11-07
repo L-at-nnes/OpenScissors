@@ -107,10 +107,30 @@ pub struct Loaded {
 }
 
 /// The colour profile `icc` when it describes an RGB space other than sRGB (the only case that needs a conversion).
+/// A profile is judged by what it does, not by its name: one that leaves colours where they are is sRGB whatever it
+/// is called ("sRGB built-in", no name at all), and one named "Linear sRGB" is not.
 fn foreign_profile(icc: &[u8]) -> Option<moxcms::ColorProfile> {
     let profile = moxcms::ColorProfile::new_from_slice(icc).ok()?;
-    let is_srgb = format!("{:?}", profile.description).contains("sRGB");
-    (profile.color_space == moxcms::DataColorSpace::Rgb && !is_srgb).then_some(profile)
+    (profile.color_space == moxcms::DataColorSpace::Rgb && !acts_as_srgb(&profile)).then_some(profile)
+}
+
+/// Whether converting from `profile` to sRGB leaves every colour of a 5 x 5 x 5 grid within one level.
+fn acts_as_srgb(profile: &moxcms::ColorProfile) -> bool {
+    let srgb = moxcms::ColorProfile::new_srgb();
+    let Ok(t) = profile.create_transform_8bit(moxcms::Layout::Rgb, &srgb, moxcms::Layout::Rgb, moxcms::TransformOptions::default()) else {
+        return false;
+    };
+    let levels = [0u8, 64, 128, 192, 255];
+    let mut grid = Vec::with_capacity(levels.len().pow(3) * 3);
+    for r in levels {
+        for g in levels {
+            for b in levels {
+                grid.extend_from_slice(&[r, g, b]);
+            }
+        }
+    }
+    let mut out = vec![0u8; grid.len()];
+    t.transform(&grid, &mut out).is_ok() && grid.iter().zip(&out).all(|(a, b)| a.abs_diff(*b) <= 1)
 }
 
 /// Samples converted per call: the transform reads and writes separate buffers, so the picture goes through in pieces.
@@ -469,11 +489,19 @@ mod tests {
         let (grey, colour) = (&loaded.image.data[..3], &loaded.image.data[3..6]);
         assert!(grey.iter().all(|&v| v.abs_diff(128) <= 2), "a neutral grey stays grey: {grey:?}");
         assert!(colour[0] > 205 && colour[1] < 95, "a Display P3 colour is more saturated in sRGB: {colour:?}");
+        // A profile that is called sRGB but is not (Display P3 under that name) is still converted.
+        let mut misnamed = moxcms::ColorProfile::new_display_p3();
+        misnamed.description = Some(moxcms::ProfileText::PlainString("sRGB IEC61966-2.1".into()));
+        png_with_profile(&dir.join("misnamed.png"), &pixels, Some(misnamed.encode().unwrap()));
+        assert!(load_image_deep(&dir.join("misnamed.png")).unwrap().converted, "judged by what it does, not by its name");
 
-        // No profile, or an sRGB one: the pixels are what the file says.
+        // No profile, or an sRGB one (whatever its name): the pixels are what the file says.
+        let mut renamed = moxcms::ColorProfile::new_srgb();
+        renamed.description = Some(moxcms::ProfileText::PlainString("Camera standard".into()));
         png_with_profile(&dir.join("none.png"), &pixels, None);
         png_with_profile(&dir.join("srgb.png"), &pixels, Some(srgb));
-        for name in ["none.png", "srgb.png"] {
+        png_with_profile(&dir.join("renamed.png"), &pixels, Some(renamed.encode().unwrap()));
+        for name in ["none.png", "srgb.png", "renamed.png"] {
             let l = load_image_deep(&dir.join(name)).unwrap();
             assert!(!l.converted, "{name}");
             assert_eq!(l.image.data, vec![128, 128, 128, 200, 100, 50], "{name}");
