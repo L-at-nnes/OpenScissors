@@ -371,6 +371,9 @@ impl Document {
         }
         let mut next: Params = serde_json::from_value(root).map_err(|e| Error::msg(format!("invalid value for '{path}': {e}")))?;
         next.sanitize();
+        if next == self.params {
+            return Ok(()); // brought back in range, the value is the one already there: nothing to undo
+        }
         if path == "background.image_path" {
             self.load_bg(next.background.image_path.clone())?;
         }
@@ -1035,6 +1038,18 @@ mod tests {
         assert!(!d.params().shadow.enabled);
         d.redo();
         assert!(d.params().shadow.enabled);
+    }
+
+    #[test]
+    fn a_value_that_changes_nothing_once_brought_in_range_is_no_edit() {
+        let mut d = doc();
+        d.set_param("shadow.opacity", json!(100)).unwrap();
+        let steps = d.can_undo();
+        d.mark_clean();
+        d.set_param("shadow.opacity", json!(500)).unwrap(); // clamped to 100: the same value
+        assert!(d.is_clean() && steps, "no new step, still saved");
+        d.undo();
+        assert_eq!(d.params().shadow.opacity, 75, "the one real step is undone");
     }
 
     #[test]
