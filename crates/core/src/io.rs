@@ -155,7 +155,6 @@ pub fn srgb_profile() -> &'static [u8] {
     ICC.get_or_init(|| moxcms::ColorProfile::new_srgb().encode().unwrap_or_default())
 }
 
-/// Read an image as 8-bit RGB. EXIF orientation is applied; alpha is dropped.
 /// Write `bytes` to `path` so that a crash or a full disk never leaves a half-written file: the data goes to a
 /// temporary file in the same folder, is flushed to disk, then replaces the target in one step.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -210,6 +209,8 @@ fn remove_unfinished(which: impl Fn(&Path) -> bool) {
     });
 }
 
+/// Read an image as 8-bit RGB: EXIF orientation applied, colour profile converted to sRGB, alpha dropped (see
+/// [`load_image_deep`] for the transparency and the 16-bit samples).
 pub fn load_image(path: &Path) -> Result<Image> {
     Ok(load_image_deep(path)?.image)
 }

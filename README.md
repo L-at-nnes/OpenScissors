@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Made with Rust](https://img.shields.io/badge/made%20with-Rust-b7410e)](https://www.rust-lang.org)
 [![UI: Slint](https://img.shields.io/badge/UI-Slint-2379f4)](https://slint.dev)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078d4)](#get-it)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078d4)](#get-it)
 [![Portable](https://img.shields.io/badge/install-none%20(one%20folder)-success)](#portable-by-design)
 [![No telemetry](https://img.shields.io/badge/telemetry-none-lightgrey)](#privacy)
 
@@ -69,7 +69,7 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 
 ## Get it
 
-Windows 10/11 (64-bit) is the tested platform. The Releases page also has a Linux x64 build and a macOS Apple Silicon build, untested.
+Windows 10/11 (64-bit), Linux x64 and macOS on Apple Silicon each have their build on the Releases page.
 
 1. Download the latest zip for your system from the Releases page (`OpenScissors-…-portable-win-x64.zip`, `…-linux-x64.zip` or `…-darwin-arm64.zip`) and unzip it anywhere.
 2. Run `OpenScissors.exe` (`OpenScissors` on Linux and macOS).
@@ -185,12 +185,10 @@ More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PERF.md](docs/PER
 
 ## Known limits
 
-- Windows is the platform I test. The code is portable, the Linux and macOS (Apple Silicon) builds are untested. There is no macOS Intel build: ONNX Runtime provides no binary for it.
 - The GPU mode (DirectML) works but didn't make anything faster on the card I tried, so it stays optional.
 - Wide-gamut pictures are converted to sRGB, so colours outside sRGB are clipped. AVIF can be written but not opened.
 - The screen reader support (see [docs/PERF.md](docs/PERF.md)) has not been tested with a real screen reader.
 - A picture is refused, with a message, when it would not fit the memory budget (about 24 bytes per pixel once opened: an 8K photo needs ~0.8 GB, 100 megapixels ~2.3 GB) or is over 500 megapixels. The undo history keeps at most about 384 MB: the oldest steps are forgotten first.
-- Error messages coming from the Rust side are in English only.
 - The translations haven't been reviewed by native speakers. Corrections are welcome.
 
 ## License

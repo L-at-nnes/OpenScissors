@@ -1,5 +1,5 @@
 //! OpenScissors core: imaging, AI prediction, masks, document model and rendering.
-//! No GUI dependency; the Tauri app only calls into this crate.
+//! No GUI dependency: the window (`crates/app`) and the command line (`crates/cli`) call into this crate.
 
 #![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::manual_memcpy, clippy::chunks_exact_to_as_chunks)]
 

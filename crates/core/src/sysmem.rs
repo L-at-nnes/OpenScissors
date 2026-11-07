@@ -1,7 +1,7 @@
 //! Memory of the machine and of this process: to refuse work that cannot fit instead of crashing,
 //! and to keep the application under its share of the RAM.
 
-/// Default share of the physical memory the application may use (the web view is not counted).
+/// Default share of the physical memory the application may use.
 pub const DEFAULT_BUDGET_PERCENT: u64 = 25;
 
 static BUDGET_PERCENT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(DEFAULT_BUDGET_PERCENT);

@@ -67,7 +67,7 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 
 ## Obtenir l'appli
 
-Windows 10/11 (64 bits) est la plateforme testée. La page Releases propose aussi un build Linux x64 et un build macOS Apple Silicon, non testés.
+Windows 10/11 (64 bits), Linux x64 et macOS sur Apple Silicon ont chacun leur build sur la page Releases.
 
 1. Téléchargez le dernier zip pour votre système depuis la page Releases (`OpenScissors-…-portable-win-x64.zip`, `…-linux-x64.zip` ou `…-darwin-arm64.zip`) et décompressez-le où vous voulez.
 2. Lancez `OpenScissors.exe` (`OpenScissors` sous Linux et macOS).
@@ -153,12 +153,10 @@ Détails dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) et [docs/PERF.md](doc
 
 ## Limites connues
 
-- Windows est la plateforme testée. Le code est portable, les builds Linux et macOS (Apple Silicon) ne sont pas testés. Il n'y a pas de build macOS Intel : ONNX Runtime n'en fournit pas.
 - Le mode GPU (DirectML) fonctionne mais n'a rien accéléré sur la carte essayée ; il reste optionnel.
 - Les images à gamut large sont converties en sRGB : les couleurs hors sRGB sont écrêtées. L'AVIF s'écrit mais ne s'ouvre pas.
 - Le fonctionnement avec un lecteur d'écran (voir [docs/PERF.md](docs/PERF.md)) n'a pas été testé avec un vrai lecteur d'écran.
 - Une image est refusée, avec un message, quand elle ne tiendrait pas dans le budget mémoire (environ 24 octets par pixel une fois ouverte : une photo 8K demande ~0,8 Go, 100 mégapixels ~2,3 Go) ou dépasse 500 mégapixels. L'historique d'annulation ne garde qu'environ 384 Mo : les plus anciennes étapes sont oubliées en premier.
-- Les messages d'erreur venant de Rust sont en anglais uniquement.
 - Les traductions n'ont pas été relues par des locuteurs natifs. Les corrections sont les bienvenues.
 
 ## Licence

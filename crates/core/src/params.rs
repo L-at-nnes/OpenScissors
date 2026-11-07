@@ -1,5 +1,5 @@
 //! Document properties (layers): everything the right-hand panel edits.
-//! The JSON shape of these types is the contract with the frontend.
+//! Their JSON shape is what projects and settings store, and the dotted paths of `Document::set_param` address it.
 
 use serde::{Deserialize, Serialize};
 
