@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use crate::imaging::filter::box_blur_u8;
 use crate::imaging::guided::guided_filter;
 use crate::imaging::linalg::{det3, inv3};
-use crate::imaging::resize::{resize_image, resize_mask, working_size, Interp};
+use crate::imaging::resize::{crop_resize_mask, resize_image, resize_mask, working_size, Interp};
 use crate::types::{Image, Mask};
 
 /// Images with more than this many pixels are solved on a reduced copy (see [`working_size`]).
@@ -291,19 +291,40 @@ pub fn hair_matting(image: &Image, alpha: &Mask, hair: &Mask, feather: u32) -> M
     let guess: Vec<f64> = dec_s.data.iter().map(|&v| v as f64 / 255.0).collect();
     let soft = solve(&img, sw, sh, &unknown, &known, &guess);
 
-    // Back to full resolution: guided refinement on the image edges, band by band.
-    let full: Vec<u8> = if reduced {
-        let low = Mask { w: sw, h: sh, data: soft.iter().map(|&v| (v * 255.0).round() as u8).collect() };
-        let up = resize_mask(&low, w, h, Interp::Bilinear);
-        refine_in_bands(&image.gray().data, &up.data, w, h, REFINE_BAND_ROWS)
-    } else {
-        soft.iter().map(|&v| (v as f32).clamp(0.0, 1.0)).map(|v| (v * 255.0).round() as u8).collect()
-    };
-
     let mut out = alpha.clone();
-    for i in 0..w * h {
-        if hair.data[i] > 0 {
-            out.data[i] = full[i];
+    if !reduced {
+        for (i, &v) in soft.iter().enumerate() {
+            if hair.data[i] > 0 {
+                out.data[i] = (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+            }
+        }
+        return out;
+    }
+    // Back to full resolution: guided refinement on the image edges, band by band, only around the hair strokes (the
+    // only pixels kept), with the reach of the filter around them so that the result is the one of the whole picture.
+    let low = Mask { w: sw, h: sh, data: soft.iter().map(|&v| (v * 255.0).round() as u8).collect() };
+    let Some(bb) = crate::render::crop::alpha_bbox(&Mask { w, h, data: hair.data.iter().map(|&v| if v > 0 { 255 } else { 0 }).collect() })
+    else {
+        return out;
+    };
+    let reach = 2 * REFINE_RADIUS + 1;
+    let (x0, y0) = ((bb.x0 as usize).saturating_sub(reach), (bb.y0 as usize).saturating_sub(reach));
+    let (x1, y1) = ((bb.x1 as usize + reach).min(w), (bb.y1 as usize + reach).min(h));
+    let (bw, bh) = (x1 - x0, y1 - y0);
+    let (kx, ky) = (sw as f64 / w as f64, sh as f64 / h as f64);
+    let region = crate::types::Rect::new(x0 as f64 * kx, y0 as f64 * ky, x1 as f64 * kx, y1 as f64 * ky);
+    let up = crop_resize_mask(&low, region, bw, bh, Interp::Bilinear);
+    let mut gray = Vec::with_capacity(bw * bh);
+    for y in y0..y1 {
+        let row = &image.data[(y * w + x0) * 3..(y * w + x1) * 3];
+        gray.extend(row.chunks_exact(3).map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114 + 500) / 1000) as u8));
+    }
+    let refined = refine_in_bands(&gray, &up.data, bw, bh, REFINE_BAND_ROWS);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            if hair.data[y * w + x] > 0 {
+                out.data[y * w + x] = refined[(y - y0) * bw + x - x0];
+            }
         }
     }
     out
@@ -430,6 +451,31 @@ mod tests {
         let out = hair_matting(&img, &alpha, &hair, 0);
         let mid = (0..w * h).filter(|&i| hair.data[i] > 0 && out.data[i] > 20 && out.data[i] < 235).count();
         assert!(mid > 100, "only {mid} soft pixels");
+    }
+
+    #[test]
+    fn refining_around_the_strokes_gives_the_result_of_the_whole_picture() {
+        // A short hair stroke on a large picture: only its surroundings are refined now.
+        let (w, h) = (900, 700);
+        let (img, alpha, mut hair, _) = ramp_scene(w, h, 400, 480);
+        hair.data.iter_mut().enumerate().for_each(|(i, v)| *v = if (300..360).contains(&(i / w)) { *v } else { 0 });
+        let out = hair_matting(&img, &alpha, &hair, 0);
+        // The same computation over the whole picture, as it was done before.
+        let decided = alpha.clone();
+        let (sw, sh) = working_size(w, h, MAX_PIXELS, SMALL_SIDE).unwrap();
+        let small = resize_image(&img, sw, sh, Interp::Area);
+        let dec_s = resize_mask(&decided, sw, sh, Interp::Area);
+        let hair_s = resize_mask(&hair, sw, sh, Interp::Area);
+        let unknown: Vec<bool> = hair_s.data.iter().map(|&v| v > 0).collect();
+        let known: Vec<f64> = dec_s.data.iter().map(|&v| if v > 128 { 1.0 } else { 0.0 }).collect();
+        let pix: Vec<[f64; 3]> =
+            small.data.chunks_exact(3).map(|p| [p[0] as f64 / 255.0, p[1] as f64 / 255.0, p[2] as f64 / 255.0]).collect();
+        let guess: Vec<f64> = dec_s.data.iter().map(|&v| v as f64 / 255.0).collect();
+        let soft = solve(&pix, sw, sh, &unknown, &known, &guess);
+        let low = Mask { w: sw, h: sh, data: soft.iter().map(|&v| (v * 255.0).round() as u8).collect() };
+        let whole = refine_in_bands(&img.gray().data, &resize_mask(&low, w, h, Interp::Bilinear).data, w, h, REFINE_BAND_ROWS);
+        let worst = (0..w * h).filter(|&i| hair.data[i] > 0).map(|i| out.data[i].abs_diff(whole[i])).max().unwrap();
+        assert!(worst <= 2, "differs from the whole-picture result by {worst}");
     }
 
     #[test]
