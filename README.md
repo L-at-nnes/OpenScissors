@@ -188,7 +188,7 @@ More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PERF.md](docs/PER
 - The GPU mode (DirectML) works but didn't make anything faster on the card I tried, so it stays optional.
 - Wide-gamut pictures are converted to sRGB, so colours outside sRGB are clipped. AVIF can be written but not opened.
 - The screen reader support (see [docs/PERF.md](docs/PERF.md)) has not been tested with a real screen reader.
-- A picture is refused, with a message, when it would not fit the memory budget (about 24 bytes per pixel once opened: an 8K photo needs ~0.8 GB, 100 megapixels ~2.3 GB) or is over 500 megapixels. The undo history keeps at most about 384 MB: the oldest steps are forgotten first.
+- A picture is refused, with a message, when it would not fit the memory budget (about 24 bytes per pixel once opened: an 8K photo needs ~0.8 GB, 100 megapixels ~2.3 GB) or is over 500 megapixels. The undo history keeps at most about 384 MB (a sixth of the memory budget on a small machine): the oldest steps are forgotten first.
 - The translations haven't been reviewed by native speakers. Corrections are welcome.
 
 ## License

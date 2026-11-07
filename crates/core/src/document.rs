@@ -26,6 +26,12 @@ const MERGE_WINDOW: Duration = Duration::from_millis(800);
 /// photo a long session would otherwise grow without limit. The oldest steps are forgotten first.
 const UNDO_LIMIT_BYTES: usize = 384 << 20;
 
+/// The undo limit for a memory budget of `budget_mb`: [`UNDO_LIMIT_BYTES`], or a sixth of the budget when that is less
+/// (a small machine), never under 64 MB.
+fn undo_limit_for(budget_mb: Option<u64>) -> usize {
+    budget_mb.map_or(UNDO_LIMIT_BYTES, |b| ((b << 20) / 6).clamp(64 << 20, UNDO_LIMIT_BYTES as u64) as usize)
+}
+
 enum Command {
     AddStroke(Stroke),
     SetPrediction {
@@ -149,7 +155,7 @@ impl Document {
             strokes: Vec::new(),
             params: Params::default(),
             undo: Vec::new(),
-            undo_limit: UNDO_LIMIT_BYTES,
+            undo_limit: undo_limit_for(crate::sysmem::budget_mb()),
             index: 0,
             clean: Some(0),
             edits: 0,
@@ -975,6 +981,14 @@ mod tests {
             d.redo();
         }
         assert_eq!(d.predicted().unwrap().data[0], 200);
+    }
+
+    #[test]
+    fn the_undo_history_follows_the_memory_budget_of_a_small_machine() {
+        assert_eq!(undo_limit_for(None), UNDO_LIMIT_BYTES);
+        assert_eq!(undo_limit_for(Some(16 * 1024)), UNDO_LIMIT_BYTES, "a large budget keeps the usual limit");
+        assert_eq!(undo_limit_for(Some(1200)), 200 << 20, "a 4.8 GB machine: a sixth of its 1.2 GB budget");
+        assert_eq!(undo_limit_for(Some(100)), 64 << 20, "never under 64 MB");
     }
 
     #[test]
