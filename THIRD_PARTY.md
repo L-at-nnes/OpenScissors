@@ -1,6 +1,7 @@
 # Third-party components
 
-Dependencies are resolved by Cargo, not vendored.
+Dependencies are resolved by Cargo, not vendored. Every licence in the dependency tree is checked in CI against the
+permissive list of `deny.toml` (`cargo deny check licenses`); `cargo deny list` prints each crate with its licence.
 
 | Component | Use | License |
 |---|---|---|
@@ -12,6 +13,9 @@ Dependencies are resolved by Cargo, not vendored.
 | webp, libwebp (C library, built from source) | lossy WebP export | MIT or Apache-2.0 (wrapper) / BSD-3-Clause (libwebp) |
 | ravif, rav1e (through `image`) | AVIF export | BSD-3-Clause / BSD-2-Clause |
 | rayon, serde, serde_json, thiserror, sha2, hex, base64, ureq | core utilities, checked downloads | MIT / Apache-2.0 |
+| rustls, ring, webpki-roots (through ureq) | HTTPS for the model downloads | Apache-2.0 / ISC / MIT; CDLA-Permissive-2.0 (root certificates) |
+| arboard | system clipboard | MIT / Apache-2.0 |
+| ICU4X, parley, fontique, zbus, accesskit (through Slint) | text layout, system integration, accessibility | Unicode-3.0 / MIT / Apache-2.0 |
 | Microsoft DirectML runtime (Windows, optional GPU provider, shipped in the portable folder) | GPU inference | MIT |
 
 ## Models (downloaded by the user at runtime, never committed or bundled)
