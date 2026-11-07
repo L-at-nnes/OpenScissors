@@ -194,13 +194,24 @@ pub fn tf(key: &str, vars: &[(&str, &str)]) -> String {
     fill(&t(key), vars)
 }
 
-/// `text` with its `{name}` placeholders replaced by `vars`.
+/// `text` with its `{name}` placeholders replaced by `vars`, in one pass: a value is never searched again, so a file
+/// named `{error}.png` stays as it is.
 fn fill(text: &str, vars: &[(&str, &str)]) -> String {
-    let mut text = text.to_string();
-    for (k, v) in vars {
-        text = text.replace(&format!("{{{k}}}"), v);
+    let mut out = String::with_capacity(text.len());
+    for piece in pieces(text) {
+        match piece {
+            Piece::Text(t) => out.push_str(t),
+            Piece::Var(name) => match vars.iter().find(|(k, _)| *k == name) {
+                Some((_, v)) => out.push_str(v),
+                None => {
+                    out.push('{');
+                    out.push_str(name);
+                    out.push('}');
+                }
+            },
+        }
     }
-    text
+    out
 }
 
 #[cfg(test)]
@@ -343,6 +354,13 @@ mod tests {
         // A message that is not one of them stays as it is.
         assert_eq!(fr("Accès refusé. (os error 5)"), "Accès refusé. (os error 5)");
         assert_eq!(fr("unbalanced '{' in args"), "unbalanced '{' in args");
+    }
+
+    #[test]
+    fn a_value_that_looks_like_a_placeholder_is_left_as_it_is() {
+        let text = fill("Cannot read file {file}: {error}", &[("file", "{error}.png"), ("error", "denied")]);
+        assert_eq!(text, "Cannot read file {error}.png: denied");
+        assert_eq!(fill("{a} and {a}, {b} {unknown}", &[("a", "1"), ("b", "2")]), "1 and 1, 2 {unknown}");
     }
 
     #[test]
