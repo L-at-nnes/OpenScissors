@@ -2,7 +2,7 @@
 
 Thanks for looking. A few things that make a change easy to accept:
 
-- **Keep it small and tested.** `cargo test --workspace` and `cargo clippy --workspace --all-targets` must pass; `cargo fmt --all` before you commit.
+- **Keep it small and tested.** `cargo test --workspace` and `cargo clippy --workspace --all-targets` must pass; `cargo fmt --all` before you commit. The tests that need a model are ignored by default; with the models on disk run them with `OPENSCISSORS_MODEL=<isnet model.onnx> OPENSCISSORS_SAM_DIR=<sam2-tiny folder> cargo test -p openscissors-core --test golden --test pipeline --test sam2 -- --include-ignored` (CI does it in its `models` job).
 - **The core stays free of any GUI crate.** If it can be tested without a window, it lives in `crates/core`.
 - **Light by default.** A feature that costs memory or start-up time should be opt-in.
 - **Strings.** Add the English text in the code (`t("...")` in Rust, `@tr("...")` in Slint) and its translation in every file of `crates/app/locales/`. The test tells you what is missing.

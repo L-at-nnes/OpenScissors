@@ -25,7 +25,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace   # golden and pipeline tests are skipped without OPENSCISSORS_MODEL
+      - run: cargo test --workspace   # the tests that need a model are ignored here and run by the `models` job
       # The window itself, on a virtual display: the selftest opens a picture that is already cut out (no model needed),
       # changes the background and saves snapshots of the real interface. It reuses what `cargo test` just built.
       - name: Window smoke test (Linux, virtual display)
@@ -45,6 +45,47 @@ jobs:
           name: window-smoke-test
           path: ${{ runner.temp }}/smoke/*.png
           if-no-files-found: ignore
+
+  # The tests that need real models (golden mask, end-to-end pipeline, SAM 2), with the models downloaded by the command
+  # line itself (pinned SHA-256) and kept in the cache between runs. A regression in the pipeline shows up here.
+  models:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/osc-models-home/models
+          key: models-isnet-sam2tiny-${{ hashFiles('crates/core/src/model/registry.rs') }}
+          restore-keys: models-isnet-sam2tiny-
+      - name: Download the models (checked against their SHA-256, resumed if the cache holds a part)
+        run: |
+          export OPENSCISSORS_HOME="$RUNNER_TEMP/osc-models-home"
+          cargo run --release -p openscissors-cli -- models download isnet-general-use
+          cargo run --release -p openscissors-cli -- models download sam2-tiny
+      - name: Tests with the models
+        run: |
+          export OPENSCISSORS_MODEL="$RUNNER_TEMP/osc-models-home/models/isnet-general-use/model.onnx"
+          export OPENSCISSORS_SAM_DIR="$RUNNER_TEMP/osc-models-home/models/sam2-tiny"
+          cargo test --release -p openscissors-core --test golden --test pipeline --test sam2 -- --include-ignored --nocapture
+
+  # The oldest Rust the workspace says it supports (`rust-version` in Cargo.toml) must still build it.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
+      - run: cargo check --workspace --all-targets
 
   audit:
     runs-on: ubuntu-latest
