@@ -19,6 +19,35 @@ fn rings(radius: usize) -> Vec<usize> {
     v
 }
 
+/// For every pixel, how far the nearest solid pixel is, counted in square rings (Chebyshev distance), up to `cap`:
+/// two passes over the picture. A ring smaller than that distance holds no solid pixel, so it need not be searched.
+fn solid_distance(alpha: &Mask, cap: usize) -> Vec<u16> {
+    let (w, h) = (alpha.w, alpha.h);
+    let cap = cap.min(u16::MAX as usize - 1) as u16;
+    let mut d: Vec<u16> = alpha.data.iter().map(|&a| if a >= SOLID { 0 } else { cap }).collect();
+    let near = |d: &[u16], x: usize, y: usize, dx: isize, dy: isize| -> u16 {
+        let (nx, ny) = (x as isize + dx, y as isize + dy);
+        if nx < 0 || ny < 0 || nx >= w as isize || ny >= h as isize {
+            cap
+        } else {
+            d[ny as usize * w + nx as usize].saturating_add(1).min(cap)
+        }
+    };
+    for y in 0..h {
+        for x in 0..w {
+            let v = [(-1, -1), (0, -1), (1, -1), (-1, 0)].iter().map(|&(dx, dy)| near(&d, x, y, dx, dy)).min().unwrap_or(cap);
+            d[y * w + x] = d[y * w + x].min(v);
+        }
+    }
+    for y in (0..h).rev() {
+        for x in (0..w).rev() {
+            let v = [(1, 1), (0, 1), (-1, 1), (1, 0)].iter().map(|&(dx, dy)| near(&d, x, y, dx, dy)).min().unwrap_or(cap);
+            d[y * w + x] = d[y * w + x].min(v);
+        }
+    }
+    d
+}
+
 /// Replace the colour of the semi-transparent pixels of `img` (same size as `alpha`) by the average colour of the
 /// solid pixels around them, looking no further than `radius` pixels.
 pub fn defringe(img: &mut Image, alpha: &Mask, radius: usize) {
@@ -28,13 +57,20 @@ pub fn defringe(img: &mut Image, alpha: &Mask, radius: usize) {
     let (w, h) = (img.w, img.h);
     let src = img.data.clone();
     let rings = rings(radius);
+    // A pixel with no solid pixel within `radius` keeps its colour, and the rings closer than the nearest solid pixel
+    // are empty: both are known from the distances without searching (a wide feathered edge was the slow case).
+    let dist = solid_distance(alpha, radius + 1);
     img.data.par_chunks_mut(w * 3).enumerate().for_each(|(y, row)| {
         for x in 0..w {
             let a = alpha.data[y * w + x];
             if a == 0 || a >= SOLID {
                 continue;
             }
-            for &r in &rings {
+            let nearest = dist[y * w + x] as usize;
+            if nearest > radius {
+                continue;
+            }
+            for &r in rings.iter().filter(|&&r| r >= nearest) {
                 let (x0, x1) = (x.saturating_sub(r), (x + r).min(w - 1));
                 let (y0, y1) = (y.saturating_sub(r), (y + r).min(h - 1));
                 let (mut n, mut sum) = (0u32, [0u32; 3]);
@@ -83,6 +119,75 @@ mod tests {
             }
         }
         (img, alpha)
+    }
+
+    /// The search as it was before the distances: every ring, from the smallest.
+    fn reference(img: &mut Image, alpha: &Mask, radius: usize) {
+        let (w, h) = (img.w, img.h);
+        let src = img.data.clone();
+        for y in 0..h {
+            for x in 0..w {
+                let a = alpha.data[y * w + x];
+                if a == 0 || a >= SOLID {
+                    continue;
+                }
+                for &r in &rings(radius) {
+                    let (mut n, mut sum) = (0u32, [0u32; 3]);
+                    for yy in y.saturating_sub(r)..=(y + r).min(h - 1) {
+                        for xx in x.saturating_sub(r)..=(x + r).min(w - 1) {
+                            if alpha.data[yy * w + xx] >= SOLID {
+                                n += 1;
+                                for c in 0..3 {
+                                    sum[c] += src[(yy * w + xx) * 3 + c] as u32;
+                                }
+                            }
+                        }
+                    }
+                    if n >= 3 || (n > 0 && r == radius) {
+                        for c in 0..3 {
+                            img.data[(y * w + x) * 3 + c] = ((sum[c] + n / 2) / n) as u8;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn skipping_rings_by_distance_changes_nothing() {
+        let (w, h) = (61, 47);
+        let mut seed = 99u32;
+        let mut next = || {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            (seed >> 24) as u8
+        };
+        let mut img = Image::new(w, h);
+        img.data.iter_mut().for_each(|v| *v = next());
+        // A solid blob, a wide soft band around it, scattered solid specks and soft noise.
+        let mut alpha = Mask::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                let d = ((x as f64 - 20.0).powi(2) + (y as f64 - 22.0).powi(2)).sqrt();
+                alpha.data[y * w + x] = if d < 8.0 {
+                    255
+                } else if d < 30.0 {
+                    (255.0 * (30.0 - d) / 22.0) as u8
+                } else {
+                    0
+                };
+            }
+        }
+        for _ in 0..40 {
+            let i = (next() as usize * 37 + next() as usize) % (w * h);
+            alpha.data[i] = if next() % 2 == 0 { 255 } else { next() };
+        }
+        for radius in [1, 2, 5, 9, 20] {
+            let (mut fast, mut slow) = (img.clone(), img.clone());
+            defringe(&mut fast, &alpha, radius);
+            reference(&mut slow, &alpha, radius);
+            assert!(fast == slow, "radius {radius}");
+        }
     }
 
     #[test]
