@@ -53,6 +53,11 @@ enum Command {
         old: Vec<Stroke>,
         new: Vec<Stroke>,
     },
+    /// Replace the prediction and the strokes together (a mask tool bakes the marks into the prediction).
+    SetMask {
+        old: (Option<Arc<Mask>>, Vec<Stroke>),
+        new: (Option<Arc<Mask>>, Vec<Stroke>),
+    },
 }
 
 /// What the UI needs to know after every change.
@@ -335,6 +340,7 @@ impl Document {
                 Command::SetParam { path, old, new, .. } => path.len() + 2 * std::mem::size_of::<Value>() + json_size(old) + json_size(new),
                 Command::SetParams { .. } => 2 * params,
                 Command::SetStrokes { old, new } => strokes(old) + strokes(new),
+                Command::SetMask { old, new } => mask(&old.0) + mask(&new.0) + strokes(&old.1) + strokes(&new.1),
             })
             .sum()
     }
@@ -415,6 +421,33 @@ impl Document {
         p.background.mode = BgMode::Image;
         self.set_params(p);
         Ok(())
+    }
+
+    /// Correct the mask with `tool` (fill the holes, remove specks...) as one undoable step. The tool works on the mask
+    /// as it is shown (prediction and marks, the graph cut included); the result becomes the prediction and the green,
+    /// red and eraser marks it holds are cleared. Hair strokes stay: they refine whatever mask lies under them.
+    pub fn apply_mask_tool(&mut self, tool: crate::mask::tools::MaskTool) {
+        let current = if self.strokes.iter().any(|s| matches!(s.kind, StrokeKind::Hair | StrokeKind::HairErase)) {
+            // Without the hair refinement, which is applied again over the new prediction.
+            let (w, h) = (self.image.w, self.image.h);
+            let base = if self.params.mask.graphcut {
+                let without_hair: Vec<Stroke> =
+                    self.strokes.iter().filter(|s| !matches!(s.kind, StrokeKind::Hair | StrokeKind::HairErase)).cloned().collect();
+                let mut p = self.params.clone();
+                p.mask.graphcut = true;
+                compute_alpha(&self.image, self.predicted.as_deref(), &without_hair, &p)
+            } else {
+                compose_alpha(self.predicted.as_deref(), &self.strokes, w, h)
+            };
+            base
+        } else {
+            self.alpha_blocking().clone()
+        };
+        let corrected = crate::mask::tools::apply(tool, &current);
+        let kept: Vec<Stroke> =
+            self.strokes.iter().filter(|s| matches!(s.kind, StrokeKind::Hair | StrokeKind::HairErase)).cloned().collect();
+        let old = (self.predicted.clone(), self.strokes.clone());
+        self.push(Command::SetMask { old, new: (Some(Arc::new(corrected)), kept) });
     }
 
     /// Replace every property (e.g. reset to defaults).
@@ -514,6 +547,17 @@ impl Document {
             }
             Command::SetParams { old, new } => {
                 self.replace_params(if forward { (**new).clone() } else { (**old).clone() });
+            }
+            Command::SetMask { old, new } => {
+                let (predicted, strokes) = if forward { new } else { old };
+                self.predicted = predicted.clone();
+                self.strokes = strokes.clone();
+                self.alpha = None;
+                self.marks = None;
+                self.bg_marks = None;
+                self.erased = None;
+                self.hair_marks = None;
+                self.touch(true);
             }
         }
     }
@@ -1172,6 +1216,32 @@ mod tests {
         d.undo();
         d.undo();
         assert_eq!(at(&d.render_source(region, 50, 40, false), 10, 10), at(&before, 10, 10));
+    }
+
+    #[test]
+    fn a_mask_tool_is_one_step_that_bakes_the_marks_and_keeps_the_hair() {
+        use crate::mask::tools::MaskTool;
+        let mut d = doc();
+        let mut pred = Mask::new(50, 40);
+        for y in 5..35 {
+            for x in 5..45 {
+                pred.data[y * 50 + x] = if (20..24).contains(&x) && (15..19).contains(&y) { 0 } else { 255 };
+            }
+        }
+        d.set_prediction(Some(pred));
+        d.add_stroke(Stroke { kind: StrokeKind::Erase, width: 3, points: vec![[10.5, 10.5]] });
+        d.add_stroke(Stroke { kind: StrokeKind::Hair, width: 3, points: vec![[40.5, 30.5]] });
+        let strokes_before = d.strokes().len();
+        d.apply_mask_tool(MaskTool::FillHoles);
+        assert_eq!(d.alpha_blocking().get(21, 16), 255, "the hole is filled");
+        assert_eq!(d.alpha_blocking().get(10, 10), 255, "an erased spot enclosed by the subject is a hole too");
+        assert_eq!(d.strokes().iter().map(|s| s.kind).collect::<Vec<_>>(), vec![StrokeKind::Hair], "the hair stroke stays");
+        d.undo();
+        assert_eq!(d.strokes().len(), strokes_before, "one undo brings the marks back");
+        assert_eq!(d.alpha_blocking().get(21, 16), 0);
+        d.redo();
+        d.apply_mask_tool(MaskTool::Invert);
+        assert_eq!(d.alpha_blocking().get(0, 0), 255);
     }
 
     #[test]

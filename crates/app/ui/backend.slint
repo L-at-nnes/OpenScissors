@@ -229,6 +229,8 @@ export global Backend {
     callback save-defaults();
     callback smart-apply();
     callback smart-cancel();
+    // A one-click correction of the whole mask: fill_holes, remove_specks, keep_largest, invert, harden.
+    callback mask-tool(string);
     callback set-smart-mode(int);
 
     // -- events: panels

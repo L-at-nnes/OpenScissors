@@ -38,6 +38,7 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 
 - **Automatic cut-out** the moment you open an image. The result appears next to the original; both views zoom and pan together.
 - **Brush correction**: mark what to keep, erase what shouldn't be there, and a *hair* tool for soft edges.
+- **One-click mask fixes**: fill the holes, remove the specks, keep the largest part, harden soft edges or invert the mask, each one step to undo.
 - **Group by color** (green and red marks) when the AI struggles: whole areas of similar colour follow your strokes.
 - **Smart select**: click what you want, right-click what you don't, or drag a box (needs the small SAM 2 model).
 - **Backgrounds**: transparent, solid colour, a gradient (two colours and an angle), any picture, or the original with the subject filled in. Blur, grayscale, negative, pixelate or colourize either layer. An eyedropper next to every colour picks it from the picture.

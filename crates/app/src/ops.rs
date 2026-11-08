@@ -562,6 +562,20 @@ impl Ctl {
         }
     }
 
+    /// Correct the whole mask with a tool (`fill_holes`, `remove_specks`, `keep_largest`, `invert`, `harden`), as one
+    /// step to undo. It may compute the graph cut first, so it runs off the interface thread.
+    pub fn apply_mask_tool(self: &Arc<Self>, name: &str) {
+        let Ok(tool) = serde_json::from_value::<openscissors_core::mask::tools::MaskTool>(json!(name)) else { return };
+        let me = self.clone();
+        self.spawn(move || {
+            if let Some(d) = me.st.doc.guard().as_mut() {
+                d.apply_mask_tool(tool);
+            }
+            me.refresh_doc();
+            me.kick_alpha();
+        });
+    }
+
     /// Apply preset `i` of the list (0 is "Custom": nothing to do) as one undoable change.
     pub fn apply_preset(self: &Arc<Self>, i: i32) {
         let Some(preset) = usize::try_from(i - 1).ok().and_then(|n| PRESETS.get(n)) else { return };

@@ -178,6 +178,50 @@ export component Dock inherits Rectangle {
                     }
                 }
                 if Backend.has-doc && Backend.tab == 0: Section {
+                    title: @tr("Mask");
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Btn {
+                            text: @tr("Fill holes");
+                            horizontal-stretch: 1;
+                            clicked => {
+                                Backend.mask-tool("fill_holes");
+                            }
+                        }
+                        Btn {
+                            text: @tr("Remove specks");
+                            horizontal-stretch: 1;
+                            clicked => {
+                                Backend.mask-tool("remove_specks");
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Btn {
+                            text: @tr("Largest part");
+                            horizontal-stretch: 1;
+                            clicked => {
+                                Backend.mask-tool("keep_largest");
+                            }
+                        }
+                        Btn {
+                            text: @tr("Harden");
+                            horizontal-stretch: 1;
+                            clicked => {
+                                Backend.mask-tool("harden");
+                            }
+                        }
+                        Btn {
+                            text: @tr("Invert");
+                            horizontal-stretch: 1;
+                            clicked => {
+                                Backend.mask-tool("invert");
+                            }
+                        }
+                    }
+                }
+                if Backend.has-doc && Backend.tab == 0: Section {
                     title: @tr("Adjust the colours");
                     SliderRow {
                         label: @tr("Brightness");

@@ -275,5 +275,11 @@
   "checksum mismatch for model '{id}'": "die Prüfsumme des Modells „{id}“ stimmt nicht",
   "model runtime error: {error}": "Fehler der Modell-Laufzeit: {error}",
   "JSON error: {error}": "JSON-Fehler: {error}",
-  "One picture opens at a time: the first one dropped was opened. Drop a folder to process several.": "Es öffnet sich immer nur ein Bild: das erste abgelegte wurde geöffnet. Legen Sie einen Ordner ab, um mehrere zu verarbeiten."
+  "One picture opens at a time: the first one dropped was opened. Drop a folder to process several.": "Es öffnet sich immer nur ein Bild: das erste abgelegte wurde geöffnet. Legen Sie einen Ordner ab, um mehrere zu verarbeiten.",
+  "Mask": "Maske",
+  "Fill holes": "Löcher füllen",
+  "Remove specks": "Flecken entfernen",
+  "Largest part": "Größter Teil",
+  "Harden": "Härten",
+  "Invert": "Umkehren"
 }
