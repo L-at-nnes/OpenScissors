@@ -36,8 +36,14 @@ pub fn run() -> Result<(), slint::PlatformError> {
             let c = ctl.clone();
             slint::Timer::single_shot(std::time::Duration::from_millis(150), move || c.open_path(path));
         }
+    } else {
+        // Work left by a run that did not close properly is offered back.
+        let c = ctl.clone();
+        slint::Timer::single_shot(std::time::Duration::from_millis(300), move || c.offer_recovery());
     }
     let result = ui.run();
+    // A normal end: the work was saved, or the person chose not to; the recovery file is not needed.
+    let _ = std::fs::remove_file(ctl.st.recovery_path());
     // A setting changed in the last moment (a slider) is still to be written.
     if let Err(e) = ctl.st.flush_settings() {
         eprintln!("OpenScissors: cannot save the settings: {e}");

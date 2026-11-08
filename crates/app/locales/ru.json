@@ -281,5 +281,10 @@
   "Remove specks": "Убрать пятна",
   "Largest part": "Самая большая часть",
   "Harden": "Сделать чётче",
-  "Invert": "Инвертировать"
+  "Invert": "Инвертировать",
+  "the last picture": "последнее изображение",
+  "OpenScissors did not close properly. Restore the work on {name}?": "OpenScissors закрылся некорректно. Восстановить работу над {name}?",
+  "Restore": "Восстановить",
+  "Discard": "Отказаться",
+  "Restored the work on {name}": "Работа над {name} восстановлена"
 }

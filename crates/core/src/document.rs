@@ -294,6 +294,17 @@ impl Document {
         self.rev += 1;
     }
 
+    /// Count the document as modified (work brought back from a recovery file, which is saved nowhere yet).
+    pub fn mark_modified(&mut self) {
+        self.clean = None;
+        self.rev += 1;
+    }
+
+    /// Whether the person made marks (strokes of any kind): an exported picture does not keep them, a project does.
+    pub fn has_marks(&self) -> bool {
+        !self.strokes.is_empty()
+    }
+
     /// A token for the content as it is now. A save that runs without the document lock takes it with what it writes,
     /// then calls [`Document::mark_clean_if`]: an edit made meanwhile is not marked as saved.
     pub fn edit_mark(&self) -> u64 {
@@ -1327,6 +1338,16 @@ mod tests {
             assert!(from_job == direct, "{mode}: the job renders what export() renders");
         }
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn recovered_work_counts_as_modified() {
+        let mut d = doc();
+        assert!(d.is_clean() && !d.has_marks());
+        d.mark_modified();
+        assert!(!d.is_clean());
+        d.add_stroke(keep(5.5, 5.5, 3));
+        assert!(d.has_marks());
     }
 
     #[test]

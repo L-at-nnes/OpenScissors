@@ -31,6 +31,7 @@ src/render.rs    render thread: keeps the latest request per view
 src/clipboard.rs system clipboard: paste an image or a copied file, copy the result (one long-lived handle, needed on X11)
 src/dialogs.rs   questions drawn by the interface, system file choosers
 src/window.rs    remembers position and size of the window
+                 (the work in progress is written to data/recovery.osproj every minute by `Ctl::autosave` and offered back at start)
 src/state.rs     portable folders, shared state
 src/i18n.rs      translations (keys are the English strings); .slint files use @tr, compiled from the same JSON
 ```

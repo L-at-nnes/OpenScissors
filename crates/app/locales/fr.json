@@ -281,5 +281,10 @@
   "Remove specks": "Retirer les taches",
   "Largest part": "Plus grande partie",
   "Harden": "Durcir",
-  "Invert": "Inverser"
+  "Invert": "Inverser",
+  "the last picture": "la dernière image",
+  "OpenScissors did not close properly. Restore the work on {name}?": "OpenScissors ne s'est pas fermé correctement. Restaurer le travail sur {name} ?",
+  "Restore": "Restaurer",
+  "Discard": "Abandonner",
+  "Restored the work on {name}": "Travail sur {name} restauré"
 }

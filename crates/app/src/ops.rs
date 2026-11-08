@@ -285,14 +285,95 @@ impl Ctl {
         });
     }
 
-    /// Keep the work before the document is closed: the project when one is open, otherwise export the result (asking
-    /// where). Returns whether something was written.
+    /// Keep the work before the document is closed: the project when one is open; a new project when the picture has
+    /// marks (an exported picture would not keep them); otherwise export the result. Returns whether something was
+    /// written.
     pub fn save_work_sync(self: &Arc<Self>) -> bool {
         let project = self.ux.guard().project.clone();
+        let marks = self.st.doc.guard().as_ref().is_some_and(|d| d.has_marks());
         match project {
             Some(p) => self.save_project_to(&p),
+            None if marks => self.ask_project_path().is_some_and(|p| self.save_project_to(&p)),
             None => self.save_sync(true),
         }
+    }
+
+    /// Ask where to save a project (the dialog), with the `.osproj` extension added when missing.
+    fn ask_project_path(self: &Arc<Self>) -> Option<PathBuf> {
+        let file = format!("{}.osproj", stem(self.doc_name().as_deref(), "project"));
+        let mut target =
+            dialogs::save_file(self.last_dir().as_deref(), &t("Save project…"), &file, &[("OpenScissors project", &["osproj"])])?;
+        if !target.extension().is_some_and(|e| e.eq_ignore_ascii_case("osproj")) {
+            target.set_extension("osproj");
+        }
+        Some(target)
+    }
+
+    // -- recovery after a crash
+
+    /// Called every minute: write the work in progress to the recovery file when it changed, or remove that file when
+    /// there is nothing unsaved any more. The writing runs on a worker thread.
+    pub fn autosave(self: &Arc<Self>) {
+        let (doc_id, mark, modified) = match self.st.doc.guard().as_ref() {
+            Some(d) => (d.id, d.edit_mark(), !d.is_clean()),
+            None => (0, 0, false),
+        };
+        let path = self.st.recovery_path();
+        if !modified {
+            let _ = std::fs::remove_file(&path);
+            *self.st.autosaved.guard() = None;
+            return;
+        }
+        if *self.st.autosaved.guard() == Some((doc_id, mark)) {
+            return;
+        }
+        let me = self.clone();
+        self.spawn(move || {
+            let snapshot = me.st.doc.guard().as_ref().filter(|d| d.id == doc_id).map(project::ProjectSnapshot::of);
+            let Some(snap) = snapshot else { return };
+            let marker = me.st.settings.guard().marker_size;
+            if project::save_snapshot(&snap, me.active_model_ref(), marker, &path).is_ok() {
+                *me.st.autosaved.guard() = Some((doc_id, snap.edit_mark()));
+            }
+        });
+    }
+
+    /// At start: when the previous run did not close properly and left work in the recovery file, offer it back.
+    pub fn offer_recovery(self: &Arc<Self>) {
+        let path = self.st.recovery_path();
+        if !path.is_file() {
+            return;
+        }
+        let me = self.clone();
+        self.spawn(move || {
+            let name = project::load_project(&path)
+                .ok()
+                .and_then(|l| l.orig_path)
+                .map(|p| file_label(Path::new(&p)))
+                .unwrap_or_else(|| t("the last picture"));
+            let restore = dialogs::confirm(
+                "OpenScissors",
+                &tf("OpenScissors did not close properly. Restore the work on {name}?", &[("name", &name)]),
+                t("Restore"),
+                t("Discard"),
+            );
+            if !restore {
+                let _ = std::fs::remove_file(&path);
+                return;
+            }
+            match me.open_project_sync(&path) {
+                Ok(_) => {
+                    // The work is back but saved nowhere: it counts as modified, and Save does not write the recovery file.
+                    me.ux.guard().project = None;
+                    if let Some(d) = me.st.doc.guard().as_mut() {
+                        d.mark_modified();
+                    }
+                    me.refresh_doc();
+                    me.say(tf("Restored the work on {name}", &[("name", &name)]), false);
+                }
+                Err(e) => me.say(e, true),
+            }
+        });
     }
 
     pub fn save_as(self: &Arc<Self>) {

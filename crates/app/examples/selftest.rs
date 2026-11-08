@@ -372,6 +372,13 @@ fn run_script(d: &Driver, path: &str) {
         } else if let Some(path) = step["open"].as_str() {
             d.ctl.open_path_sync(std::path::Path::new(path));
             d.settle(1500);
+        } else if step["recover"].as_bool() == Some(true) {
+            d.ui(|c, _| c.offer_recovery());
+            d.settle(1000);
+        } else if step["autosave"].as_bool() == Some(true) {
+            d.ui(|c, _| c.autosave());
+            d.settle(1500);
+            println!("recovery file {}", d.ctl.st.recovery_path().is_file());
         } else if let Some(path) = step["export"].as_str() {
             println!("export {:?}", d.ctl.export_to(std::path::Path::new(path)));
             d.settle(300);

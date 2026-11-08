@@ -102,6 +102,8 @@ pub struct AppState {
     pub settings_dirty: AtomicBool,
     /// Bumped by every delayed settings write that is asked for: only the last one writes.
     pub settings_gen: AtomicU64,
+    /// The content last written to the recovery file: document id and `Document::edit_mark`.
+    pub autosaved: Mutex<Option<(u64, u64)>>,
     /// Exports and project saves in progress (closing the window asks first while one runs).
     pub saving: AtomicUsize,
     /// Bumped by every model load that is asked for: a load that is no longer the latest is skipped or dropped.
@@ -158,6 +160,7 @@ impl AppState {
             models_cache: Mutex::new(None),
             settings_dirty: AtomicBool::new(false),
             settings_gen: AtomicU64::new(0),
+            autosaved: Mutex::new(None),
             saving: AtomicUsize::new(0),
             model_gen: AtomicU64::new(0),
             model_load: Mutex::new(()),
@@ -173,6 +176,11 @@ impl AppState {
     pub fn saving(&self) -> SavingGuard<'_> {
         self.saving.fetch_add(1, Ordering::SeqCst);
         SavingGuard(&self.saving)
+    }
+
+    /// Where the work in progress is saved every minute, to be offered back after a crash.
+    pub fn recovery_path(&self) -> PathBuf {
+        self.paths.data.join("recovery.osproj")
     }
 
     pub fn settings_path(&self) -> PathBuf {

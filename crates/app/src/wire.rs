@@ -23,6 +23,9 @@ macro_rules! cb {
     }};
 }
 
+/// How often the work in progress is written to the recovery file.
+const AUTOSAVE_SECONDS: u64 = 60;
+
 pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     crate::dialogs::init(ui);
     let b = ui.global::<Backend>();
@@ -195,9 +198,15 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     let timer = slint::Timer::default();
     let weak = ui.as_weak();
     let mut last: Option<(Instant, u64)> = None;
+    let mut ticks = 0u64;
+    let autosaver = ctl.clone();
     timer.start(slint::TimerMode::Repeated, Duration::from_secs(1), move || {
         let Some(ui) = weak.upgrade() else { return };
         tracker.borrow_mut().tick(&ui);
+        ticks += 1;
+        if ticks.is_multiple_of(AUTOSAVE_SECONDS) {
+            autosaver.autosave();
+        }
         let now = Instant::now();
         let cpu = sysmem::process_cpu_ms().unwrap_or(0);
         let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as f64;
