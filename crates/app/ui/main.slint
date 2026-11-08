@@ -578,6 +578,21 @@ component ViewPane inherits Rectangle {
             height: root.cy1 - root.cy0;
             background: #00000099;
         }
+        // Rule of thirds: where the eye looks first, a guide for placing the subject.
+        for k in (Backend.crop-full ? [] : [1, 2]): Rectangle {
+            x: root.cx0 + (root.cx1 - root.cx0) * k / 3;
+            y: root.cy0;
+            width: 1px;
+            height: root.cy1 - root.cy0;
+            background: #8080809a;
+        }
+        for k in (Backend.crop-full ? [] : [1, 2]): Rectangle {
+            x: root.cx0;
+            y: root.cy0 + (root.cy1 - root.cy0) * k / 3;
+            width: root.cx1 - root.cx0;
+            height: 1px;
+            background: #8080809a;
+        }
         Rectangle {
             x: root.cx0;
             y: root.cy0;
