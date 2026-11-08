@@ -136,6 +136,9 @@ impl Ctl {
             ux.prediction = if predicted { Prediction::Idle } else { Prediction::Running };
         }
         self.refresh_doc_now();
+        // A picture that comes with its mask (a cut-out, a project) in graph-cut or hair mode needs its exact mask now:
+        // no prediction will arrive to start the job.
+        self.kick_alpha();
         self.fit();
         self.refresh(R_ALL);
         self.maybe_predict();
@@ -261,7 +264,6 @@ impl Ctl {
         self.ux.guard().marker = loaded.marker_size;
         self.after_open(predicted);
         self.ux.guard().project = Some(path.to_path_buf());
-        self.kick_alpha();
         Ok(loaded.warning)
     }
 
