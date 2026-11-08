@@ -1,5 +1,5 @@
-//! SAM 2 with the real model. Needs a folder with the four ONNX files:
-//! `OPENSCISSORS_SAM_DIR=<folder> cargo test -p openscissors-core --test sam2 -- --nocapture`
+//! SAM 2 with the real model. Needs a folder with the four ONNX files, so it is ignored unless asked for:
+//! `OPENSCISSORS_SAM_DIR=<folder> cargo test -p openscissors-core --test sam2 -- --include-ignored --nocapture`
 
 use std::path::{Path, PathBuf};
 
@@ -11,6 +11,7 @@ fn data(name: &str) -> PathBuf {
 }
 
 #[test]
+#[ignore = "needs OPENSCISSORS_SAM_DIR (the SAM 2.1 tiny files); CI runs it with the model"]
 fn points_and_boxes_select_the_subject() {
     let Ok(dir) = std::env::var("OPENSCISSORS_SAM_DIR") else {
         eprintln!("OPENSCISSORS_SAM_DIR not set: skipped");

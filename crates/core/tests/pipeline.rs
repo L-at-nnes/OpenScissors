@@ -1,7 +1,7 @@
 #![allow(clippy::chunks_exact_to_as_chunks)]
 //! End to end on the synthetic image with a real model:
 //! open -> predict -> strokes -> properties -> export.
-//! Needs `OPENSCISSORS_MODEL` (IS-Net style ONNX), otherwise it is skipped.
+//! The tests that need `OPENSCISSORS_MODEL` (IS-Net style ONNX) are ignored unless asked for (`-- --include-ignored`).
 
 use std::path::{Path, PathBuf};
 
@@ -16,6 +16,7 @@ fn data(name: &str) -> PathBuf {
 }
 
 #[test]
+#[ignore = "needs OPENSCISSORS_MODEL (an IS-Net ONNX file); CI runs it with the model"]
 fn open_predict_edit_style_export() {
     let Ok(model) = std::env::var("OPENSCISSORS_MODEL") else {
         eprintln!("OPENSCISSORS_MODEL not set: skipped");

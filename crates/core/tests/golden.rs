@@ -1,5 +1,5 @@
-//! Golden test: needs a local IS-Net style ONNX model, e.g.
-//! `OPENSCISSORS_MODEL=C:\path\model.onnx cargo test -p openscissors-core --test golden`
+//! Golden test: needs a local IS-Net style ONNX model, so it is ignored unless asked for, e.g.
+//! `OPENSCISSORS_MODEL=C:\path\model.onnx cargo test -p openscissors-core --test golden -- --include-ignored`
 
 use std::path::{Path, PathBuf};
 
@@ -35,6 +35,7 @@ fn isnet_spec() -> ModelSpec {
 }
 
 #[test]
+#[ignore = "needs OPENSCISSORS_MODEL (an IS-Net ONNX file); CI runs it with the model"]
 fn predict_matches_reference_mask() {
     let Ok(model) = std::env::var("OPENSCISSORS_MODEL") else {
         eprintln!("OPENSCISSORS_MODEL not set: skipped");
