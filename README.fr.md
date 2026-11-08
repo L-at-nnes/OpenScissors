@@ -141,7 +141,37 @@ Les builds de debug (de l'appli et de la ligne de commande) gardent leurs donné
 
 Un outil en ligne de commande existe aussi : `cargo run -p openscissors-cli -- cut photo.jpg detourage.png` (et `predict`, `batch`, `models`). `batch photos/ sortie/ --resume` (formats png, jpg, webp, avif, tiff, bmp) laisse de côté les images dont le résultat est déjà dans `sortie/` : relancer la même commande après une erreur ou une interruption ne fait que le reste (deux images de même nom, `a.jpg` et `a.png`, donnent `a_jpg.png` et `a_png.png`) ; les images déjà détourées gardent leur transparence et les images 16 bits restent en 16 bits en PNG (`--8bit` le désactive), comme à l'export depuis la fenêtre ; `--report rapport.json` écrit une entrée par image (faite, ignorée ou en échec, le fichier écrit, l'erreur, la durée). `compare photo.jpg sortie/` fait tourner chaque modèle téléchargé (ou `--models a,b`) sur une image, l'un après l'autre, et écrit chaque masque, une planche-contact et l'accord entre les modèles. `models download <id>` reprend un téléchargement coupé et `models verify <id>` vérifie les fichiers par leur SHA-256.
 
-Ajouter votre propre modèle : créez `models/<nom>/model.onnx` et un `model.json` à côté (voir l'exemple dans [README.md](README.md#using-your-own-model)).
+Pour regarder l'interface et la piloter sans toucher la souris (pratique pour les tests et les captures) :
+
+```bash
+cargo run --release -p openscissors --example selftest -- photo.jpg sortie/ [tour|keys|flows|all|script etapes.json]
+```
+
+### Utiliser votre propre modèle
+
+Créez `models/<nom>/model.onnx` et un `model.json` à côté :
+
+```json
+{
+  "id": "mon-modele", "name": "Mon modèle", "license": "MIT",
+  "input_size": [1024, 1024],
+  "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225],
+  "output": "sigmoid"
+}
+```
+
+`output` vaut `sigmoid` (le modèle rend des logits), `minmax` (la sortie brute est remise à l'échelle) ou `none` (déjà entre 0 et 1). Les modèles sont décrits par des données seulement : en ajouter un ne demande jamais de modifier le code. Les noms de fichiers (`file_name`, `files`) sont de simples noms dans ce dossier : un `model.json` qui pointe ailleurs est ignoré.
+
+### Plug-ins
+
+Un plug-in est un dossier `plugins/<id>/` à côté de `models/`, avec un `plugin.json` :
+
+```json
+{ "id": "optimize-png", "name": "Optimiser le PNG", "description": "Lance oxipng sur le résultat",
+  "command": "run.cmd", "args": ["{input}"], "extensions": ["png"] }
+```
+
+`command` est un fichier de ce dossier : un `.cmd`, `.bat` ou `.exe` sous Windows (l'exemple ci-dessus est pour Windows), un script exécutable comme `run.sh` sous Linux et macOS. `{input}` est le fichier que vous venez d'enregistrer et `{dir}` son dossier. Un plug-in ne fait rien tant que vous ne l'activez pas dans les *Réglages* ; il ne s'exécute ensuite que quand vous cliquez sur **Lancer sur le dernier fichier enregistré** (limite de 60 s, les dernières lignes de sa sortie sont affichées). Quand le temps est écoulé, ou quand le plug-in laisse un programme tourner derrière lui, ce programme est arrêté avec tout ce qu'il a lancé. C'est un programme que vous avez installé : OpenScissors ne lui ajoute aucune permission.
 
 ## Comment c'est fait
 
