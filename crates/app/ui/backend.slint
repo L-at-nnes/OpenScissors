@@ -35,7 +35,9 @@ export struct ParamsV {
     has-crop: bool,
     // 0 = no preset, otherwise the position in the preset list + 1.
     preset: int,
+    // Output size in pixels, 0 = automatic.
     out-width: int,
+    out-height: int,
 }
 
 export struct ModelRow {
@@ -96,7 +98,6 @@ export global Backend {
     in property <ParamsV> p;
     in property <[string]> ratio-options;
     in property <[string]> preset-options;
-    in property <[string]> width-options;
     in property <string> tool: "keep";
     in property <int> marker-size: 30;
 
@@ -219,6 +220,7 @@ export global Backend {
     callback set-bool(string, bool);
     callback set-index(string, int);
     callback apply-preset(int);
+    callback set-output-size(int, int);
     callback set-rgb(string, int, int, int);
     // The next click on a picture fills in the colour setting at this path.
     callback pick-color(string);

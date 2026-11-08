@@ -212,6 +212,102 @@ export component SliderRow inherits Rectangle {
     }
 }
 
+// A whole number typed in a small box (empty = 0), handed over on Enter or when the box loses the focus.
+component NumberBox inherits Rectangle {
+    in property <int> value;
+    in property <string> label;
+    callback committed(int);
+    width: 64px;
+    height: 28px;
+    border-radius: Theme.r-md;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.line;
+    background: Theme.surface-2;
+    accessible-role: text-input;
+    accessible-label: root.label;
+    accessible-value: input.text;
+    function commit() {
+        root.committed(input.text.is-float() ? max(0, round(input.text.to-float())) : 0);
+    }
+    input := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        color: Theme.text;
+        font-size: Theme.fs-md;
+        input-type: number;
+        text: root.value > 0 ? root.value + "" : "";
+        accepted => {
+            root.commit();
+        }
+        changed has-focus => {
+            if (!self.has-focus) {
+                root.commit();
+            }
+        }
+    }
+    // Typing replaces the binding of the text: it follows the value again whenever the value changes.
+    changed value => {
+        input.text = root.value > 0 ? root.value + "" : "";
+    }
+}
+
+// Width x height in pixels, each typed in (empty = automatic).
+export component SizeRow inherits Rectangle {
+    in property <string> label;
+    in property <int> width-value;
+    in property <int> height-value;
+    in property <string> width-label;
+    in property <string> height-label;
+    callback changed(int, int);
+    height: 36px;
+    Text {
+        x: 0;
+        width: parent.width - 168px;
+        text: root.label;
+        color: Theme.text-2;
+        font-size: Theme.fs-md;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    HorizontalLayout {
+        x: parent.width - self.width;
+        width: 164px;
+        spacing: 4px;
+        alignment: end;
+        NumberBox {
+            label: root.width-label;
+            value: root.width-value;
+            y: (parent.height - self.height) / 2;
+            committed(v) => {
+                root.changed(v, root.height-value);
+            }
+        }
+        Text {
+            text: "×";
+            color: Theme.text-3;
+            font-size: Theme.fs-md;
+            vertical-alignment: center;
+        }
+        NumberBox {
+            label: root.height-label;
+            value: root.height-value;
+            y: (parent.height - self.height) / 2;
+            committed(v) => {
+                root.changed(root.width-value, v);
+            }
+        }
+        Text {
+            text: "px";
+            color: Theme.text-3;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+        }
+    }
+}
+
 export component SwitchRow inherits Rectangle {
     in property <string> label;
     in property <bool> checked;

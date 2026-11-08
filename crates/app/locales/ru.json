@@ -167,7 +167,6 @@
   "Thumbnail 500 px": "Миниатюра 500 px",
   "Banner 16:9": "Баннер 16:9",
   "Output width": "Ширина результата",
-  "Original size": "Исходный размер",
   "Undo": "Отменить",
   "Undo (Ctrl+Z)": "Отменить (Ctrl+Z)",
   "Use": "Использовать",
@@ -289,5 +288,7 @@
   "Restored the work on {name}": "Работа над {name} восстановлена",
   "This is the last picture of the folder.": "Это последнее изображение в папке.",
   "This is the first picture of the folder.": "Это первое изображение в папке.",
-  "{name} ({n} of {total})": "{name} ({n} из {total})"
+  "{name} ({n} of {total})": "{name} ({n} из {total})",
+  "Output size": "Размер результата",
+  "Output height": "Высота результата"
 }

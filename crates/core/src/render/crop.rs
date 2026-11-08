@@ -1,6 +1,6 @@
 //! Crop rectangle logic: aspect ratios, "fit to result" and padding.
 
-use crate::params::{parse_ratio, Params};
+use crate::params::{effective_ratio, Params};
 use crate::types::{Mask, Rect};
 
 /// Alpha up to which a pixel does not count as part of the result when the crop is fitted to it (3 %, invisible on
@@ -116,7 +116,7 @@ pub fn finished_bbox(alpha: &Mask, offset: i32, feather: u32) -> Option<Rect> {
 /// ([`finished_bbox`]), only read when `fit_to_result` is on.
 pub fn effective_crop(params: &Params, result_box: Option<Rect>, canvas: (f64, f64)) -> Rect {
     let full = Rect::new(0.0, 0.0, canvas.0, canvas.1);
-    let ratio = parse_ratio(&params.background.aspect_ratio);
+    let ratio = effective_ratio(params);
     if params.background.fit_to_result {
         if let Some(bb) = result_box {
             // A visible shadow is part of the result: keep it inside the crop.

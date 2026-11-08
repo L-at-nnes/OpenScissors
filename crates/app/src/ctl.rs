@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use openscissors_core::document::{DocState, SelectionMode};
 use openscissors_core::mask::StrokeKind;
 use openscissors_core::model::{ModelKind, Prompt};
-use openscissors_core::params::{BgMode, FilterKind, FilterSpec, Params, ASPECT_RATIOS, OUTPUT_WIDTHS, PRESETS};
+use openscissors_core::params::{BgMode, FilterKind, FilterSpec, Params, ASPECT_RATIOS, PRESETS};
 use openscissors_core::types::Rect;
 use slint::{ComponentHandle, ModelRc, SharedPixelBuffer, SharedString, VecModel};
 
@@ -249,7 +249,8 @@ pub fn params_v(p: &Params) -> ParamsV {
         sh_dy: p.shadow.offset_y,
         has_crop: p.crop.is_some(),
         preset: PRESETS.iter().position(|q| q.matches(p)).map_or(0, |i| i as i32 + 1),
-        out_width: OUTPUT_WIDTHS.iter().position(|&w| w == p.background.output_width).unwrap_or(0) as i32,
+        out_width: p.background.output_width as i32,
+        out_height: p.background.output_height as i32,
     }
 }
 
@@ -469,7 +470,6 @@ impl Ctl {
             t("Thumbnail 500 px"),
             t("Banner 16:9"),
         ]));
-        b.set_width_options(strings(OUTPUT_WIDTHS.iter().map(|&w| if w == 0 { t("Original size") } else { format!("{w} px") })));
         b.set_tool(ux.tool.as_str().into());
         b.set_marker_size(ux.marker as i32);
         b.set_smart_count(ux.prompts.len() as i32);

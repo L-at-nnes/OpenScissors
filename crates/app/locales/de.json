@@ -167,7 +167,6 @@
   "Thumbnail 500 px": "Vorschaubild 500 px",
   "Banner 16:9": "Banner 16:9",
   "Output width": "Ausgabebreite",
-  "Original size": "Originalgröße",
   "Undo": "Rückgängig",
   "Undo (Ctrl+Z)": "Rückgängig (Ctrl+Z)",
   "Use": "Verwenden",
@@ -289,5 +288,7 @@
   "Restored the work on {name}": "Arbeit an {name} wiederhergestellt",
   "This is the last picture of the folder.": "Das ist das letzte Bild des Ordners.",
   "This is the first picture of the folder.": "Das ist das erste Bild des Ordners.",
-  "{name} ({n} of {total})": "{name} ({n} von {total})"
+  "{name} ({n} of {total})": "{name} ({n} von {total})",
+  "Output size": "Ausgabegröße",
+  "Output height": "Ausgabehöhe"
 }

@@ -1,5 +1,5 @@
 import { Theme, Icons } from "theme.slint";
-import { Icon, IconBtn, Btn, Heading, SliderRow, SwitchRow, SelectRow, ColorRow, Divider } from "widgets.slint";
+import { Icon, IconBtn, Btn, Heading, SliderRow, SwitchRow, SelectRow, ColorRow, Divider, SizeRow } from "widgets.slint";
 import { Backend, FilterV } from "backend.slint";
 
 component Tab inherits Rectangle {
@@ -377,12 +377,14 @@ export component Dock inherits Rectangle {
                             Backend.set-int("background.padding", v);
                         }
                     }
-                    SelectRow {
-                        label: @tr("Output width");
-                        options: Backend.width-options;
-                        current: Backend.p.out-width;
-                        selected(i) => {
-                            Backend.set-index("background.output_width", i);
+                    SizeRow {
+                        label: @tr("Output size");
+                        width-label: @tr("Output width");
+                        height-label: @tr("Output height");
+                        width-value: Backend.p.out-width;
+                        height-value: Backend.p.out-height;
+                        changed(w, h) => {
+                            Backend.set-output-size(w, h);
                         }
                     }
                     HorizontalLayout {

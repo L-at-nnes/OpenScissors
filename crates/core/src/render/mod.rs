@@ -361,35 +361,37 @@ const OUTPUT_BYTES_PER_PIXEL: u64 = 8;
 fn export_pixels(scene: &Scene) -> (i64, i64, usize, usize) {
     let (w, h) = (scene.image.w, scene.image.h);
     let r = crop::effective_crop(scene.params, result_box(scene.alpha, scene.params), (w as f64, h as f64));
-    crop_pixels(r, crate::params::parse_ratio(&scene.params.background.aspect_ratio), (w, h))
+    crop_pixels(r, crate::params::effective_ratio(scene.params), (w, h))
 }
 
 /// Size of the exported picture (after the output width) and the memory its export needs, in MB. An extended canvas
 /// can be four times the picture and an output width can enlarge it: this is checked before anything is allocated.
 pub fn export_cost(scene: &Scene) -> ((usize, usize), u64) {
     let (_, _, cw, ch) = export_pixels(scene);
-    let ratio = crate::params::parse_ratio(&scene.params.background.aspect_ratio);
-    let (ow, oh) = output_size(cw, ch, scene.params.background.output_width as usize, ratio);
+    let ratio = crate::params::effective_ratio(scene.params);
+    let b = &scene.params.background;
+    let (ow, oh) = output_size(cw, ch, b.output_width as usize, b.output_height as usize, ratio);
     let bytes = cw as u64 * ch as u64 * EXPORT_BYTES_PER_PIXEL + ow as u64 * oh as u64 * OUTPUT_BYTES_PER_PIXEL;
     ((ow, oh), bytes >> 20)
 }
 
 /// Full-resolution result with the crop applied (what gets exported). Only the cropped region is rendered.
 pub fn export_rgba(scene: &Scene) -> Rgba {
-    let ratio = crate::params::parse_ratio(&scene.params.background.aspect_ratio);
+    let ratio = crate::params::effective_ratio(scene.params);
     let (x0, y0, cw, ch) = export_pixels(scene);
     let region = Rect::new(x0 as f64, y0 as f64, (x0 + cw as i64) as f64, (y0 + ch as i64) as f64);
     let cropped = render_region_with(&Scene { frame: Some(region), ..*scene }, region, cw, ch, usize::MAX);
-    resize_to_output_width(cropped, scene.params.background.output_width as usize, ratio)
+    let b = &scene.params.background;
+    resize_to_output(cropped, b.output_width as usize, b.output_height as usize, ratio)
 }
 
 /// Longest side of an exported picture; a very tall crop at a large width cannot ask for more.
 const MAX_OUTPUT_SIDE: usize = 20_000;
 
-/// Scale the result to `width` pixels wide (0 = leave it), keeping its proportions; with a ratio the height follows
-/// from the ratio, so a 1000 px 1:1 preset is exactly 1000 x 1000.
-fn resize_to_output_width(img: Rgba, width: usize, ratio: Option<(u32, u32)>) -> Rgba {
-    let (dw, dh) = output_size(img.w, img.h, width, ratio);
+/// Scale the result to the output size (see [`output_size`]), keeping its proportions: a 1000 px 1:1 preset is exactly
+/// 1000 x 1000, and a width and a height together give exactly that size.
+fn resize_to_output(img: Rgba, width: usize, height: usize, ratio: Option<(u32, u32)>) -> Rgba {
+    let (dw, dh) = output_size(img.w, img.h, width, height, ratio);
     if (dw, dh) == (img.w, img.h) {
         return img;
     }
@@ -397,8 +399,16 @@ fn resize_to_output_width(img: Rgba, width: usize, ratio: Option<(u32, u32)>) ->
     resize_rgba(&img, dw, dh, if k < 1.0 { Interp::Area } else { Interp::Bicubic })
 }
 
-/// Size of a `w` x `h` result scaled to `width` (0 = kept); see [`resize_to_output_width`].
-fn output_size(w: usize, h: usize, width: usize, ratio: Option<(u32, u32)>) -> (usize, usize) {
+/// Size of a `w` x `h` result once scaled: to `width` (the height follows from the ratio), to `height` alone (the width
+/// follows), or to both (the crop already has their ratio). 0 = not set; nothing set keeps the size.
+fn output_size(w: usize, h: usize, width: usize, height: usize, ratio: Option<(u32, u32)>) -> (usize, usize) {
+    if width > 0 && height > 0 {
+        return (width, height);
+    }
+    if width == 0 && height > 0 {
+        let k = height as f64 / h as f64;
+        return (((w as f64 * k).round() as usize).max(1), height);
+    }
     if width == 0 || width == w {
         return (w, h);
     }
@@ -415,7 +425,7 @@ fn output_size(w: usize, h: usize, width: usize, ratio: Option<(u32, u32)>) -> (
 pub fn deep_blocker(params: &Params) -> Option<&'static str> {
     if !matches!(params.background.mode, BgMode::Transparent | BgMode::Color) {
         Some("the background is a picture, a gradient or the original")
-    } else if params.background.output_width > 0 {
+    } else if params.background.output_width > 0 || params.background.output_height > 0 {
         Some("a fixed output width is set")
     } else if (params.foreground.brightness, params.foreground.saturation, params.foreground.warmth) != (0, 0, 0) {
         Some("the colour adjustments are on")
@@ -441,7 +451,7 @@ pub fn export_deep(scene: &Scene, deep: &Image16) -> Option<Rgba16> {
     let alpha = finished_alpha(scene.alpha, p);
     let bg: Option<[u32; 3]> = (p.background.mode == BgMode::Color).then(|| p.background.color.map(|c| c as u32 * 257));
     let r = crop::effective_crop(p, result_box(scene.alpha, p), (w as f64, h as f64));
-    let (x0, y0, cw, ch) = crop_pixels(r, crate::params::parse_ratio(&p.background.aspect_ratio), (w, h));
+    let (x0, y0, cw, ch) = crop_pixels(r, crate::params::effective_ratio(p), (w, h));
     let mut data = vec![0u16; cw * ch * 4];
     data.par_chunks_mut(cw * 4).enumerate().for_each(|(y, row)| {
         let sy = y0 + y as i64;
@@ -893,6 +903,26 @@ mod tests {
         let (out, mb) = export_cost(&Scene { image: &big, alpha: &big_alpha, params: &p, bg_image: None, filled: None, frame: None });
         assert_eq!(out, (16_000, 12_000));
         assert!(mb > 2_000, "8000 x 6000 rendered and 16000 x 12000 written: {mb} MB");
+    }
+
+    #[test]
+    fn a_width_and_a_height_give_exactly_that_size() {
+        let (img, alpha) = scene_parts(); // 80 x 60, the subject spans 30..55 x 20..40
+        let render = |p: &Params| {
+            let o = export_rgba(&Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None });
+            (o.w, o.h)
+        };
+        let mut p = Params::default();
+        p.background.mode = BgMode::Color;
+        p.background.output_width = 1200;
+        p.background.output_height = 627;
+        assert_eq!(render(&p), (1200, 627), "the whole picture, cropped to 1200:627 and scaled");
+        p.background.fit_to_result = true;
+        assert_eq!(render(&p), (1200, 627), "fitted to the subject");
+        p.background.output_width = 0;
+        p.background.output_height = 300;
+        assert_eq!(render(&p).1, 300, "a height alone: the width follows");
+        assert!(deep_blocker(&p).is_some());
     }
 
     #[test]

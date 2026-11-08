@@ -88,6 +88,9 @@ pub struct BackgroundParams {
     pub padding: u32,
     /// Width of the exported picture in pixels, 0 = keep the size of the cropped result. The height follows.
     pub output_width: u32,
+    /// Height of the exported picture in pixels, 0 = it follows. With a width too, the result is exactly that size: the
+    /// crop takes the ratio width:height, whatever `aspect_ratio` says.
+    pub output_height: u32,
     pub filter: FilterSpec,
 }
 
@@ -104,6 +107,7 @@ impl Default for BackgroundParams {
             fit_to_result: false,
             padding: 5,
             output_width: 0,
+            output_height: 0,
             filter: FilterSpec::default(),
         }
     }
@@ -154,6 +158,7 @@ impl Params {
         self.background.padding = self.background.padding.min(100);
         self.background.gradient_angle %= 360;
         self.background.output_width = self.background.output_width.min(16_000);
+        self.background.output_height = self.background.output_height.min(16_000);
         self.shadow.opacity = self.shadow.opacity.min(100);
         self.shadow.blur_radius = self.shadow.blur_radius.min(100);
         self.shadow.offset_x = self.shadow.offset_x.clamp(-100, 100);
@@ -218,6 +223,7 @@ impl Preset {
         b.fit_to_result = true;
         b.padding = self.padding;
         b.output_width = self.width;
+        b.output_height = 0;
         params.crop = None;
     }
 
@@ -233,7 +239,26 @@ impl Preset {
             && b.fit_to_result
             && b.padding == self.padding
             && b.output_width == self.width
+            && b.output_height == 0
             && params.crop.is_none()
+    }
+}
+
+/// The ratio the crop keeps: width:height of an exact output size when both are set, otherwise the chosen ratio.
+pub fn effective_ratio(params: &Params) -> Option<(u32, u32)> {
+    let (w, h) = (params.background.output_width, params.background.output_height);
+    if w > 0 && h > 0 {
+        let g = gcd(w, h);
+        return Some((w / g, h / g));
+    }
+    parse_ratio(&params.background.aspect_ratio)
+}
+
+fn gcd(a: u32, b: u32) -> u32 {
+    if b == 0 {
+        a
+    } else {
+        gcd(b, a % b)
     }
 }
 
@@ -279,6 +304,17 @@ mod tests {
             let found: Vec<usize> = PRESETS.iter().enumerate().filter(|(_, q)| q.matches(&p)).map(|(j, _)| j).collect();
             assert_eq!(found, [i]);
         }
+    }
+
+    #[test]
+    fn an_exact_output_size_sets_the_ratio() {
+        let mut p = Params::default();
+        p.background.aspect_ratio = "16:9".into();
+        assert_eq!(effective_ratio(&p), Some((16, 9)));
+        p.background.output_width = 1200;
+        assert_eq!(effective_ratio(&p), Some((16, 9)), "a width alone keeps the chosen ratio");
+        p.background.output_height = 800;
+        assert_eq!(effective_ratio(&p), Some((3, 2)), "1200 x 800 is 3:2");
     }
 
     #[test]

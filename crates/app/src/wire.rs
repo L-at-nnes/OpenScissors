@@ -79,6 +79,7 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     cb!(b, ctl, on_set_rgb, |c, path, r, g, bl| c.set_param(&path, json!([r.clamp(0, 255), g.clamp(0, 255), bl.clamp(0, 255)])));
     cb!(b, ctl, on_pick_color, |c, path| c.pick_color(path.to_string()));
     cb!(b, ctl, on_apply_preset, |c, i| c.apply_preset(i));
+    cb!(b, ctl, on_set_output_size, |c, w, h| c.set_output_size(w, h));
     cb!(b, ctl, on_copy_result, |c| c.copy_result());
     cb!(b, ctl, on_pick_bg_image, |c| c.pick_bg_image());
     cb!(b, ctl, on_reset_crop, |c| c.set_crop(None));

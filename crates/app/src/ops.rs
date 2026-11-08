@@ -7,7 +7,7 @@ use std::sync::Arc;
 use openscissors_core::document::Document;
 use openscissors_core::io::{self, Format};
 use openscissors_core::mask::Stroke;
-use openscissors_core::params::{Params, ASPECT_RATIOS, OUTPUT_WIDTHS, PRESETS};
+use openscissors_core::params::{Params, ASPECT_RATIOS, PRESETS};
 use openscissors_core::project::{self, ModelRef};
 use openscissors_core::types::Rect;
 use serde_json::{json, Value};
@@ -669,8 +669,6 @@ impl Ctl {
             MODE_KEYS.get(i).map(|k| json!(k))
         } else if path == "background.aspect_ratio" {
             ASPECT_RATIOS.get(i).map(|(k, _)| json!(k))
-        } else if path == "background.output_width" {
-            OUTPUT_WIDTHS.get(i).map(|w| json!(w))
         } else {
             None
         };
@@ -691,6 +689,19 @@ impl Ctl {
             me.refresh_doc();
             me.kick_alpha();
         });
+    }
+
+    /// The size of the exported picture, width and height in pixels (0 = automatic), as one undoable change.
+    pub fn set_output_size(self: &Arc<Self>, width: i32, height: i32) {
+        {
+            let mut g = self.st.doc.guard();
+            let Some(d) = g.as_mut() else { return };
+            let mut p = d.params().clone();
+            p.background.output_width = width.max(0) as u32;
+            p.background.output_height = height.max(0) as u32;
+            d.set_params(p);
+        }
+        self.refresh_doc();
     }
 
     /// Apply preset `i` of the list (0 is "Custom": nothing to do) as one undoable change.
