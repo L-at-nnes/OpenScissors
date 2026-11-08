@@ -286,5 +286,8 @@
   "OpenScissors did not close properly. Restore the work on {name}?": "OpenScissors закрылся некорректно. Восстановить работу над {name}?",
   "Restore": "Восстановить",
   "Discard": "Отказаться",
-  "Restored the work on {name}": "Работа над {name} восстановлена"
+  "Restored the work on {name}": "Работа над {name} восстановлена",
+  "This is the last picture of the folder.": "Это последнее изображение в папке.",
+  "This is the first picture of the folder.": "Это первое изображение в папке.",
+  "{name} ({n} of {total})": "{name} ({n} из {total})"
 }

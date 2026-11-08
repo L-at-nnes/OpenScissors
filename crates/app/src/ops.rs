@@ -154,12 +154,17 @@ impl Ctl {
     }
 
     fn open_image_sync(self: &Arc<Self>, path: &Path) -> Result<Option<String>, String> {
+        self.open_image_with(path, None)
+    }
+
+    /// Open the picture at `path` with `params` (the look of the previous picture), or with the saved defaults.
+    fn open_image_with(self: &Arc<Self>, path: &Path, params: Option<Params>) -> Result<Option<String>, String> {
         let loaded = io::load_image_deep(path)
             .map_err(|e| tf("Cannot read file {file}: {error}", &[("file", &file_label(path)), ("error", &tr_message(&e.to_string()))]))?;
         let id = self.st.next_doc_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (mut defaults, group) = {
             let s = self.st.settings.guard();
-            (s.defaults.clone(), s.group_by_color)
+            (params.unwrap_or_else(|| s.defaults.clone()), s.group_by_color)
         };
         defaults.mask.graphcut = group;
         // A picture that is already cut out starts from its own transparency: no model has to run on it.
@@ -180,6 +185,35 @@ impl Ctl {
         self.save_settings();
         self.after_open(cut_out);
         Ok(None)
+    }
+
+    /// Page Down / Page Up: open the next (`step` 1) or previous (-1) picture of the folder of the open one, with the
+    /// same settings (a crop belongs to one picture and is left out). Unsaved changes are asked about first.
+    pub fn open_neighbour(self: &Arc<Self>, step: isize) {
+        let current = self.st.doc.guard().as_ref().map(|d| (d.path().map(Path::to_path_buf), d.params().clone()));
+        let Some((Some(path), mut params)) = current else { return };
+        params.crop = None;
+        let me = self.clone();
+        self.spawn(move || {
+            let files = path.parent().and_then(|dir| openscissors_core::batch::list_images(dir).ok()).unwrap_or_default();
+            let Some(next) = neighbour(&files, &path, step) else {
+                return me.say(
+                    if step > 0 { t("This is the last picture of the folder.") } else { t("This is the first picture of the folder.") },
+                    false,
+                );
+            };
+            if !me.confirm_discard_sync() {
+                return;
+            }
+            match me.open_image_with(&next, Some(params)) {
+                Ok(_) => {
+                    let pos = files.iter().position(|f| *f == next).map_or(0, |i| i + 1);
+                    let (n, total) = (pos.to_string(), files.len().to_string());
+                    me.say(tf("{name} ({n} of {total})", &[("name", &file_label(&next)), ("n", &n), ("total", &total)]), false);
+                }
+                Err(e) => me.say(e, true),
+            }
+        });
     }
 
     /// Ctrl+V: open the picture on the clipboard, or the file copied in a file manager.
@@ -1036,6 +1070,12 @@ fn export_name(doc_name: Option<&str>) -> String {
     }
 }
 
+/// The picture `step` places after `current` in `files` (sorted as the folder lists them), if there is one.
+fn neighbour(files: &[PathBuf], current: &Path, step: isize) -> Option<PathBuf> {
+    let i = files.iter().position(|f| f == current)? as isize + step;
+    usize::try_from(i).ok().and_then(|i| files.get(i)).cloned()
+}
+
 pub fn file_label(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.display().to_string())
 }
@@ -1043,6 +1083,16 @@ pub fn file_label(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_next_and_previous_pictures_of_the_folder() {
+        let files: Vec<PathBuf> = ["a.jpg", "b.png", "c.webp"].iter().map(PathBuf::from).collect();
+        assert_eq!(neighbour(&files, Path::new("b.png"), 1), Some(PathBuf::from("c.webp")));
+        assert_eq!(neighbour(&files, Path::new("b.png"), -1), Some(PathBuf::from("a.jpg")));
+        assert_eq!(neighbour(&files, Path::new("c.webp"), 1), None, "the last one");
+        assert_eq!(neighbour(&files, Path::new("a.jpg"), -1), None, "the first one");
+        assert_eq!(neighbour(&files, Path::new("gone.png"), 1), None);
+    }
 
     #[test]
     fn the_result_is_never_offered_the_name_of_the_source() {

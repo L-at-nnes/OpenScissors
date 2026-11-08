@@ -309,6 +309,8 @@ fn run_script(d: &Driver, path: &str) {
                 "Right" => Key::RightArrow.into(),
                 "Up" => Key::UpArrow.into(),
                 "Down" => Key::DownArrow.into(),
+                "PageDown" => Key::PageDown.into(),
+                "PageUp" => Key::PageUp.into(),
                 other => other.into(),
             };
             d.ui(move |_, ui| {

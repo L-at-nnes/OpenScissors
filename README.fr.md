@@ -120,6 +120,7 @@ Supprimez `data/` pour repartir de zéro, `models/` pour libérer de la place. R
 | <kbd>Alt</kbd>+flèches déplacent le recadrage de 1 px (<kbd>Maj</kbd> : 10 px) | les flèches déplacent les vues · <kbd>C</kbd> avant / après |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir · <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer (le projet s'il y en a un, sinon le résultat) · <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>S</kbd> enregistrer le résultat sous | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> annuler / rétablir |
 | <kbd>Ctrl</kbd>+<kbd>V</kbd> coller une image | <kbd>Ctrl</kbd>+<kbd>C</kbd> copier le résultat |
+| <kbd>Page suiv.</kbd> / <kbd>Page préc.</kbd> image suivante / précédente du dossier, avec les mêmes réglages | |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> ajuster · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | molette : déplacer, <kbd>Ctrl</kbd>+molette : zoomer |
 | <kbd>Entrée</kbd> appliquer une sélection · <kbd>Retour arrière</kbd> retirer le dernier clic · <kbd>Échap</kbd> annuler | |
 

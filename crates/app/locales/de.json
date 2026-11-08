@@ -286,5 +286,8 @@
   "OpenScissors did not close properly. Restore the work on {name}?": "OpenScissors wurde nicht ordnungsgemäß beendet. Die Arbeit an {name} wiederherstellen?",
   "Restore": "Wiederherstellen",
   "Discard": "Verwerfen",
-  "Restored the work on {name}": "Arbeit an {name} wiederhergestellt"
+  "Restored the work on {name}": "Arbeit an {name} wiederhergestellt",
+  "This is the last picture of the folder.": "Das ist das letzte Bild des Ordners.",
+  "This is the first picture of the folder.": "Das ist das erste Bild des Ordners.",
+  "{name} ({n} of {total})": "{name} ({n} von {total})"
 }

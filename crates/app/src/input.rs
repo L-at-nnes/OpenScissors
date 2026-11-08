@@ -341,6 +341,12 @@ impl Ctl {
                 return self.move_crop(dx, dy);
             }
         }
+        if special(Key::PageDown) {
+            return self.open_neighbour(1);
+        }
+        if special(Key::PageUp) {
+            return self.open_neighbour(-1);
+        }
         let step = if shift { 200.0 } else { 40.0 };
         if special(Key::LeftArrow) {
             return self.pan(step, 0.0);
