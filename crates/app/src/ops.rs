@@ -691,6 +691,19 @@ impl Ctl {
         });
     }
 
+    /// Turn the picture a quarter or mirror it (`rotate_left`, `rotate_right`, `flip_horizontal`, `flip_vertical`), as
+    /// one undoable step. A pending smart selection is let go: its points were placed on the picture as it was.
+    pub fn apply_turn(self: &Arc<Self>, name: &str) {
+        let Ok(turn) = serde_json::from_value::<openscissors_core::imaging::turn::Turn>(json!(name)) else { return };
+        self.ux.guard().prompts.clear();
+        if let Some(d) = self.st.doc.guard().as_mut() {
+            d.set_selection(None);
+            d.apply_turn(turn);
+        }
+        self.refresh_doc();
+        self.kick_alpha();
+    }
+
     /// The size of the exported picture, width and height in pixels (0 = automatic), as one undoable change.
     pub fn set_output_size(self: &Arc<Self>, width: i32, height: i32) {
         {

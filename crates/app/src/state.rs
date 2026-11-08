@@ -62,6 +62,9 @@ pub fn use_portable_temp() {
     }
 }
 
+/// The image encoding of smart select and the (document id, geometry) it was computed for.
+pub type SamCache = ((u64, u64), Arc<Embeddings>);
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ModelStatus {
     pub active: Option<String>,
@@ -83,7 +86,8 @@ pub struct AppState {
     /// SAM 2 (smart select), loaded on first use.
     pub sam: Mutex<Option<Arc<Sam2>>>,
     /// Encoder output for the document it was computed for.
-    pub sam_cache: Mutex<Option<(u64, Arc<Embeddings>)>>,
+    /// Keyed by the document id and its geometry (a turned picture needs a new encoding).
+    pub sam_cache: Mutex<Option<SamCache>>,
     /// Previous reading of the processor meter: when, and the process CPU time then (ms).
     pub cpu_sample: Mutex<Option<(std::time::Instant, u64)>>,
     pub downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,

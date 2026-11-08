@@ -290,5 +290,9 @@
   "This is the first picture of the folder.": "Это первое изображение в папке.",
   "{name} ({n} of {total})": "{name} ({n} из {total})",
   "Output size": "Размер результата",
-  "Output height": "Высота результата"
+  "Output height": "Высота результата",
+  "Turn the picture": "Повернуть изображение",
+  "Rotate left": "Повернуть влево",
+  "Rotate right": "Повернуть вправо",
+  "Mirror": "Отразить"
 }

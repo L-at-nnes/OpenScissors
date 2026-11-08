@@ -377,6 +377,48 @@ export component Dock inherits Rectangle {
                             Backend.set-int("background.padding", v);
                         }
                     }
+                    HorizontalLayout {
+                        height: 36px;
+                        spacing: 4px;
+                        Text {
+                            text: @tr("Turn the picture");
+                            color: Theme.text-2;
+                            font-size: Theme.fs-md;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        IconBtn {
+                            d: Icons.rotate-left;
+                            size: 28px;
+                            icon-size: 16px;
+                            label: @tr("Rotate left");
+                            y: (parent.height - self.height) / 2;
+                            clicked => {
+                                Backend.turn("rotate_left");
+                            }
+                        }
+                        IconBtn {
+                            d: Icons.rotate-right;
+                            size: 28px;
+                            icon-size: 16px;
+                            label: @tr("Rotate right");
+                            y: (parent.height - self.height) / 2;
+                            clicked => {
+                                Backend.turn("rotate_right");
+                            }
+                        }
+                        IconBtn {
+                            d: Icons.flip;
+                            size: 28px;
+                            icon-size: 16px;
+                            label: @tr("Mirror");
+                            y: (parent.height - self.height) / 2;
+                            clicked => {
+                                Backend.turn("flip_horizontal");
+                            }
+                        }
+                    }
                     SizeRow {
                         label: @tr("Output size");
                         width-label: @tr("Output width");

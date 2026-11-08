@@ -233,6 +233,8 @@ export global Backend {
     callback smart-cancel();
     // A one-click correction of the whole mask: fill_holes, remove_specks, keep_largest, invert, harden.
     callback mask-tool(string);
+    // Turn the picture: rotate_left, rotate_right, flip_horizontal, flip_vertical.
+    callback turn(string);
     callback set-smart-mode(int);
 
     // -- events: panels

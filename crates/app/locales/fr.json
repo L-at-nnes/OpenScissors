@@ -290,5 +290,9 @@
   "This is the first picture of the folder.": "C'est la première image du dossier.",
   "{name} ({n} of {total})": "{name} ({n} sur {total})",
   "Output size": "Taille de sortie",
-  "Output height": "Hauteur de sortie"
+  "Output height": "Hauteur de sortie",
+  "Turn the picture": "Tourner l'image",
+  "Rotate left": "Tourner à gauche",
+  "Rotate right": "Tourner à droite",
+  "Mirror": "Miroir"
 }

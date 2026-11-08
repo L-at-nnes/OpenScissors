@@ -142,13 +142,13 @@ fn ensure_sam(state: &AppState) -> Result<Arc<Sam2>, String> {
 
 /// The encoder output for document `doc_id`, computed once: the cache stays locked while it is computed, so a second
 /// click waits for it instead of running the encoder again.
-fn embeddings(state: &AppState, sam: &Sam2, doc_id: u64, image: &Image) -> Result<Arc<Embeddings>, String> {
+fn embeddings(state: &AppState, sam: &Sam2, key: (u64, u64), image: &Image) -> Result<Arc<Embeddings>, String> {
     let mut cache = state.sam_cache.guard();
-    if let Some((_, e)) = cache.as_ref().filter(|(id, _)| *id == doc_id) {
+    if let Some((_, e)) = cache.as_ref().filter(|(k, _)| *k == key) {
         return Ok(e.clone());
     }
     let e = Arc::new(sam.embed(image).map_err(|e| e.to_string())?);
-    *cache = Some((doc_id, e.clone()));
+    *cache = Some((key, e.clone()));
     Ok(e)
 }
 
@@ -495,10 +495,10 @@ impl Ctl {
     }
 
     fn smart_run(self: &Arc<Self>) {
-        let (doc_id, image) = {
+        let (doc_id, geometry, image) = {
             let g = self.st.doc.guard();
             let Some(d) = g.as_ref() else { return };
-            (d.id, d.image.clone())
+            (d.id, d.geometry(), d.image.clone())
         };
         let prompts = {
             let mut ux = self.ux.guard();
@@ -519,7 +519,7 @@ impl Ctl {
             move || {
                 let result = (|| -> Result<_, String> {
                     let sam = ensure_sam(&me.st)?;
-                    let emb = embeddings(&me.st, &sam, doc_id, &image)?;
+                    let emb = embeddings(&me.st, &sam, (doc_id, geometry), &image)?;
                     sam.select(&emb, &prompts, &image).map_err(|e| e.to_string())
                 })();
                 // A later click started another run: its selection (with more points) is the one to show.
@@ -529,7 +529,7 @@ impl Ctl {
                 me.ux.guard().smart_busy = false;
                 match result {
                     Ok(mask) => {
-                        if let Some(d) = me.st.doc.guard().as_mut().filter(|d| d.id == doc_id) {
+                        if let Some(d) = me.st.doc.guard().as_mut().filter(|d| d.id == doc_id && d.geometry() == geometry) {
                             d.set_selection(Some(mask));
                         }
                         me.say("", false);

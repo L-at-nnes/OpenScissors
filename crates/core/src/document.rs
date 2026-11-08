@@ -53,6 +53,8 @@ enum Command {
         old: Vec<Stroke>,
         new: Vec<Stroke>,
     },
+    /// A quarter turn or a mirror of the picture and of everything drawn on it.
+    Turn(crate::imaging::turn::Turn),
     /// Replace the prediction and the strokes together (a mask tool bakes the marks into the prediction).
     SetMask {
         old: (Option<Arc<Mask>>, Vec<Stroke>),
@@ -126,6 +128,8 @@ pub struct Document {
     frame: Option<(u64, Rect)>,
     /// The box of the result ([`crop::finished_bbox`]) for a mask (`mask_rev`, exact or not) and its offset and feather.
     result_box: Option<(ResultBoxKey, Option<Rect>)>,
+    /// See [`Document::geometry`].
+    geometry: u64,
 }
 
 type ResultBoxKey = (u64, bool, i32, u32);
@@ -179,6 +183,7 @@ impl Document {
             filled: None,
             frame: None,
             result_box: None,
+            geometry: 0,
         }
     }
 
@@ -352,6 +357,7 @@ impl Document {
                 Command::SetParams { .. } => 2 * params,
                 Command::SetStrokes { old, new } => strokes(old) + strokes(new),
                 Command::SetMask { old, new } => mask(&old.0) + mask(&new.0) + strokes(&old.1) + strokes(&new.1),
+                Command::Turn(_) => 16,
             })
             .sum()
     }
@@ -432,6 +438,46 @@ impl Document {
         p.background.mode = BgMode::Image;
         self.set_params(p);
         Ok(())
+    }
+
+    /// Turn the picture a quarter or mirror it, as one undoable step: the 16-bit source, the prediction, the marks, the
+    /// pending selection and the crop turn with it.
+    pub fn apply_turn(&mut self, turn: crate::imaging::turn::Turn) {
+        self.push(Command::Turn(turn));
+    }
+
+    /// How many times the picture was turned or mirrored, back and forth: a cache of something computed from the
+    /// pixels (the encoding of smart select) is valid for one value.
+    pub fn geometry(&self) -> u64 {
+        self.geometry
+    }
+
+    fn turn(&mut self, turn: crate::imaging::turn::Turn) {
+        let (w, h) = (self.image.w, self.image.h);
+        let (nw, nh) = turn.size(w, h);
+        self.image = Arc::new(Image { w: nw, h: nh, data: turn.pixels(&self.image.data, w, h, 3) });
+        self.deep = self.deep.take().map(|d| Arc::new(Image16 { w: nw, h: nh, data: turn.pixels(&d.data, w, h, 3) }));
+        let turn_mask = |m: &Mask| Mask { w: nw, h: nh, data: turn.pixels(&m.data, w, h, 1) };
+        self.predicted = self.predicted.take().map(|m| Arc::new(turn_mask(&m)));
+        self.selection = self.selection.take().map(|m| turn_mask(&m));
+        let (fw, fh) = (w as f64, h as f64);
+        for s in &mut self.strokes {
+            for p in &mut s.points {
+                let (x, y) = turn.point(p[0] as f64, p[1] as f64, fw, fh);
+                *p = [x as f32, y as f32];
+            }
+        }
+        self.params.crop = self.params.crop.map(|r| turn.rect(r, fw, fh));
+        self.alpha = None;
+        self.marks = None;
+        self.bg_marks = None;
+        self.erased = None;
+        self.hair_marks = None;
+        self.filled = None;
+        self.frame = None;
+        self.result_box = None;
+        self.geometry += 1;
+        self.touch(true);
     }
 
     /// Correct the mask with `tool` (fill the holes, remove specks...) as one undoable step. The tool works on the mask
@@ -559,6 +605,7 @@ impl Document {
             Command::SetParams { old, new } => {
                 self.replace_params(if forward { (**new).clone() } else { (**old).clone() });
             }
+            Command::Turn(turn) => self.turn(if forward { *turn } else { turn.inverse() }),
             Command::SetMask { old, new } => {
                 let (predicted, strokes) = if forward { new } else { old };
                 self.predicted = predicted.clone();
@@ -1227,6 +1274,35 @@ mod tests {
         d.undo();
         d.undo();
         assert_eq!(at(&d.render_source(region, 50, 40, false), 10, 10), at(&before, 10, 10));
+    }
+
+    #[test]
+    fn turning_the_picture_turns_everything_drawn_on_it_and_one_undo_brings_it_back() {
+        use crate::imaging::turn::Turn;
+        let mut img = Image::new(50, 40);
+        img.data[(5 * 50 + 45) * 3] = 200; // a red dot near the top right corner
+        let mut d = Document::new(13, img, None).with_deep(Some(Image16 { w: 50, h: 40, data: vec![7; 50 * 40 * 3] }));
+        let mut pred = Mask::new(50, 40);
+        pred.data[5 * 50 + 45] = 255;
+        d.set_prediction(Some(pred));
+        d.add_stroke(keep(45.5, 5.5, 1));
+        d.set_param("crop", json!({ "x0": 40.0, "y0": 0.0, "x1": 50.0, "y1": 10.0 })).unwrap();
+        let before = (d.image.clone(), d.alpha().clone(), d.params().crop);
+        d.apply_turn(Turn::RotateRight);
+        // The top right corner goes to the bottom right: (45, 5) of 50 x 40 becomes (34, 45) of 40 x 50.
+        assert_eq!((d.image.w, d.image.h), (40, 50));
+        assert_eq!(d.image.data[(45 * 40 + 34) * 3], 200);
+        assert_eq!(d.predicted().unwrap().get(34, 45), 255);
+        assert_eq!(d.alpha().get(34, 45), 255, "the stroke turned with the picture");
+        assert_eq!(d.params().crop, Some(Rect::new(30.0, 40.0, 40.0, 50.0)));
+        assert_eq!(d.deep().map(|x| (x.w, x.h)), Some((40, 50)));
+        assert_eq!(d.geometry(), 1);
+        d.undo();
+        assert!(d.image == before.0 && d.alpha() == &before.1 && d.params().crop == before.2, "one undo turns it back");
+        assert_eq!(d.geometry(), 2, "a cache made after the turn is stale again");
+        d.redo();
+        d.apply_turn(Turn::FlipHorizontal);
+        assert_eq!(d.image.data[(45 * 40 + 5) * 3], 200, "mirrored left and right");
     }
 
     #[test]

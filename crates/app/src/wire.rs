@@ -87,6 +87,7 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     cb!(b, ctl, on_save_defaults, |c| c.save_defaults());
     cb!(b, ctl, on_smart_apply, |c| c.smart_apply());
     cb!(b, ctl, on_mask_tool, |c, name| c.apply_mask_tool(&name));
+    cb!(b, ctl, on_turn, |c, name| c.apply_turn(&name));
     cb!(b, ctl, on_smart_cancel, |c| c.smart_cancel());
     cb!(b, ctl, on_set_smart_mode, |c, i| c.set_smart_mode(i));
 
