@@ -12,9 +12,8 @@ use openscissors_core::batch::{self, BatchOptions};
 use openscissors_core::compare;
 use openscissors_core::io::{load_image, save_mask_png, save_rgba, write_atomic, Format};
 use openscissors_core::model::{Accelerator, ModelKind, ModelRegistry, ModelState, Predictor};
-use openscissors_core::params::Params;
+use openscissors_core::params::{BgMode, Params, PRESETS};
 use openscissors_core::settings::Settings;
-use openscissors_core::types::Rgba;
 
 const USAGE: &str = "usage:
   openscissors-cli models                      list models and their state
@@ -25,13 +24,17 @@ const USAGE: &str = "usage:
       and a contact sheet (the picture, then each cut-out) into <out-folder>, and prints how much each model keeps
       and how much each pair agrees
   openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>] [--gpu]
-  openscissors-cli cut <in> <out.png|webp|avif|tiff> [--model <id|file.onnx>] [--gpu]
+  openscissors-cli cut <in> <out.png|jpg|webp|avif|tiff|bmp> [--model <id|file.onnx>] [--gpu] [--quality 95]
+                       [--defaults] [--preset <id>] [--bg <colour>] [--width <px>] [--height <px>] [--8bit] [--dpi 300]
+      cuts out one picture, as every image of a batch
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif|tiff|bmp] [--quality 95]
                          [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>] [--8bit]
-                         [--dpi 300] [--gpu]
+                         [--dpi 300] [--gpu] [--preset <id>] [--bg <colour>] [--width <px>] [--height <px>]
       cuts out every image of the folder (a picture that is already cut out keeps its transparency, a 16-bit one
       stays 16-bit in PNG unless --8bit); --defaults applies the layer settings saved in the app;
-      --dpi writes the print resolution in PNG and JPEG files;
+      --dpi writes the print resolution in PNG and JPEG files; --preset applies a preset of the application
+      (marketplace, marketplace-large, thumbnail, banner), --bg sets the background (transparent, white, black or
+      #rrggbb), --width and --height the size of the result (both: exactly that size), after --defaults;
       --resume leaves alone the images whose result is already in <dst-folder>, so that running the same
       command again after an error or an interruption does only what is left; --report writes a JSON
       report (one entry per image: done, skipped or failed, the file written, the error, the time)
@@ -88,6 +91,59 @@ fn parse_dpi(value: Option<String>) -> Result<u16, String> {
         None => Ok(0),
         Some(v) => v.parse::<u16>().ok().filter(|&d| d > 0).ok_or_else(|| "dpi must be a number from 1 to 65535".to_string()),
     }
+}
+
+/// The layer settings of `cut` and `batch`: those saved in the application with `--defaults` (the default ones
+/// otherwise), then `--preset`, `--bg`, `--width` and `--height`, in that order.
+fn layer_params(args: &[String]) -> Result<Params, String> {
+    let mut p = if args.iter().any(|a| a == "--defaults") {
+        Settings::load(&home_dir().join("data").join("settings.json")).defaults
+    } else {
+        Params::default()
+    };
+    if let Some(id) = flag(args, "--preset") {
+        let ids = || PRESETS.iter().map(|p| p.id).collect::<Vec<_>>().join(", ");
+        PRESETS.iter().find(|p| p.id == id).ok_or_else(|| format!("unknown preset '{id}' (one of {})", ids()))?.apply(&mut p);
+    }
+    if let Some(bg) = flag(args, "--bg") {
+        match parse_colour(&bg)? {
+            None => p.background.mode = BgMode::Transparent,
+            Some(c) => {
+                p.background.mode = BgMode::Color;
+                p.background.color = c;
+            }
+        }
+    }
+    if let Some(w) = flag(args, "--width") {
+        p.background.output_width = parse_size("--width", &w)?;
+    }
+    if let Some(h) = flag(args, "--height") {
+        p.background.output_height = parse_size("--height", &h)?;
+    }
+    p.sanitize();
+    Ok(p)
+}
+
+/// The background option: `transparent`, `white`, `black` or a colour `#rrggbb`. `None` is transparent.
+fn parse_colour(value: &str) -> Result<Option<[u8; 3]>, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "transparent" => Ok(None),
+        "white" => Ok(Some([255; 3])),
+        "black" => Ok(Some([0; 3])),
+        s => {
+            let hex = s.strip_prefix('#').unwrap_or(s);
+            if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(format!("--bg must be transparent, white, black or a colour such as #ff8800, not '{value}'"));
+            }
+            let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0);
+            Ok(Some([byte(0), byte(2), byte(4)]))
+        }
+    }
+}
+
+/// A size option in pixels, at least 1.
+fn parse_size(name: &str, value: &str) -> Result<u32, String> {
+    value.parse::<u32>().ok().filter(|&n| n > 0).ok_or_else(|| format!("{name} must be a number of pixels, not '{value}'"))
 }
 
 /// The format option of a batch.
@@ -237,18 +293,14 @@ fn run(args: Vec<String>) -> Result<(), String> {
         Some("batch") => {
             check_options(
                 rest,
-                &["--format", "--quality", "--model", "--report", "--dpi"],
+                &["--format", "--quality", "--model", "--report", "--dpi", "--preset", "--bg", "--width", "--height"],
                 &["--defaults", "--resume", "--8bit", "--gpu"],
             )?;
             let (src, dst) = (args.get(1).ok_or("source folder expected")?, args.get(2).ok_or("destination folder expected")?);
             let format = parse_format(flag(&args, "--format").as_deref())?;
             let quality = parse_quality(flag(&args, "--quality"))?;
             let dpi = parse_dpi(flag(&args, "--dpi"))?;
-            let params = if args.iter().any(|a| a == "--defaults") {
-                Settings::load(&home_dir().join("data").join("settings.json")).defaults
-            } else {
-                Params::default()
-            };
+            let params = layer_params(&args)?;
             let files = batch::validate(Path::new(src), Path::new(dst)).map_err(|e| e.to_string())?;
             let predictor = load_predictor(&registry, flag(&args, "--model"), gpu)?;
             let opts = BatchOptions {
@@ -285,23 +337,33 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 Err(format!("{} file(s) failed", report.failed.len()))
             }
         }
-        Some(cmd @ ("predict" | "cut")) => {
+        Some("predict") => {
             check_options(rest, &["--model"], &["--gpu"])?;
             let (input, output) = (args.get(1).ok_or("input expected")?, args.get(2).ok_or("output expected")?);
             let predictor = load_predictor(&registry, flag(&args, "--model"), gpu)?;
             let image = load_image(Path::new(input)).map_err(|e| e.to_string())?;
             let mask = predictor.predict(&image, true).map_err(|e| e.to_string())?;
-            if cmd == "predict" {
-                return save_mask_png(Path::new(output), &mask).map_err(|e| e.to_string());
-            }
-            let mut rgba = Rgba::new(image.w, image.h);
-            for (i, p) in rgba.data.chunks_exact_mut(4).enumerate() {
-                p[..3].copy_from_slice(&image.data[i * 3..i * 3 + 3]);
-                p[3] = mask.data[i];
-            }
-            let format =
-                Format::from_path(Path::new(output)).filter(|f| f.supports_alpha()).ok_or("output must be png, webp, avif or tiff")?;
-            save_rgba(Path::new(output), &rgba, format, 95, [255; 3]).map_err(|e| e.to_string())
+            save_mask_png(Path::new(output), &mask).map_err(|e| e.to_string())
+        }
+        Some("cut") => {
+            check_options(
+                rest,
+                &["--model", "--quality", "--dpi", "--preset", "--bg", "--width", "--height"],
+                &["--defaults", "--8bit", "--gpu"],
+            )?;
+            let (input, output) = (args.get(1).ok_or("input expected")?, Path::new(args.get(2).ok_or("output expected")?));
+            let format = Format::from_path(output).ok_or("output must be png, jpg, webp, avif, tiff or bmp")?;
+            let opts = BatchOptions {
+                dst: output.parent().map(Path::to_path_buf).unwrap_or_default(),
+                format,
+                quality: parse_quality(flag(&args, "--quality"))?,
+                params: layer_params(&args)?,
+                skip_existing: false,
+                export_16bit: !args.iter().any(|a| a == "--8bit"),
+                dpi: parse_dpi(flag(&args, "--dpi"))?,
+            };
+            let predictor = load_predictor(&registry, flag(&args, "--model"), gpu)?;
+            batch::cut_file(Path::new(input), output, &opts, &|img| predictor.predict(img, true)).map_err(|e| e.to_string())
         }
         _ => Err(USAGE.to_string()),
     }
@@ -332,6 +394,22 @@ mod tests {
         assert!(check_options(&args(&["a", "--resum"]), known.0, known.1).unwrap_err().contains("--resum"));
         assert!(check_options(&args(&["a", "--format"]), known.0, known.1).unwrap_err().contains("needs a value"));
         assert!(check_options(&args(&["a", "--model", "--resume"]), known.0, known.1).is_err());
+    }
+
+    #[test]
+    fn layer_options_apply_in_order_and_are_checked() {
+        let p = layer_params(&args(&["batch", "a", "b", "--preset", "banner", "--bg", "#FF8000", "--height", "500"])).unwrap();
+        assert_eq!((p.background.mode, p.background.color), (BgMode::Color, [255, 128, 0]));
+        assert_eq!(p.background.aspect_ratio, "16:9", "the preset");
+        assert_eq!((p.background.output_width, p.background.output_height), (1920, 500), "--height after the preset");
+        let p = layer_params(&args(&["cut", "a", "b", "--preset", "marketplace", "--bg", "transparent"])).unwrap();
+        assert_eq!(p.background.mode, BgMode::Transparent, "--bg after the preset");
+        assert_eq!(layer_params(&args(&["cut", "a", "b"])).unwrap().background.mode, Params::default().background.mode);
+        assert!(layer_params(&args(&["cut", "a", "b", "--preset", "poster"])).unwrap_err().contains("marketplace"), "the ids are listed");
+        for bad in [["--bg", "orange"], ["--bg", "#ff80"], ["--bg", "#gg0000"], ["--width", "0"], ["--height", "tall"]] {
+            assert!(layer_params(&args(&["cut", "a", "b", bad[0], bad[1]])).is_err(), "{bad:?}");
+        }
+        assert_eq!((parse_colour("white"), parse_colour("000000")), (Ok(Some([255; 3])), Ok(Some([0; 3]))));
     }
 
     #[test]
