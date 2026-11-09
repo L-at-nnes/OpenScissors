@@ -934,7 +934,7 @@ impl Ctl {
         };
         self.spawn_or(
             move || {
-                let opts = BatchOptions { dst, format, quality, params, skip_existing: false, export_16bit, dpi, source: None };
+                let opts = BatchOptions { dst, format, quality, params, skip_existing: false, export_16bit, dpi, source: None, jobs: 1 };
                 let predict = |img: &openscissors_core::types::Image| model.predict(img, true);
                 let report = batch::run_batch(
                     &files,

@@ -31,13 +31,14 @@ const USAGE: &str = "usage:
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif|tiff|bmp] [--quality 95]
                          [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>] [--8bit]
                          [--dpi 300] [--gpu] [--preset <id>] [--bg <colour>] [--width <px>] [--height <px>]
-                         [--recursive]
+                         [--recursive] [--jobs 4]
       cuts out every image of the folder (a picture that is already cut out keeps its transparency, a 16-bit one
       stays 16-bit in PNG unless --8bit); --defaults applies the layer settings saved in the app;
       --dpi writes the print resolution in PNG and JPEG files; --preset applies a preset of the application
       (marketplace, marketplace-large, thumbnail, banner), --bg sets the background (transparent, white, black or
       #rrggbb), --width and --height the size of the result (both: exactly that size), after --defaults;
-      --recursive takes the pictures of the subfolders too and writes each result in the same subfolder of
+      --jobs processes that many pictures at once (each one needs its own memory; the model still runs one
+      picture at a time); --recursive takes the pictures of the subfolders too and writes each result in the same subfolder of
       <dst-folder>; --resume leaves alone the images whose result is already in <dst-folder>, so that running the same
       command again after an error or an interruption does only what is left; --report writes a JSON
       report (one entry per image: done, skipped or failed, the file written, the error, the time)
@@ -165,6 +166,14 @@ fn parse_colour(value: &str) -> Result<Option<[u8; 3]>, String> {
 /// A size option in pixels, at least 1.
 fn parse_size(name: &str, value: &str) -> Result<u32, String> {
     value.parse::<u32>().ok().filter(|&n| n > 0).ok_or_else(|| format!("{name} must be a number of pixels, not '{value}'"))
+}
+
+/// The jobs option of a batch: how many pictures at once, 1 to 64.
+fn parse_jobs(value: Option<String>) -> Result<usize, String> {
+    match value {
+        None => Ok(1),
+        Some(v) => v.parse::<usize>().ok().filter(|n| (1..=64).contains(n)).ok_or_else(|| "jobs must be a number from 1 to 64".to_string()),
+    }
 }
 
 /// The format of `cut`: from the name of the output file, or from `--format` (PNG without it) for the standard output.
@@ -328,7 +337,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         Some("batch") => {
             check_options(
                 rest,
-                &["--format", "--quality", "--model", "--report", "--dpi", "--preset", "--bg", "--width", "--height"],
+                &["--format", "--quality", "--model", "--report", "--dpi", "--preset", "--bg", "--width", "--height", "--jobs"],
                 &["--defaults", "--resume", "--8bit", "--gpu", "--recursive"],
             )?;
             let (src, dst) = (args.get(1).ok_or("source folder expected")?, args.get(2).ok_or("destination folder expected")?);
@@ -348,6 +357,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 export_16bit: !args.iter().any(|a| a == "--8bit"),
                 dpi,
                 source: recursive.then(|| PathBuf::from(src)),
+                jobs: parse_jobs(flag(&args, "--jobs"))?,
             };
             let predict = |img: &openscissors_core::types::Image| predictor.predict(img, true);
             let report = batch::run_batch(
@@ -399,6 +409,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 export_16bit: !args.iter().any(|a| a == "--8bit"),
                 dpi: parse_dpi(flag(&args, "--dpi"))?,
                 source: None,
+                jobs: 1,
             };
             // `-` reads the picture from the standard input and writes the result to the standard output.
             let picture = if input == "-" {
@@ -487,6 +498,8 @@ mod tests {
     #[test]
     fn quality_and_format_are_checked() {
         assert_eq!((parse_dpi(None), parse_dpi(Some("300".into()))), (Ok(0), Ok(300)));
+        assert_eq!((parse_jobs(None), parse_jobs(Some("4".into()))), (Ok(1), Ok(4)));
+        assert!(parse_jobs(Some("0".into())).is_err() && parse_jobs(Some("many".into())).is_err());
         for bad in ["0", "-1", "70000", "high"] {
             assert!(parse_dpi(Some(bad.into())).is_err(), "{bad}");
         }

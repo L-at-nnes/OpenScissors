@@ -3,6 +3,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+
+use rayon::prelude::*;
 
 use serde::Serialize;
 
@@ -29,6 +32,9 @@ pub struct BatchOptions {
     /// The source folder when its subfolders are processed too ([`validate`] with `subfolders`): the result of
     /// `source/a/b.jpg` is written to `dst/a/b.png`. `None` for the pictures of one folder.
     pub source: Option<PathBuf>,
+    /// How many pictures are processed at once (1: one after the other). The model runs one picture at a time; the
+    /// reading, the rendering and the writing of the others go on meanwhile. Each picture needs its own memory.
+    pub jobs: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -223,12 +229,13 @@ pub fn cut_loaded(loaded: Loaded, opts: &BatchOptions, predict: &dyn Fn(&Image) 
     }
 }
 
-/// Process `files` one after the other. `predict` produces the mask of an image; `cancel` is
-/// polled between files. A failing file is reported and does not stop the batch.
+/// Process `files`, [`BatchOptions::jobs`] at a time. `predict` produces the mask of an image; `cancel` is polled
+/// before each file. A failing file is reported and does not stop the batch. `progress` is called on the calling
+/// thread when a file starts and at the end; the report lists the files in their order.
 pub fn run_batch(
     files: &[PathBuf],
     opts: &BatchOptions,
-    predict: &dyn Fn(&Image) -> Result<Mask>,
+    predict: &(dyn Fn(&Image) -> Result<Mask> + Sync),
     progress: &mut dyn FnMut(BatchProgress),
     cancel: &AtomicBool,
 ) -> BatchReport {
@@ -245,33 +252,58 @@ pub fn run_batch(
             names[i] = name;
         }
     }
-    for (i, (file, out_name)) in files.iter().zip(&names).enumerate() {
+    // One file: `(i, None)` is sent when it starts, `(i, Some(item))` when it is done.
+    let work = |i: usize, events: &mpsc::Sender<(usize, Option<BatchItem>)>| {
         if cancel.load(Ordering::Relaxed) {
-            report.cancelled = true;
-            break;
+            return;
         }
-        progress(BatchProgress { done: i, total: files.len(), current: Some(file) });
+        let _ = events.send((i, None));
+        let file = &files[i];
         let started = std::time::Instant::now();
         // In the report: the name of the file, with its subfolder when there is one (`a/b.jpg`).
         let name =
             subfolder(file, opts).join(file.file_name().unwrap_or_default()).to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/");
-        let (status, output, error) = match process_one(file, out_name, opts, predict) {
-            Ok(Outcome::Written(p)) => {
-                report.processed += 1;
-                (BatchStatus::Done, Some(p.display().to_string()), None)
-            }
-            Ok(Outcome::AlreadyThere(p)) => {
-                report.skipped += 1;
-                (BatchStatus::Skipped, Some(p.display().to_string()), None)
-            }
-            Err(e) => {
-                report.failed.push(BatchFailure { file: name.clone(), error: e.to_string() });
-                (BatchStatus::Failed, None, Some(e.to_string()))
-            }
+        let (status, output, error) = match process_one(file, &names[i], opts, predict) {
+            Ok(Outcome::Written(p)) => (BatchStatus::Done, Some(p.display().to_string()), None),
+            Ok(Outcome::AlreadyThere(p)) => (BatchStatus::Skipped, Some(p.display().to_string()), None),
+            Err(e) => (BatchStatus::Failed, None, Some(e.to_string())),
         };
-        report.items.push(BatchItem { file: name, status, output, error, millis: started.elapsed().as_millis() as u64 });
+        let _ = events.send((i, Some(BatchItem { file: name, status, output, error, millis: started.elapsed().as_millis() as u64 })));
+    };
+    let jobs = opts.jobs.clamp(1, files.len().max(1));
+    let mut items: Vec<Option<BatchItem>> = vec![None; files.len()];
+    let (events, received) = mpsc::channel();
+    std::thread::scope(|s| {
+        s.spawn(move || {
+            let pool = (jobs > 1).then(|| rayon::ThreadPoolBuilder::new().num_threads(jobs).build().ok()).flatten();
+            match pool {
+                Some(pool) => pool.install(|| (0..files.len()).into_par_iter().for_each_with(events, |events, i| work(i, events))),
+                None => (0..files.len()).for_each(|i| work(i, &events)),
+            }
+        });
+        let mut done = 0;
+        for (i, item) in received {
+            match item {
+                None => progress(BatchProgress { done, total: files.len(), current: Some(&files[i]) }),
+                Some(item) => {
+                    items[i] = Some(item);
+                    done += 1;
+                }
+            }
+        }
+    });
+    for item in items.into_iter().flatten() {
+        match item.status {
+            BatchStatus::Done => report.processed += 1,
+            BatchStatus::Skipped => report.skipped += 1,
+            BatchStatus::Failed => {
+                report.failed.push(BatchFailure { file: item.file.clone(), error: item.error.clone().unwrap_or_default() })
+            }
+        }
+        report.items.push(item);
     }
-    progress(BatchProgress { done: report.processed + report.skipped + report.failed.len(), total: files.len(), current: None });
+    report.cancelled = report.items.len() < files.len();
+    progress(BatchProgress { done: report.items.len(), total: files.len(), current: None });
     report
 }
 
@@ -317,7 +349,45 @@ mod tests {
             export_16bit: true,
             dpi: 0,
             source: None,
+            jobs: 1,
         }
+    }
+
+    #[test]
+    fn several_pictures_at_once_give_what_one_at_a_time_gives() {
+        let src = tmp("jobs-src");
+        for i in 0..6 {
+            write_png(&src.join(format!("p{i}.png")), 8 + i, 5);
+        }
+        std::fs::write(src.join("broken.png"), b"not a picture").unwrap();
+        let files = list_images(&src).unwrap();
+        let run = |jobs: usize| {
+            let dst = tmp(&format!("jobs-dst-{jobs}"));
+            let mut starts = 0;
+            let report = run_batch(
+                &files,
+                &BatchOptions { jobs, ..opts(&dst, Format::Png) },
+                &half_mask,
+                &mut |p| starts += p.current.is_some() as usize,
+                &AtomicBool::new(false),
+            );
+            let written: Vec<Vec<u8>> = (0..6).map(|i| std::fs::read(dst.join(format!("p{i}.png"))).unwrap()).collect();
+            std::fs::remove_dir_all(dst).ok();
+            (report, written, starts)
+        };
+        let (one, one_files, _) = run(1);
+        let (four, four_files, starts) = run(4);
+        assert_eq!((four.processed, four.failed.len(), four.cancelled), (6, 1, false));
+        assert_eq!(starts, 7, "every file says when it starts");
+        let order = |r: &BatchReport| r.items.iter().map(|i| (i.file.clone(), i.status)).collect::<Vec<_>>();
+        assert_eq!(order(&four), order(&one), "the report keeps the order of the files");
+        assert!(four_files == one_files, "the same results");
+        // Cancelled before it starts: nothing is done, and the report says so.
+        let dst = tmp("jobs-cancel");
+        let r = run_batch(&files, &BatchOptions { jobs: 3, ..opts(&dst, Format::Png) }, &half_mask, &mut |_| {}, &AtomicBool::new(true));
+        assert!(r.cancelled && r.items.is_empty());
+        std::fs::remove_dir_all(dst).ok();
+        std::fs::remove_dir_all(src).ok();
     }
 
     #[test]
@@ -481,13 +551,13 @@ mod tests {
         let deep = crate::types::Rgba16 { w: 6, h: 3, data: [40_000, 40_000, 40_000, 65_535].repeat(6 * 3) };
         crate::io::save_rgba16(&src.join("deep.png"), &deep, Format::Png).unwrap();
         let files = validate(&src, &dst, false).unwrap();
-        let asked = std::cell::Cell::new(0);
+        let asked = std::sync::atomic::AtomicUsize::new(0);
         let predict = |img: &Image| {
-            asked.set(asked.get() + 1);
+            asked.fetch_add(1, Ordering::Relaxed);
             Ok(Mask::filled(img.w, img.h, 255))
         };
         let r = run_batch(&files, &opts(&dst, Format::Png), &predict, &mut |_| {}, &AtomicBool::new(false));
-        assert_eq!((r.processed, asked.get()), (2, 1), "only the picture without transparency needs the model");
+        assert_eq!((r.processed, asked.load(Ordering::Relaxed)), (2, 1), "only the picture without transparency needs the model");
         let out = image::open(dst.join("cut.png")).unwrap().to_rgba8();
         assert_eq!((out.get_pixel(1, 0).0[3], out.get_pixel(5, 0).0[3]), (255, 0));
         let d = image::open(dst.join("deep.png")).unwrap();
