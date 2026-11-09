@@ -274,7 +274,7 @@ fn main() {
 
 /// A scenario written as JSON: a list of steps such as
 /// `{"click":[x,y]}`, `{"rclick":[x,y]}`, `{"drag":[x0,y0,x1,y1]}`, `{"key":"z","ctrl":true}`,
-/// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"drop_folder":"dir"}`, `{"tab":n}`, `{"popover":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
+/// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"param":["background.mode","original"]}`, `{"drop_folder":"dir"}`, `{"tab":n}`, `{"popover":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
 fn run_script(d: &Driver, path: &str) {
     use slint::platform::{Key, PointerEventButton, WindowEvent};
     let steps: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(path).expect("script")).expect("json");
@@ -361,6 +361,10 @@ fn run_script(d: &Driver, path: &str) {
             d.settle(500);
         } else if let Some(i) = step["preset"].as_i64() {
             d.ui(move |c, _| c.apply_preset(i as i32));
+            d.settle(400);
+        } else if let Some([path, value]) = step["param"].as_array().map(Vec::as_slice) {
+            let (path, value) = (path.as_str().unwrap_or_default().to_string(), value.clone());
+            d.ui(move |c, _| c.set_param(&path, value));
             d.settle(400);
         } else if let Some(i) = step["popover"].as_i64() {
             d.ui(move |c, ui| {
