@@ -217,7 +217,15 @@ pub fn load_image(path: &Path) -> Result<Image> {
 
 /// Like [`load_image`], and keeps the 16-bit samples of 16-bit PNG and TIFF files.
 pub fn load_image_deep(path: &Path) -> Result<Loaded> {
-    let mut reader = ImageReader::open(path)?.with_guessed_format()?;
+    load_reader(ImageReader::open(path)?.with_guessed_format()?)
+}
+
+/// Like [`load_image_deep`], for a file already in memory (read from a pipe).
+pub fn load_image_bytes(bytes: &[u8]) -> Result<Loaded> {
+    load_reader(ImageReader::new(Cursor::new(bytes)).with_guessed_format()?)
+}
+
+fn load_reader<R: std::io::BufRead + std::io::Seek>(mut reader: ImageReader<R>) -> Result<Loaded> {
     // The size is checked from the header ([`check_dimensions`]). The decoder's own allocation limit (512 MB) would
     // refuse a large 16-bit picture that fits the budget, so it follows the budget instead; it still stops a file
     // whose metadata (a profile, a text chunk) claims more than the machine allows.
@@ -342,6 +350,12 @@ pub fn save_rgba_tagged(
     srgb_tag: bool,
     dpi: u16,
 ) -> Result<()> {
+    write_atomic(path, &encode_rgba(rgba, format, quality, flatten_color, srgb_tag, dpi)?)?;
+    Ok(())
+}
+
+/// The file [`save_rgba_tagged`] writes, in memory.
+pub fn encode_rgba(rgba: &Rgba, format: Format, quality: u8, flatten_color: [u8; 3], srgb_tag: bool, dpi: u16) -> Result<Vec<u8>> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
     if format == Format::Webp && rgba.w.max(rgba.h) > WEBP_MAX_SIDE {
         return Err(Error::msg(format!(
@@ -410,8 +424,7 @@ pub fn save_rgba_tagged(
     if format == Format::Png && dpi > 0 {
         png_density(&mut bytes, dpi);
     }
-    write_atomic(path, &bytes)?;
-    Ok(())
+    Ok(bytes)
 }
 
 /// Write the print resolution in an encoded PNG: a `pHYs` chunk (pixels per metre) right after the header chunk,
@@ -454,6 +467,12 @@ pub fn save_rgba16(path: &Path, rgba: &Rgba16, format: Format) -> Result<()> {
 /// Like [`save_rgba16`], embedding the sRGB profile with `srgb_tag` and the print resolution `dpi` in a PNG (see
 /// [`save_rgba_tagged`]).
 pub fn save_rgba16_tagged(path: &Path, rgba: &Rgba16, format: Format, srgb_tag: bool, dpi: u16) -> Result<()> {
+    write_atomic(path, &encode_rgba16(rgba, format, srgb_tag, dpi)?)?;
+    Ok(())
+}
+
+/// The file [`save_rgba16_tagged`] writes, in memory.
+pub fn encode_rgba16(rgba: &Rgba16, format: Format, srgb_tag: bool, dpi: u16) -> Result<Vec<u8>> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
     let bytes: Vec<u8> = rgba.data.iter().flat_map(|v| v.to_ne_bytes()).collect();
     let mut out = Cursor::new(Vec::new());
@@ -479,8 +498,7 @@ pub fn save_rgba16_tagged(path: &Path, rgba: &Rgba16, format: Format, srgb_tag: 
     if format == Format::Png && dpi > 0 {
         png_density(&mut bytes, dpi);
     }
-    write_atomic(path, &bytes)?;
-    Ok(())
+    Ok(bytes)
 }
 
 /// Save a mask as a grey PNG, atomically like [`save_rgba`].
@@ -610,6 +628,23 @@ mod tests {
         save_rgba16_tagged(&dir.join("d.png"), &deep, Format::Png, true, 0).unwrap();
         assert_eq!(profile_of("d.png").as_deref(), Some(srgb_profile()));
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_picture_is_read_and_written_in_memory_as_from_a_file() {
+        let mut rgba = Rgba::new(3, 2);
+        rgba.data
+            .chunks_exact_mut(4)
+            .enumerate()
+            .for_each(|(i, p)| p.copy_from_slice(&[10 * i as u8, 50, 90, if i == 0 { 0 } else { 255 }]));
+        let png = encode_rgba(&rgba, Format::Png, 95, [255; 3], false, 0).unwrap();
+        let back = load_image_bytes(&png).unwrap();
+        assert_eq!((back.image.w, back.image.h), (3, 2));
+        assert_eq!(&back.image.data[3..6], &[10, 50, 90]);
+        assert_eq!(back.alpha.map(|a| a.data[0]), Some(0), "the transparency is read too");
+        assert!(load_image_bytes(b"not a picture").is_err());
+        let deep = encode_rgba16(&Rgba16 { w: 1, h: 1, data: vec![65535, 0, 0, 65535] }, Format::Png, false, 0).unwrap();
+        assert!(load_image_bytes(&deep).unwrap().deep.is_some(), "16-bit stays 16-bit");
     }
 
     #[test]

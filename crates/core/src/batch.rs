@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::document::Document;
 use crate::error::{Error, Result};
-use crate::io::{load_image_deep, save_rgba16_tagged, save_rgba_tagged, Format, IMAGE_EXTENSIONS};
+use crate::io::{encode_rgba, encode_rgba16, load_image_deep, write_atomic, Format, Loaded, IMAGE_EXTENSIONS};
 use crate::params::{BgMode, Params};
 use crate::types::{Image, Mask};
 
@@ -172,7 +172,13 @@ fn process_one(file: &Path, name: &str, opts: &BatchOptions, predict: &dyn Fn(&I
 pub fn cut_file(file: &Path, target: &Path, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Result<Mask>) -> Result<()> {
     // Opened as the window opens it: a picture that is already cut out keeps its own transparency (no model runs on
     // it), a colour profile is converted to sRGB and said in the result, 16-bit samples are kept.
-    let loaded = load_image_deep(file)?;
+    write_atomic(target, &cut_loaded(load_image_deep(file)?, opts, predict)?)?;
+    Ok(())
+}
+
+/// Cut out a picture already read (from a pipe, say) as [`cut_file`] does, and return the file of the result in
+/// `opts.format`.
+pub fn cut_loaded(loaded: Loaded, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Result<Mask>) -> Result<Vec<u8>> {
     let mask = match loaded.alpha {
         Some(alpha) => alpha,
         None => predict(&loaded.image)?,
@@ -180,14 +186,14 @@ pub fn cut_file(file: &Path, target: &Path, opts: &BatchOptions, predict: &dyn F
     let mut params = opts.params.clone();
     params.crop = None; // a crop belongs to one image, not to a style
     let flatten = if params.background.mode == BgMode::Color { params.background.color } else { [255; 3] };
-    let mut doc = Document::new(0, loaded.image, Some(file.to_path_buf())).with_deep(loaded.deep).with_params(params);
+    let mut doc = Document::new(0, loaded.image, None).with_deep(loaded.deep).with_params(params);
     doc.set_prediction(Some(mask));
     let job = doc.export_job();
     job.check_memory()?;
     let deep = (opts.export_16bit && matches!(opts.format, Format::Png | Format::Tiff)).then(|| job.run_deep()).flatten();
     match deep {
-        Some(deep) => save_rgba16_tagged(target, &deep, opts.format, loaded.converted, opts.dpi),
-        None => save_rgba_tagged(target, &job.run(), opts.format, opts.quality, flatten, loaded.converted, opts.dpi),
+        Some(deep) => encode_rgba16(&deep, opts.format, loaded.converted, opts.dpi),
+        None => encode_rgba(&job.run(), opts.format, opts.quality, flatten, loaded.converted, opts.dpi),
     }
 }
 
