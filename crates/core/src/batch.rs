@@ -26,6 +26,9 @@ pub struct BatchOptions {
     pub export_16bit: bool,
     /// Print resolution written in PNG and JPEG files, 0 for none.
     pub dpi: u16,
+    /// The source folder when its subfolders are processed too ([`validate`] with `subfolders`): the result of
+    /// `source/a/b.jpg` is written to `dst/a/b.png`. `None` for the pictures of one folder.
+    pub source: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -93,9 +96,25 @@ pub fn list_images(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-/// Check the folders and return the images to process. The destination is created when missing, once everything
-/// else is known to be right (a refused batch leaves no empty folder behind).
-pub fn validate(src: &Path, dst: &Path) -> Result<Vec<PathBuf>> {
+/// Image files inside `dir` and all its subfolders but `skip` (the destination, when it is inside), sorted by path.
+pub fn list_images_tree(dir: &Path, skip: &Path) -> Result<Vec<PathBuf>> {
+    let skip = std::fs::canonicalize(skip).ok();
+    let mut files = Vec::new();
+    let mut folders = vec![dir.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        if skip.is_some() && std::fs::canonicalize(&folder).ok() == skip {
+            continue;
+        }
+        files.extend(list_images(&folder)?);
+        folders.extend(std::fs::read_dir(&folder)?.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.is_dir()));
+    }
+    files.sort_by_key(|p| p.strip_prefix(dir).unwrap_or(p).to_string_lossy().to_lowercase());
+    Ok(files)
+}
+
+/// Check the folders and return the images to process, those of the subfolders too with `subfolders`. The destination
+/// is created when missing, once everything else is known to be right (a refused batch leaves no empty folder behind).
+pub fn validate(src: &Path, dst: &Path, subfolders: bool) -> Result<Vec<PathBuf>> {
     if !src.is_dir() {
         return Err(Error::msg("The source folder does not exist."));
     }
@@ -103,7 +122,7 @@ pub fn validate(src: &Path, dst: &Path) -> Result<Vec<PathBuf>> {
     if dst.exists() && std::fs::canonicalize(src)? == std::fs::canonicalize(dst)? {
         return Err(Error::msg("The source and destination folders must be different."));
     }
-    let files = list_images(src)?;
+    let files = if subfolders { list_images_tree(src, dst)? } else { list_images(src)? };
     if files.is_empty() {
         return Err(Error::msg("The source folder contains no supported image (jpg, png, bmp, tif, webp, gif)."));
     }
@@ -156,13 +175,20 @@ enum Outcome {
     AlreadyThere(PathBuf),
 }
 
+/// The folder of `file` under the source, when the subfolders are processed ([`BatchOptions::source`]).
+fn subfolder<'a>(file: &'a Path, opts: &BatchOptions) -> &'a Path {
+    opts.source.as_deref().and_then(|s| file.parent()?.strip_prefix(s).ok()).unwrap_or(Path::new(""))
+}
+
 fn process_one(file: &Path, name: &str, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Result<Mask>) -> Result<Outcome> {
-    let existing = opts.dst.join(name);
+    let dir = opts.dst.join(subfolder(file, opts));
+    let existing = dir.join(name);
     if opts.skip_existing && existing.is_file() {
         return Ok(Outcome::AlreadyThere(existing));
     }
+    std::fs::create_dir_all(&dir)?;
     let stem = name.strip_suffix(&format!(".{}", opts.format.extension())).unwrap_or(name);
-    let target = unique_path(&opts.dst, stem, opts.format.extension());
+    let target = unique_path(&dir, stem, opts.format.extension());
     cut_file(file, &target, opts, predict)?;
     Ok(Outcome::Written(target))
 }
@@ -207,7 +233,18 @@ pub fn run_batch(
     cancel: &AtomicBool,
 ) -> BatchReport {
     let mut report = BatchReport { total: files.len(), ..Default::default() };
-    let names = output_names(files, opts.format.extension());
+    // Names are chosen folder by folder: `a/x.jpg` and `b/x.jpg` both give `x.png`, each in its own folder.
+    let mut names = vec![String::new(); files.len()];
+    let mut by_folder: HashMap<&Path, Vec<usize>> = HashMap::new();
+    for (i, f) in files.iter().enumerate() {
+        by_folder.entry(subfolder(f, opts)).or_default().push(i);
+    }
+    for indices in by_folder.values() {
+        let group: Vec<PathBuf> = indices.iter().map(|&i| files[i].clone()).collect();
+        for (&i, name) in indices.iter().zip(output_names(&group, opts.format.extension())) {
+            names[i] = name;
+        }
+    }
     for (i, (file, out_name)) in files.iter().zip(&names).enumerate() {
         if cancel.load(Ordering::Relaxed) {
             report.cancelled = true;
@@ -215,7 +252,9 @@ pub fn run_batch(
         }
         progress(BatchProgress { done: i, total: files.len(), current: Some(file) });
         let started = std::time::Instant::now();
-        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        // In the report: the name of the file, with its subfolder when there is one (`a/b.jpg`).
+        let name =
+            subfolder(file, opts).join(file.file_name().unwrap_or_default()).to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/");
         let (status, output, error) = match process_one(file, out_name, opts, predict) {
             Ok(Outcome::Written(p)) => {
                 report.processed += 1;
@@ -269,7 +308,43 @@ mod tests {
     }
 
     fn opts(dst: &Path, format: Format) -> BatchOptions {
-        BatchOptions { dst: dst.into(), format, quality: 90, params: Params::default(), skip_existing: false, export_16bit: true, dpi: 0 }
+        BatchOptions {
+            dst: dst.into(),
+            format,
+            quality: 90,
+            params: Params::default(),
+            skip_existing: false,
+            export_16bit: true,
+            dpi: 0,
+            source: None,
+        }
+    }
+
+    #[test]
+    fn subfolders_keep_their_tree_and_the_destination_inside_is_left_out() {
+        let src = tmp("tree");
+        for f in ["a.png", "sub/b.png", "sub/deeper/c.png", "other/b.png"] {
+            std::fs::create_dir_all(src.join(f).parent().unwrap()).unwrap();
+            write_png(&src.join(f), 6, 4);
+        }
+        let dst = src.join("out");
+        assert_eq!(validate(&src, &dst, false).unwrap().len(), 1, "without subfolders: only a.png");
+        let files = validate(&src, &dst, true).unwrap();
+        assert_eq!(files.len(), 4);
+        let o = BatchOptions { source: Some(src.clone()), ..opts(&dst, Format::Png) };
+        let report = run_batch(&files, &o, &half_mask, &mut |_| {}, &AtomicBool::new(false));
+        assert_eq!(report.processed, 4, "{:?}", report.failed);
+        for f in ["a.png", "sub/b.png", "sub/deeper/c.png", "other/b.png"] {
+            assert!(dst.join(f).is_file(), "{f}: the same subfolder, the same name (b.png twice, each in its folder)");
+        }
+        let names: Vec<&str> = report.items.iter().map(|i| i.file.as_str()).collect();
+        assert_eq!(names, ["a.png", "other/b.png", "sub/b.png", "sub/deeper/c.png"], "sorted by path, with the subfolder");
+        // Run again: the results in out/ are not taken as pictures to cut out, and --resume finds them.
+        let again = validate(&src, &dst, true).unwrap();
+        assert_eq!(again.len(), 4, "the destination inside the source is left out");
+        let resumed = run_batch(&again, &BatchOptions { skip_existing: true, ..o }, &half_mask, &mut |_| {}, &AtomicBool::new(false));
+        assert_eq!((resumed.processed, resumed.skipped), (0, 4));
+        std::fs::remove_dir_all(src).ok();
     }
 
     #[test]
@@ -277,15 +352,15 @@ mod tests {
         let root = tmp("val");
         let (src, dst) = (root.join("src"), root.join("dst"));
         std::fs::create_dir_all(&src).unwrap();
-        assert!(validate(&root.join("missing"), &dst).is_err(), "source must exist");
-        assert!(validate(&src, &src).is_err(), "folders must differ");
-        assert!(validate(&src, &dst).is_err(), "no image yet");
+        assert!(validate(&root.join("missing"), &dst, false).is_err(), "source must exist");
+        assert!(validate(&src, &src, false).is_err(), "folders must differ");
+        assert!(validate(&src, &dst, false).is_err(), "no image yet");
         assert!(!dst.exists(), "a refused batch creates no folder");
         std::fs::write(src.join("notes.txt"), "x").unwrap();
-        assert!(validate(&src, &dst).is_err(), "text files are not images");
+        assert!(validate(&src, &dst, false).is_err(), "text files are not images");
         write_png(&src.join("B.PNG"), 8, 8);
         write_png(&src.join("a.png"), 8, 8);
-        let files = validate(&src, &dst).unwrap();
+        let files = validate(&src, &dst, false).unwrap();
         assert_eq!(files.iter().map(|f| f.file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>(), ["a.png", "B.PNG"]);
         assert!(dst.is_dir(), "destination is created");
         std::fs::remove_dir_all(root).ok();
@@ -310,7 +385,7 @@ mod tests {
         write_png(&src.join("one.png"), 20, 10);
         write_png(&src.join("two.png"), 30, 12);
         std::fs::write(src.join("broken.png"), "not an image").unwrap();
-        let files = validate(&src, &dst).unwrap();
+        let files = validate(&src, &dst, false).unwrap();
         let mut seen = Vec::new();
         let report = run_batch(
             &files,
@@ -342,7 +417,7 @@ mod tests {
         write_png(&src.join("one.png"), 12, 12);
         write_png(&src.join("two.png"), 12, 12);
         std::fs::write(src.join("three.png"), "not an image yet").unwrap();
-        let files = validate(&src, &dst).unwrap();
+        let files = validate(&src, &dst, false).unwrap();
         let mut o = opts(&dst, Format::Png);
         o.skip_existing = true;
         let first = run_batch(&files, &o, &half_mask, &mut |_| {}, &AtomicBool::new(false));
@@ -375,7 +450,7 @@ mod tests {
         write_png(&src.join("a.png"), 12, 12);
         write_png(&src.join("A.jpg"), 14, 14); // the content decides the decoder, the name only the output
         write_png(&src.join("b.png"), 10, 10);
-        let files = validate(&src, &dst).unwrap();
+        let files = validate(&src, &dst, false).unwrap();
         let mut o = opts(&dst, Format::Png);
         o.skip_existing = true;
         let first = run_batch(&files, &o, &half_mask, &mut |_| {}, &AtomicBool::new(false));
@@ -405,7 +480,7 @@ mod tests {
         // A 16-bit picture: its samples survive in a PNG result.
         let deep = crate::types::Rgba16 { w: 6, h: 3, data: [40_000, 40_000, 40_000, 65_535].repeat(6 * 3) };
         crate::io::save_rgba16(&src.join("deep.png"), &deep, Format::Png).unwrap();
-        let files = validate(&src, &dst).unwrap();
+        let files = validate(&src, &dst, false).unwrap();
         let asked = std::cell::Cell::new(0);
         let predict = |img: &Image| {
             asked.set(asked.get() + 1);
@@ -429,7 +504,7 @@ mod tests {
         for n in ["a", "b", "c"] {
             write_png(&src.join(format!("{n}.png")), 16, 16);
         }
-        let files = validate(&src, &dst).unwrap();
+        let files = validate(&src, &dst, false).unwrap();
         let cancel = AtomicBool::new(false);
         let report = run_batch(
             &files,
@@ -455,7 +530,7 @@ mod tests {
         let (src, dst) = (root.join("src"), root.join("dst"));
         std::fs::create_dir_all(&src).unwrap();
         write_png(&src.join("x.png"), 10, 10);
-        let files = validate(&src, &dst).unwrap();
+        let files = validate(&src, &dst, false).unwrap();
         let mut o = opts(&dst, Format::Png);
         o.params.background.mode = BgMode::Color;
         o.params.background.color = [1, 2, 3];

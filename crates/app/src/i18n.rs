@@ -336,7 +336,8 @@ mod tests {
         let fr = |m: &str| tr_message_in("fr", m);
         let t = |k: &str| t_in("fr", k);
         // Real messages from the core.
-        let missing = openscissors_core::batch::validate(Path::new("/no/such/folder"), &std::env::temp_dir()).unwrap_err().to_string();
+        let missing =
+            openscissors_core::batch::validate(Path::new("/no/such/folder"), &std::env::temp_dir(), false).unwrap_err().to_string();
         assert_eq!(fr(&missing), t("The source folder does not exist."));
         assert_ne!(fr(&missing), missing);
         let marks = openscissors_core::project::marks_from_json(r#"{"version":1}"#, 1, 1).unwrap_err().to_string();

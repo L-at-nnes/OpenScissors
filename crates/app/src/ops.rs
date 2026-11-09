@@ -905,7 +905,7 @@ impl Ctl {
             _ => Format::Png,
         };
         let (src, dst) = (PathBuf::from(src), PathBuf::from(dst));
-        let files = match batch::validate(&src, &dst) {
+        let files = match batch::validate(&src, &dst, false) {
             Ok(f) => f,
             Err(e) => return self.say(tr_message(&e.to_string()), true),
         };
@@ -934,7 +934,7 @@ impl Ctl {
         };
         self.spawn_or(
             move || {
-                let opts = BatchOptions { dst, format, quality, params, skip_existing: false, export_16bit, dpi };
+                let opts = BatchOptions { dst, format, quality, params, skip_existing: false, export_16bit, dpi, source: None };
                 let predict = |img: &openscissors_core::types::Image| model.predict(img, true);
                 let report = batch::run_batch(
                     &files,

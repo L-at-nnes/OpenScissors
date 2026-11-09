@@ -31,12 +31,14 @@ const USAGE: &str = "usage:
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif|tiff|bmp] [--quality 95]
                          [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>] [--8bit]
                          [--dpi 300] [--gpu] [--preset <id>] [--bg <colour>] [--width <px>] [--height <px>]
+                         [--recursive]
       cuts out every image of the folder (a picture that is already cut out keeps its transparency, a 16-bit one
       stays 16-bit in PNG unless --8bit); --defaults applies the layer settings saved in the app;
       --dpi writes the print resolution in PNG and JPEG files; --preset applies a preset of the application
       (marketplace, marketplace-large, thumbnail, banner), --bg sets the background (transparent, white, black or
       #rrggbb), --width and --height the size of the result (both: exactly that size), after --defaults;
-      --resume leaves alone the images whose result is already in <dst-folder>, so that running the same
+      --recursive takes the pictures of the subfolders too and writes each result in the same subfolder of
+      <dst-folder>; --resume leaves alone the images whose result is already in <dst-folder>, so that running the same
       command again after an error or an interruption does only what is left; --report writes a JSON
       report (one entry per image: done, skipped or failed, the file written, the error, the time)
   --gpu (compare, predict, cut, batch) runs the model on the graphics card when one can (DirectML on Windows), and
@@ -327,14 +329,15 @@ fn run(args: Vec<String>) -> Result<(), String> {
             check_options(
                 rest,
                 &["--format", "--quality", "--model", "--report", "--dpi", "--preset", "--bg", "--width", "--height"],
-                &["--defaults", "--resume", "--8bit", "--gpu"],
+                &["--defaults", "--resume", "--8bit", "--gpu", "--recursive"],
             )?;
             let (src, dst) = (args.get(1).ok_or("source folder expected")?, args.get(2).ok_or("destination folder expected")?);
             let format = parse_format(flag(&args, "--format").as_deref())?;
             let quality = parse_quality(flag(&args, "--quality"))?;
             let dpi = parse_dpi(flag(&args, "--dpi"))?;
             let params = layer_params(&args)?;
-            let files = batch::validate(Path::new(src), Path::new(dst)).map_err(|e| e.to_string())?;
+            let recursive = args.iter().any(|a| a == "--recursive");
+            let files = batch::validate(Path::new(src), Path::new(dst), recursive).map_err(|e| e.to_string())?;
             let predictor = load_predictor(&registry, flag(&args, "--model"), gpu)?;
             let opts = BatchOptions {
                 dst: PathBuf::from(dst),
@@ -344,6 +347,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 skip_existing: args.iter().any(|a| a == "--resume"),
                 export_16bit: !args.iter().any(|a| a == "--8bit"),
                 dpi,
+                source: recursive.then(|| PathBuf::from(src)),
             };
             let predict = |img: &openscissors_core::types::Image| predictor.predict(img, true);
             let report = batch::run_batch(
@@ -394,6 +398,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 skip_existing: false,
                 export_16bit: !args.iter().any(|a| a == "--8bit"),
                 dpi: parse_dpi(flag(&args, "--dpi"))?,
+                source: None,
             };
             // `-` reads the picture from the standard input and writes the result to the standard output.
             let picture = if input == "-" {
