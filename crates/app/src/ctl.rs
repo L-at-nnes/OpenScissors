@@ -350,7 +350,10 @@ impl Ctl {
                     }
                     *wanted = false;
                 }
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| me.refresh_doc_now()));
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    me.refresh_doc_now();
+                    me.kick_fill();
+                }));
             })
             .expect("document state thread");
     }

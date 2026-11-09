@@ -13,6 +13,7 @@ use openscissors_core::mask::graphcut::{graphcut_alpha, GraphcutOptions};
 use openscissors_core::mask::matting::hair_matting;
 use openscissors_core::mask::{Stroke, StrokeKind};
 use openscissors_core::model::predict::upsample_guided;
+use openscissors_core::render::inpaint::fill_hole_texture;
 use openscissors_core::types::{Image, Mask, Rect};
 
 struct Counting;
@@ -133,6 +134,9 @@ fn main() {
         }
     }
     rows.push(row("hair matting, 12 Mpx", 1500.0, best_of(3, || drop(hair_matting(&img, &mask, &hair, 0)))));
+
+    // The textured fill of the original behind a subject covering a quarter of the picture (in the background).
+    rows.push(row("textured fill behind the subject, 12 Mpx", 3000.0, best_of(2, || drop(fill_hole_texture(&img, &mask)))));
 
     // Interactive preview: a stroke, then the visible region of both views.
     let mut doc = Document::new(1, img.clone(), None);

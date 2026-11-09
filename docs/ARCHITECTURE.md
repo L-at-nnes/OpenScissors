@@ -15,7 +15,7 @@ crates/cli    command line: models, predict, cut, batch
 | `model/` | `ModelRegistry` (catalogue + user models, SHA-256 checked downloads), `Predictor` (ONNX Runtime session, normalisation, guided up-sampling in bands), `Sam2` (encoder once per image, decoder per prompt) |
 | `mask/` | own GrabCut and Boykov–Kolmogorov max-flow, closed-form matting (coarse to fine), strokes |
 | `document.rs` | the open image: strokes, parameters, undo stack (capped at 384 MB, oldest steps forgotten first), the mask pipeline (a provisional mask is shown at once, the exact one is computed in the background), 16-bit export. An export or a project save takes what it needs in a moment (`export_job`, `ProjectSnapshot`) and runs without the document lock; only the content it wrote is marked saved (`edit_mark`) |
-| `render/` | viewport rendering at screen resolution, crop (the canvas may extend past the picture, up to twice its size), backgrounds (colour, gradient, picture, original) , filters, colour adjustments, edge clean-up (`defringe`), shadow with offset, inpainting. The same code renders the export at scale 1, and only for the cropped region |
+| `render/` | viewport rendering at screen resolution, crop (the canvas may extend past the picture, up to twice its size), backgrounds (colour, gradient, picture, original) , filters, colour adjustments, edge clean-up (`defringe`), shadow with offset, inpainting (`inpaint`: a smooth pull-push fill shown at once, then a textured one in the background: PatchMatch inside the iterative completion of Wexler et al., coarse to fine, searched at 768 px and copied at full size, blended in the gradient domain). The same code renders the export at scale 1, and only for the cropped region |
 | `io.rs` | opening (EXIF orientation, embedded colour profile converted to sRGB, transparency of a cut-out picture, 16-bit samples) and atomic saving (PNG, JPEG, WebP lossy or lossless, AVIF, TIFF, BMP) |
 | `paths.rs`, `project.rs`, `batch.rs`, `plugin.rs`, `settings.rs`, `sysmem.rs` | the folder of the application, shared by the window and the command line (portable folder, or the profile when it is read-only) /  `.osproj` (read and written as a stream; the paths of the picture and of the background picture are also stored relative to the project, 16-bit sources are kept) / `.psm` files, batch (resumable, JSON report), plug-ins (opt-in, with a timeout; the whole process tree is stopped), settings (a wrong field only resets itself, the old file is kept as `.bak`), memory budget |
 
@@ -25,7 +25,7 @@ crates/cli    command line: models, predict, cut, batch
 ui/*.slint       theme tokens, widgets, dock, panels, dialogs, main window (Backend global = the contract with Rust)
 src/ctl.rs       Ctl: interface state + pushing it into the Slint properties (coalesced refreshes)
 src/ops.rs       document operations: open, save, export, projects, marks, parameters, batch, plug-ins
-src/models.rs    memory limits, model loading, prediction, background mask jobs, downloads, smart select
+src/models.rs    memory limits, model loading, prediction, background mask and fill jobs, downloads, smart select
 src/input.rs     pointer and keyboard
 src/render.rs    render thread: keeps the latest request per view
 src/clipboard.rs system clipboard: paste an image or a copied file, copy the result (one long-lived handle, needed on X11)

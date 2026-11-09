@@ -123,7 +123,11 @@ pub struct Document {
     bg: Option<(String, Arc<Image>)>,
     /// Path of a background picture that failed to load, so that `prepare()` does not try again at every call.
     bg_failed: Option<String>,
+    /// The original with the subject filled in: the smooth fill at first, then the textured one from a job.
     filled: Option<(FillKey, Arc<Image>)>,
+    /// `filled` is the textured fill (or the smooth one is kept as the result: the job failed).
+    fill_textured: bool,
+    fill_job_running: bool,
     /// The canvas of the result (the crop) for `rev`, kept while a background picture has to cover it.
     frame: Option<(u64, Rect)>,
     /// The box of the result ([`crop::finished_bbox`]) for a mask (`mask_rev`, exact or not) and its offset and feather.
@@ -134,7 +138,8 @@ pub struct Document {
 
 type ResultBoxKey = (u64, bool, i32, u32);
 
-type FillKey = (u64, i32, u32);
+/// The mask (`mask_rev`, exact or not), its offset and its feather.
+type FillKey = (u64, bool, i32, u32);
 
 /// Rough size in bytes of a JSON value, without printing it.
 fn json_size(v: &Value) -> usize {
@@ -181,6 +186,8 @@ impl Document {
             bg: None,
             bg_failed: None,
             filled: None,
+            fill_textured: false,
+            fill_job_running: false,
             frame: None,
             result_box: None,
             geometry: 0,
@@ -762,18 +769,74 @@ impl Document {
                 self.bg_failed = wanted;
             }
         }
-        let bgp = &self.params.background;
-        if bgp.mode == BgMode::Original && bgp.fill_hole {
-            let key: FillKey = (self.mask_rev, self.params.mask.offset, self.params.foreground.feather);
+        if self.shows_fill() {
+            let key = self.fill_key();
             if self.filled.as_ref().map(|(k, _)| *k) != Some(key) {
-                let filled = fill_behind(&self.image, self.alpha.as_ref().expect("alpha ready"), &self.params);
-                self.filled = Some((key, Arc::new(filled)));
+                // The smooth fill at once; the textured one comes from a job (see `take_fill_job`).
+                let hole = hole_behind(self.alpha.as_ref().expect("alpha ready"), &self.params);
+                self.filled = Some((key, Arc::new(inpaint::fill_hole(&self.image, &hole))));
+                self.fill_textured = false;
             }
         }
         if matches!(self.params.background.mode, BgMode::Image | BgMode::Gradient) && self.frame.as_ref().map(|(r, _)| *r) != Some(self.rev)
         {
             let crop = self.crop_now();
             self.frame = Some((self.rev, crop));
+        }
+    }
+
+    /// The background is the original with the subject filled in.
+    fn shows_fill(&self) -> bool {
+        self.params.background.mode == BgMode::Original && self.params.background.fill_hole
+    }
+
+    fn fill_key(&self) -> FillKey {
+        (self.mask_rev, self.alpha_is_exact(), self.params.mask.offset, self.params.foreground.feather)
+    }
+
+    /// Snapshot for the textured fill of the original behind the subject, when the background shows it, the exact
+    /// mask is known and the smooth fill is still shown. Run it with [`FillJob::run`] on any thread, then hand the
+    /// result to [`Document::finish_fill_job`].
+    pub fn take_fill_job(&mut self) -> Option<FillJob> {
+        self.prepare();
+        if self.fill_job_running || self.computing() || !self.shows_fill() || self.fill_textured {
+            return None;
+        }
+        let key = self.filled.as_ref()?.0;
+        self.fill_job_running = true;
+        Some(FillJob { key, image: self.image.clone(), alpha: self.alpha.clone().expect("alpha ready"), params: self.params.clone() })
+    }
+
+    /// Install the textured fill. Returns true when it was still current (the views must then refresh); a stale one
+    /// is dropped and the next call to [`Document::take_fill_job`] starts again from the new mask.
+    pub fn finish_fill_job(&mut self, job: FillJob, filled: Image) -> bool {
+        self.fill_job_running = false;
+        if self.fill_key() != job.key || self.filled.as_ref().map(|(k, _)| *k) != Some(job.key) {
+            return false;
+        }
+        self.filled = Some((job.key, Arc::new(filled)));
+        self.fill_textured = true;
+        self.rev += 1;
+        true
+    }
+
+    /// A fill job that could not finish (it panicked): the smooth fill stays as the result, so that no new job is
+    /// started for the same mask again and again.
+    pub fn abandon_fill_job(&mut self, job: FillJob) {
+        self.fill_job_running = false;
+        if self.filled.as_ref().map(|(k, _)| *k) == Some(job.key) {
+            self.fill_textured = true;
+        }
+    }
+
+    /// For the exports made here, under the lock: the textured fill, computed now when it is not there yet.
+    fn textured_fill_now(&mut self) {
+        if self.shows_fill() && !self.fill_textured {
+            if let Some((key, _)) = self.filled {
+                let filled = fill_behind(&self.image, self.alpha.as_ref().expect("alpha ready"), &self.params);
+                self.filled = Some((key, Arc::new(filled)));
+                self.fill_textured = true;
+            }
         }
     }
 
@@ -856,6 +919,7 @@ impl Document {
     pub fn export(&mut self) -> Rgba {
         self.alpha_blocking();
         self.prepare();
+        self.textured_fill_now();
         render::export_rgba(&self.scene())
     }
 
@@ -871,7 +935,8 @@ impl Document {
             strokes: self.strokes.clone(),
             params: self.params.clone(),
         });
-        let original = self.params.background.mode == BgMode::Original;
+        // The textured fill, when it is there for the exact mask; otherwise the job computes it.
+        let filled = self.filled.as_ref().filter(|_| pending.is_none() && self.shows_fill() && self.fill_textured).map(|(_, i)| i.clone());
         ExportJob {
             image: self.image.clone(),
             deep: self.deep.clone(),
@@ -879,7 +944,7 @@ impl Document {
             pending,
             params: self.params.clone(),
             bg_image: self.bg.as_ref().filter(|_| self.params.background.mode == BgMode::Image).map(|(_, i)| i.clone()),
-            filled: self.filled.as_ref().filter(|_| original && self.params.background.fill_hole).map(|(_, i)| i.clone()),
+            filled,
             edit_mark: self.edits,
         }
     }
@@ -889,6 +954,7 @@ impl Document {
         let deep = self.deep.clone()?;
         self.alpha_blocking();
         self.prepare();
+        self.textured_fill_now();
         render::export_deep(&self.scene(), &deep)
     }
 
@@ -971,24 +1037,41 @@ impl ExportJob {
             }
             (None, None) => unreachable!("an export job has a mask or the job that computes it"),
         };
-        // The filled original depends on the mask: with the exact mask computed here, it is filled again.
+        // The textured fill of the original depends on the mask: without it for this mask, it is computed here.
         let refilled;
-        let filled = match (&self.pending, self.params.background.mode == BgMode::Original && self.params.background.fill_hole) {
-            (Some(_), true) => {
+        let filled = match (&self.filled, self.params.background.mode == BgMode::Original && self.params.background.fill_hole) {
+            (None, true) => {
                 refilled = fill_behind(&self.image, alpha, &self.params);
                 Some(&refilled)
             }
-            _ => self.filled.as_deref(),
+            (f, _) => f.as_deref(),
         };
         f(&Scene { image: &self.image, alpha, params: &self.params, bg_image: self.bg_image.as_deref(), filled, frame: None })
     }
 }
 
-/// The original with the subject (`alpha` after offset and feathering, grown a little) filled in from around it.
+/// What is filled behind the subject: `alpha` after offset and feathering, grown a little.
+fn hole_behind(alpha: &Mask, params: &Params) -> Mask {
+    morph_ellipse(&render::finished_alpha(alpha, params), 7, MorphOp::Dilate)
+}
+
+/// The original with the subject filled in by continuing the texture around it.
 fn fill_behind(image: &Image, alpha: &Mask, params: &Params) -> Image {
-    let finished = render::finished_alpha(alpha, params);
-    let hole = morph_ellipse(&finished, 7, MorphOp::Dilate);
-    inpaint::fill_hole(image, &hole)
+    inpaint::fill_hole_texture(image, &hole_behind(alpha, params))
+}
+
+/// The textured fill of the original behind the subject, detached from the document ([`Document::take_fill_job`]).
+pub struct FillJob {
+    key: FillKey,
+    image: Arc<Image>,
+    alpha: Mask,
+    params: Params,
+}
+
+impl FillJob {
+    pub fn run(&self) -> Image {
+        fill_behind(&self.image, &self.alpha, &self.params)
+    }
 }
 
 /// A background computation of the exact mask, detached from the document.
@@ -1231,6 +1314,53 @@ mod tests {
         assert_eq!(&out.data[(20 * 50 + 25) * 4..(20 * 50 + 25) * 4 + 4], &[10, 20, 30, 255]);
         let e = d.export();
         assert_eq!((e.w, e.h), (50, 40));
+    }
+
+    #[test]
+    fn the_textured_fill_comes_from_a_job_and_follows_the_mask() {
+        let mut d = Document::new(2, Image::filled(50, 40, [10, 20, 30]), None);
+        d.add_stroke(keep(25.5, 20.5, 10));
+        assert!(d.take_fill_job().is_none(), "no job while the background does not show the fill");
+        d.set_param("background.mode", json!("original")).unwrap();
+        d.set_param("background.fill_hole", json!(true)).unwrap();
+        let job = d.take_fill_job().expect("the smooth fill is shown: a job is due");
+        assert!(d.take_fill_job().is_none(), "one job at a time");
+        let filled = job.run();
+        let rev = d.state().rev;
+        assert!(d.finish_fill_job(job, filled));
+        assert!(d.state().rev > rev, "the views refresh");
+        assert!(d.take_fill_job().is_none(), "nothing left to do for this mask");
+        // A stroke while a job runs: its result is stale, and a new job starts from the new mask.
+        d.add_stroke(keep(10.5, 10.5, 4));
+        let job = d.take_fill_job().expect("a new mask, a new fill");
+        let filled = job.run();
+        d.add_stroke(keep(40.5, 30.5, 4));
+        assert!(!d.finish_fill_job(job, filled), "stale");
+        let job = d.take_fill_job().expect("started again");
+        d.abandon_fill_job(job);
+        assert!(d.take_fill_job().is_none(), "a failed job is not started again for the same mask");
+    }
+
+    #[test]
+    fn an_export_shows_the_textured_fill_even_before_the_job_is_done() {
+        let (w, h) = (90, 60);
+        let mut img = Image::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                let v = if (x / 4) % 2 == 0 { 30 } else { 220 };
+                img.data[(y * w + x) * 3..(y * w + x) * 3 + 3].copy_from_slice(&[v; 3]);
+            }
+        }
+        let mut d = Document::new(3, img, None);
+        d.add_stroke(keep(45.5, 30.5, 12));
+        d.set_param("background.mode", json!("original")).unwrap();
+        d.set_param("background.fill_hole", json!(true)).unwrap();
+        let early = d.export_job().run();
+        let job = d.take_fill_job().expect("a job is due");
+        let filled = job.run();
+        assert!(d.finish_fill_job(job, filled));
+        assert!(early == d.export_job().run(), "the export job computed the textured fill itself");
+        assert!(early == d.export(), "export() too");
     }
 
     #[test]

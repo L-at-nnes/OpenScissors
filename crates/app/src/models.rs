@@ -165,6 +165,27 @@ impl Ctl {
         });
     }
 
+    /// Compute the textured fill of the original behind the subject off the interface thread when the document still
+    /// shows the smooth one. One job at a time; when it ends the state is read again, which starts the next job if
+    /// the mask changed in the meantime. A job that panics (a bug) leaves the smooth fill as the result.
+    pub fn kick_fill(self: &Arc<Self>) {
+        let taken = self.st.doc.guard().as_mut().and_then(|d| d.take_fill_job().map(|j| (d.id, j)));
+        let Some((doc_id, job)) = taken else { return };
+        let me = self.clone();
+        self.spawn(move || {
+            let filled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job.run()));
+            if let Some(d) = me.st.doc.guard().as_mut().filter(|d| d.id == doc_id) {
+                match filled {
+                    Ok(img) => {
+                        d.finish_fill_job(job, img);
+                    }
+                    Err(_) => d.abandon_fill_job(job),
+                }
+            }
+            me.refresh_doc();
+        });
+    }
+
     // -- loading a model
 
     /// Load `id` on a background thread and make it the active model. Loads run one at a time; when several are asked

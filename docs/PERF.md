@@ -13,6 +13,7 @@ Reproduce: `cargo run --release -p openscissors-core --example perf_audit -- <mo
 | Preview after a stroke, both views, 12 Mpx | <= 50 ms | 26 ms |
 | Pan / zoom redraw of the result view, 12 Mpx | <= 50 ms | 19 ms |
 | Full-resolution export with shadow, 12 Mpx | <= 3000 ms | 219 ms |
+| Textured fill behind a subject covering a quarter of the picture, 12 Mpx (in the background) | <= 3000 ms | 2334 ms |
 | Peak heap, 24 Mpx edit and export | <= 2 GB | 0.47 GB |
 | IS-Net inference, 1024 px image | <= 1000 ms | 768 ms |
 
