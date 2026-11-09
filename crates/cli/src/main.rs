@@ -16,7 +16,7 @@ use openscissors_core::params::{BgMode, Params, PRESETS};
 use openscissors_core::settings::Settings;
 
 const USAGE: &str = "usage:
-  openscissors-cli models                      list models and their state
+  openscissors-cli models [--json]             list models and their state (--json: every field, for a script)
   openscissors-cli models download <id>        download a model (HTTPS, sha256 checked; run it again to resume)
   openscissors-cli models verify <id>          check the downloaded files against their sha256
   openscissors-cli compare <in> <out-folder> [--models <id,id,...>] [--gpu]
@@ -91,6 +91,24 @@ fn parse_dpi(value: Option<String>) -> Result<u16, String> {
         None => Ok(0),
         Some(v) => v.parse::<u16>().ok().filter(|&d| d > 0).ok_or_else(|| "dpi must be a number from 1 to 65535".to_string()),
     }
+}
+
+/// The catalogue for a script: every field of each model, whether it is downloaded and, when it is, where.
+fn models_json(registry: &ModelRegistry) -> String {
+    let list: Vec<serde_json::Value> = registry
+        .available()
+        .iter()
+        .map(|s| {
+            let mut v = serde_json::to_value(s).unwrap_or_default();
+            let ready = registry.state(s) == ModelState::Ready;
+            v["ready"] = ready.into();
+            if ready {
+                v["path"] = registry.model_path(s).display().to_string().into();
+            }
+            v
+        })
+        .collect();
+    serde_json::to_string_pretty(&list).unwrap_or_default()
 }
 
 /// The layer settings of `cut` and `batch`: those saved in the application with `--defaults` (the default ones
@@ -284,6 +302,11 @@ fn run(args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         Some("models") => {
+            check_options(rest, &[], &["--json"])?;
+            if args.iter().any(|a| a == "--json") {
+                println!("{}", models_json(&registry));
+                return Ok(());
+            }
             for s in registry.available() {
                 let state = if registry.state(&s) == ModelState::Ready { "ready" } else { "not downloaded" };
                 println!("{:<18} {:<16} {:>6} MB  {}  {}", s.id, state, s.size_bytes / 1_000_000, s.license, s.name);
@@ -394,6 +417,14 @@ mod tests {
         assert!(check_options(&args(&["a", "--resum"]), known.0, known.1).unwrap_err().contains("--resum"));
         assert!(check_options(&args(&["a", "--format"]), known.0, known.1).unwrap_err().contains("needs a value"));
         assert!(check_options(&args(&["a", "--model", "--resume"]), known.0, known.1).is_err());
+    }
+
+    #[test]
+    fn the_catalogue_reads_as_json() {
+        let dir = std::env::temp_dir().join(format!("osc-cli-models-{}", std::process::id()));
+        let list: Vec<serde_json::Value> = serde_json::from_str(&models_json(&ModelRegistry::new(dir))).unwrap();
+        assert!(list.len() >= 2);
+        assert!(list.iter().all(|m| m["id"].is_string() && m["sha256"].is_string() && m["ready"] == false && m.get("path").is_none()));
     }
 
     #[test]
