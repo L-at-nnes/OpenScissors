@@ -26,7 +26,8 @@ const USAGE: &str = "usage:
   openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>] [--gpu]
   openscissors-cli cut <in> <out.png|jpg|webp|avif|tiff|bmp> [--model <id|file.onnx>] [--gpu] [--quality 95]
                        [--defaults] [--preset <id>] [--bg <colour>] [--width <px>] [--height <px>] [--8bit] [--dpi 300]
-      cuts out one picture, as every image of a batch
+      cuts out one picture, as every image of a batch; - as <in> reads it from the standard input, - as <out> writes
+      the result to the standard output (in PNG, or --format jpg|webp|avif|tiff|bmp)
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif|tiff|bmp] [--quality 95]
                          [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>] [--8bit]
                          [--dpi 300] [--gpu] [--preset <id>] [--bg <colour>] [--width <px>] [--height <px>]
@@ -162,6 +163,15 @@ fn parse_colour(value: &str) -> Result<Option<[u8; 3]>, String> {
 /// A size option in pixels, at least 1.
 fn parse_size(name: &str, value: &str) -> Result<u32, String> {
     value.parse::<u32>().ok().filter(|&n| n > 0).ok_or_else(|| format!("{name} must be a number of pixels, not '{value}'"))
+}
+
+/// The format of `cut`: from the name of the output file, or from `--format` (PNG without it) for the standard output.
+fn cut_format(output: &Path, format: Option<&str>) -> Result<Format, String> {
+    match (output == Path::new("-"), format) {
+        (true, f) => parse_format(f),
+        (false, None) => Format::from_path(output).ok_or_else(|| "output must be png, jpg, webp, avif, tiff or bmp".to_string()),
+        (false, Some(_)) => Err("--format is for the standard output (-): the name of the file gives the format".to_string()),
+    }
 }
 
 /// The format option of a batch.
@@ -371,11 +381,11 @@ fn run(args: Vec<String>) -> Result<(), String> {
         Some("cut") => {
             check_options(
                 rest,
-                &["--model", "--quality", "--dpi", "--preset", "--bg", "--width", "--height"],
+                &["--model", "--quality", "--dpi", "--preset", "--bg", "--width", "--height", "--format"],
                 &["--defaults", "--8bit", "--gpu"],
             )?;
             let (input, output) = (args.get(1).ok_or("input expected")?, Path::new(args.get(2).ok_or("output expected")?));
-            let format = Format::from_path(output).ok_or("output must be png, jpg, webp, avif, tiff or bmp")?;
+            let format = cut_format(output, flag(&args, "--format").as_deref())?;
             let opts = BatchOptions {
                 dst: output.parent().map(Path::to_path_buf).unwrap_or_default(),
                 format,
@@ -385,8 +395,25 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 export_16bit: !args.iter().any(|a| a == "--8bit"),
                 dpi: parse_dpi(flag(&args, "--dpi"))?,
             };
+            // `-` reads the picture from the standard input and writes the result to the standard output.
+            let picture = if input == "-" {
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut std::io::stdin().lock(), &mut bytes)
+                    .map_err(|e| format!("cannot read the standard input: {e}"))?;
+                openscissors_core::io::load_image_bytes(&bytes)
+            } else {
+                openscissors_core::io::load_image_deep(Path::new(input))
+            }
+            .map_err(|e| e.to_string())?;
             let predictor = load_predictor(&registry, flag(&args, "--model"), gpu)?;
-            batch::cut_file(Path::new(input), output, &opts, &|img| predictor.predict(img, true)).map_err(|e| e.to_string())
+            let result = batch::cut_loaded(picture, &opts, &|img| predictor.predict(img, true)).map_err(|e| e.to_string())?;
+            if output == Path::new("-") {
+                let mut out = std::io::stdout().lock();
+                std::io::Write::write_all(&mut out, &result).and_then(|_| std::io::Write::flush(&mut out))
+            } else {
+                write_atomic(output, &result)
+            }
+            .map_err(|e| format!("cannot write {}: {e}", output.display()))
         }
         _ => Err(USAGE.to_string()),
     }
@@ -417,6 +444,15 @@ mod tests {
         assert!(check_options(&args(&["a", "--resum"]), known.0, known.1).unwrap_err().contains("--resum"));
         assert!(check_options(&args(&["a", "--format"]), known.0, known.1).unwrap_err().contains("needs a value"));
         assert!(check_options(&args(&["a", "--model", "--resume"]), known.0, known.1).is_err());
+    }
+
+    #[test]
+    fn the_format_of_cut_comes_from_the_name_or_from_the_option_for_a_pipe() {
+        assert_eq!(cut_format(Path::new("a.webp"), None), Ok(Format::Webp));
+        assert_eq!(cut_format(Path::new("-"), None), Ok(Format::Png));
+        assert_eq!(cut_format(Path::new("-"), Some("jpg")), Ok(Format::Jpeg));
+        assert!(cut_format(Path::new("a.png"), Some("jpg")).is_err(), "the name already says it");
+        assert!(cut_format(Path::new("a.txt"), None).is_err());
     }
 
     #[test]
