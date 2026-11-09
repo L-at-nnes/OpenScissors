@@ -161,6 +161,15 @@ fn process_one(file: &Path, name: &str, opts: &BatchOptions, predict: &dyn Fn(&I
     if opts.skip_existing && existing.is_file() {
         return Ok(Outcome::AlreadyThere(existing));
     }
+    let stem = name.strip_suffix(&format!(".{}", opts.format.extension())).unwrap_or(name);
+    let target = unique_path(&opts.dst, stem, opts.format.extension());
+    cut_file(file, &target, opts, predict)?;
+    Ok(Outcome::Written(target))
+}
+
+/// Cut out `file` and write the result to `target`, as every image of a batch (`opts.dst` and `opts.skip_existing`
+/// play no part).
+pub fn cut_file(file: &Path, target: &Path, opts: &BatchOptions, predict: &dyn Fn(&Image) -> Result<Mask>) -> Result<()> {
     // Opened as the window opens it: a picture that is already cut out keeps its own transparency (no model runs on
     // it), a colour profile is converted to sRGB and said in the result, 16-bit samples are kept.
     let loaded = load_image_deep(file)?;
@@ -175,14 +184,11 @@ fn process_one(file: &Path, name: &str, opts: &BatchOptions, predict: &dyn Fn(&I
     doc.set_prediction(Some(mask));
     let job = doc.export_job();
     job.check_memory()?;
-    let stem = name.strip_suffix(&format!(".{}", opts.format.extension())).unwrap_or(name);
-    let target = unique_path(&opts.dst, stem, opts.format.extension());
     let deep = (opts.export_16bit && matches!(opts.format, Format::Png | Format::Tiff)).then(|| job.run_deep()).flatten();
     match deep {
-        Some(deep) => save_rgba16_tagged(&target, &deep, opts.format, loaded.converted, opts.dpi)?,
-        None => save_rgba_tagged(&target, &job.run(), opts.format, opts.quality, flatten, loaded.converted, opts.dpi)?,
+        Some(deep) => save_rgba16_tagged(target, &deep, opts.format, loaded.converted, opts.dpi),
+        None => save_rgba_tagged(target, &job.run(), opts.format, opts.quality, flatten, loaded.converted, opts.dpi),
     }
-    Ok(Outcome::Written(target))
 }
 
 /// Process `files` one after the other. `predict` produces the mask of an image; `cancel` is
