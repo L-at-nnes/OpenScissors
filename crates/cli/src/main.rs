@@ -11,7 +11,7 @@ use std::sync::atomic::AtomicBool;
 use openscissors_core::batch::{self, BatchOptions};
 use openscissors_core::compare;
 use openscissors_core::io::{load_image, save_mask_png, save_rgba, write_atomic, Format};
-use openscissors_core::model::{ModelKind, ModelRegistry, ModelState, Predictor};
+use openscissors_core::model::{Accelerator, ModelKind, ModelRegistry, ModelState, Predictor};
 use openscissors_core::params::Params;
 use openscissors_core::settings::Settings;
 use openscissors_core::types::Rgba;
@@ -20,21 +20,23 @@ const USAGE: &str = "usage:
   openscissors-cli models                      list models and their state
   openscissors-cli models download <id>        download a model (HTTPS, sha256 checked; run it again to resume)
   openscissors-cli models verify <id>          check the downloaded files against their sha256
-  openscissors-cli compare <in> <out-folder> [--models <id,id,...>]
+  openscissors-cli compare <in> <out-folder> [--models <id,id,...>] [--gpu]
       runs several models one after the other on one picture (every downloaded model by default), writes each mask
       and a contact sheet (the picture, then each cut-out) into <out-folder>, and prints how much each model keeps
       and how much each pair agrees
-  openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>]
-  openscissors-cli cut <in> <out.png|webp|avif|tiff> [--model <id|file.onnx>]
+  openscissors-cli predict <in> <mask.png> [--model <id|file.onnx>] [--gpu]
+  openscissors-cli cut <in> <out.png|webp|avif|tiff> [--model <id|file.onnx>] [--gpu]
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif|tiff|bmp] [--quality 95]
                          [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>] [--8bit]
-                         [--dpi 300]
+                         [--dpi 300] [--gpu]
       cuts out every image of the folder (a picture that is already cut out keeps its transparency, a 16-bit one
       stays 16-bit in PNG unless --8bit); --defaults applies the layer settings saved in the app;
       --dpi writes the print resolution in PNG and JPEG files;
       --resume leaves alone the images whose result is already in <dst-folder>, so that running the same
       command again after an error or an interruption does only what is left; --report writes a JSON
-      report (one entry per image: done, skipped or failed, the file written, the error, the time)";
+      report (one entry per image: done, skipped or failed, the file written, the error, the time)
+  --gpu (compare, predict, cut, batch) runs the model on the graphics card when one can (DirectML on Windows), and
+      on the processor otherwise; the one used is printed";
 
 /// The folder of the application, the same one the window uses.
 fn home_dir() -> PathBuf {
@@ -101,7 +103,18 @@ fn parse_format(value: Option<&str>) -> Result<Format, String> {
     }
 }
 
-fn load_predictor(registry: &ModelRegistry, choice: Option<String>) -> Result<Predictor, String> {
+/// The model chosen with `--model` (or `$OPENSCISSORS_MODEL`, or as the application picks), on the graphics card
+/// when `gpu` is set and one can run it.
+fn load_predictor(registry: &ModelRegistry, choice: Option<String>, gpu: bool) -> Result<Predictor, String> {
+    let accelerator = if gpu { Accelerator::Auto } else { Accelerator::Cpu };
+    let predictor = choose_predictor(registry, choice, accelerator)?;
+    if gpu {
+        eprintln!("{} runs on the {}", predictor.spec().id, predictor.backend());
+    }
+    Ok(predictor)
+}
+
+fn choose_predictor(registry: &ModelRegistry, choice: Option<String>, accelerator: Accelerator) -> Result<Predictor, String> {
     let choice = choice.or_else(|| std::env::var("OPENSCISSORS_MODEL").ok());
     if let Some(c) = &choice {
         if Path::new(c).is_file() {
@@ -110,7 +123,7 @@ fn load_predictor(registry: &ModelRegistry, choice: Option<String>) -> Result<Pr
             spec.mean = [0.5; 3];
             spec.std = [1.0; 3];
             spec.output = openscissors_core::model::OutputNorm::Minmax;
-            return Predictor::load(&spec, Path::new(c)).map_err(|e| e.to_string());
+            return Predictor::load_with(&spec, Path::new(c), accelerator).map_err(|e| e.to_string());
         }
     }
     let spec = match &choice {
@@ -133,12 +146,13 @@ fn load_predictor(registry: &ModelRegistry, choice: Option<String>) -> Result<Pr
     if registry.state(&spec) != ModelState::Ready {
         return Err(format!("model '{}' is not downloaded", spec.id));
     }
-    Predictor::load(&spec, &registry.model_path(&spec)).map_err(|e| e.to_string())
+    Predictor::load_with(&spec, &registry.model_path(&spec), accelerator).map_err(|e| e.to_string())
 }
 
 fn run(args: Vec<String>) -> Result<(), String> {
     let registry = ModelRegistry::new(models_dir());
     let rest = args.get(1..).unwrap_or_default();
+    let gpu = args.iter().any(|a| a == "--gpu");
     match args.first().map(String::as_str) {
         Some("--help" | "-h" | "help") => {
             println!("{USAGE}");
@@ -171,7 +185,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             }
         }
         Some("compare") => {
-            check_options(rest, &["--models"], &[])?;
+            check_options(rest, &["--models"], &["--gpu"])?;
             let (input, out_dir) = (args.get(1).ok_or("input expected")?, args.get(2).ok_or("output folder expected")?);
             let ids: Vec<String> = match flag(&args, "--models") {
                 Some(list) => list.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
@@ -193,7 +207,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 // One model in memory at a time: the next is loaded once this one is dropped.
                 let started = std::time::Instant::now();
                 let mask = {
-                    let predictor = load_predictor(&registry, Some(id.clone()))?;
+                    let predictor = load_predictor(&registry, Some(id.clone()), gpu)?;
                     predictor.predict(&image, true).map_err(|e| e.to_string())?
                 };
                 let millis = started.elapsed().as_millis();
@@ -221,7 +235,11 @@ fn run(args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         Some("batch") => {
-            check_options(rest, &["--format", "--quality", "--model", "--report", "--dpi"], &["--defaults", "--resume", "--8bit"])?;
+            check_options(
+                rest,
+                &["--format", "--quality", "--model", "--report", "--dpi"],
+                &["--defaults", "--resume", "--8bit", "--gpu"],
+            )?;
             let (src, dst) = (args.get(1).ok_or("source folder expected")?, args.get(2).ok_or("destination folder expected")?);
             let format = parse_format(flag(&args, "--format").as_deref())?;
             let quality = parse_quality(flag(&args, "--quality"))?;
@@ -232,7 +250,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 Params::default()
             };
             let files = batch::validate(Path::new(src), Path::new(dst)).map_err(|e| e.to_string())?;
-            let predictor = load_predictor(&registry, flag(&args, "--model"))?;
+            let predictor = load_predictor(&registry, flag(&args, "--model"), gpu)?;
             let opts = BatchOptions {
                 dst: PathBuf::from(dst),
                 format,
@@ -268,9 +286,9 @@ fn run(args: Vec<String>) -> Result<(), String> {
             }
         }
         Some(cmd @ ("predict" | "cut")) => {
-            check_options(rest, &["--model"], &[])?;
+            check_options(rest, &["--model"], &["--gpu"])?;
             let (input, output) = (args.get(1).ok_or("input expected")?, args.get(2).ok_or("output expected")?);
-            let predictor = load_predictor(&registry, flag(&args, "--model"))?;
+            let predictor = load_predictor(&registry, flag(&args, "--model"), gpu)?;
             let image = load_image(Path::new(input)).map_err(|e| e.to_string())?;
             let mask = predictor.predict(&image, true).map_err(|e| e.to_string())?;
             if cmd == "predict" {
