@@ -28,8 +28,10 @@ const USAGE: &str = "usage:
   openscissors-cli cut <in> <out.png|webp|avif|tiff> [--model <id|file.onnx>]
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif|tiff|bmp] [--quality 95]
                          [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>] [--8bit]
+                         [--dpi 300]
       cuts out every image of the folder (a picture that is already cut out keeps its transparency, a 16-bit one
       stays 16-bit in PNG unless --8bit); --defaults applies the layer settings saved in the app;
+      --dpi writes the print resolution in PNG and JPEG files;
       --resume leaves alone the images whose result is already in <dst-folder>, so that running the same
       command again after an error or an interruption does only what is left; --report writes a JSON
       report (one entry per image: done, skipped or failed, the file written, the error, the time)";
@@ -75,6 +77,14 @@ fn parse_quality(value: Option<String>) -> Result<u8, String> {
         Some(v) => {
             v.parse::<u8>().ok().filter(|q| (10..=100).contains(q)).ok_or_else(|| "quality must be a number from 10 to 100".to_string())
         }
+    }
+}
+
+/// The print resolution option: 1 to 65535 dots per inch, none when absent.
+fn parse_dpi(value: Option<String>) -> Result<u16, String> {
+    match value {
+        None => Ok(0),
+        Some(v) => v.parse::<u16>().ok().filter(|&d| d > 0).ok_or_else(|| "dpi must be a number from 1 to 65535".to_string()),
     }
 }
 
@@ -211,10 +221,11 @@ fn run(args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         Some("batch") => {
-            check_options(rest, &["--format", "--quality", "--model", "--report"], &["--defaults", "--resume", "--8bit"])?;
+            check_options(rest, &["--format", "--quality", "--model", "--report", "--dpi"], &["--defaults", "--resume", "--8bit"])?;
             let (src, dst) = (args.get(1).ok_or("source folder expected")?, args.get(2).ok_or("destination folder expected")?);
             let format = parse_format(flag(&args, "--format").as_deref())?;
             let quality = parse_quality(flag(&args, "--quality"))?;
+            let dpi = parse_dpi(flag(&args, "--dpi"))?;
             let params = if args.iter().any(|a| a == "--defaults") {
                 Settings::load(&home_dir().join("data").join("settings.json")).defaults
             } else {
@@ -229,6 +240,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 params,
                 skip_existing: args.iter().any(|a| a == "--resume"),
                 export_16bit: !args.iter().any(|a| a == "--8bit"),
+                dpi,
             };
             let predict = |img: &openscissors_core::types::Image| predictor.predict(img, true);
             let report = batch::run_batch(
@@ -306,6 +318,10 @@ mod tests {
 
     #[test]
     fn quality_and_format_are_checked() {
+        assert_eq!((parse_dpi(None), parse_dpi(Some("300".into()))), (Ok(0), Ok(300)));
+        for bad in ["0", "-1", "70000", "high"] {
+            assert!(parse_dpi(Some(bad.into())).is_err(), "{bad}");
+        }
         assert_eq!(parse_quality(None), Ok(95));
         assert_eq!(parse_quality(Some("80".into())), Ok(80));
         for bad in ["5", "101", "200", "x"] {

@@ -586,6 +586,7 @@ impl Ctl {
         let s = self.st.settings.guard().clone();
         b.set_jpeg_quality(s.jpeg_quality as i32);
         b.set_export16(s.export_16bit);
+        b.set_export_dpi(i32::from(s.export_dpi));
         let mut langs = vec![t("System default")];
         langs.extend(i18n::LOCALES.iter().map(|(_, n)| n.to_string()));
         b.set_lang_options(strings(langs));

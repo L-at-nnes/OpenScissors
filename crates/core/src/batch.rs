@@ -24,6 +24,8 @@ pub struct BatchOptions {
     pub skip_existing: bool,
     /// Write 16-bit PNG or TIFF for a 16-bit source when the settings allow it, as the interactive export does.
     pub export_16bit: bool,
+    /// Print resolution written in PNG and JPEG files, 0 for none.
+    pub dpi: u16,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -177,8 +179,8 @@ fn process_one(file: &Path, name: &str, opts: &BatchOptions, predict: &dyn Fn(&I
     let target = unique_path(&opts.dst, stem, opts.format.extension());
     let deep = (opts.export_16bit && matches!(opts.format, Format::Png | Format::Tiff)).then(|| job.run_deep()).flatten();
     match deep {
-        Some(deep) => save_rgba16_tagged(&target, &deep, opts.format, loaded.converted)?,
-        None => save_rgba_tagged(&target, &job.run(), opts.format, opts.quality, flatten, loaded.converted)?,
+        Some(deep) => save_rgba16_tagged(&target, &deep, opts.format, loaded.converted, opts.dpi)?,
+        None => save_rgba_tagged(&target, &job.run(), opts.format, opts.quality, flatten, loaded.converted, opts.dpi)?,
     }
     Ok(Outcome::Written(target))
 }
@@ -255,7 +257,7 @@ mod tests {
     }
 
     fn opts(dst: &Path, format: Format) -> BatchOptions {
-        BatchOptions { dst: dst.into(), format, quality: 90, params: Params::default(), skip_existing: false, export_16bit: true }
+        BatchOptions { dst: dst.into(), format, quality: 90, params: Params::default(), skip_existing: false, export_16bit: true, dpi: 0 }
     }
 
     #[test]

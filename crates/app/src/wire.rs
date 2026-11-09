@@ -109,6 +109,7 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     });
     cb!(b, ctl, on_clear_recent, |c| c.clear_recent());
     cb!(b, ctl, on_set_jpeg_quality, |c, q| c.set_jpeg_quality(q));
+    cb!(b, ctl, on_set_export_dpi, |c, dpi| c.set_export_dpi(dpi));
     cb!(b, ctl, on_set_export16, |c, on| c.set_export16(on));
     cb!(b, ctl, on_set_language, |c, i| c.set_language(i.max(0) as usize));
     cb!(b, ctl, on_plugin_toggle, |c, i, on| c.plugin_toggle(i as usize, on));

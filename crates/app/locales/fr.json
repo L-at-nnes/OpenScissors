@@ -294,5 +294,7 @@
   "Turn the picture": "Tourner l'image",
   "Rotate left": "Tourner à gauche",
   "Rotate right": "Tourner à droite",
-  "Mirror": "Miroir"
+  "Mirror": "Miroir",
+  "Print resolution (DPI)": "Résolution d'impression (DPI)",
+  "Written in PNG and JPEG files: it sets the printed size. Empty: none.": "Écrite dans les fichiers PNG et JPEG : elle fixe la taille imprimée. Vide : aucune."
 }

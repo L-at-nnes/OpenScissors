@@ -31,6 +31,8 @@ pub struct Settings {
     pub jpeg_quality: u8,
     /// Write 16-bit PNG/TIFF when the source is 16-bit and the settings allow it.
     pub export_16bit: bool,
+    /// Print resolution written in exported PNG and JPEG files (for the print size); 0 writes none.
+    pub export_dpi: u16,
     /// Ids of the plug-ins the user turned on (they never run by themselves).
     pub plugins_enabled: Vec<String>,
     /// Share of the physical memory the application may use: 25 (default) or 50.
@@ -57,6 +59,7 @@ impl Default for Settings {
             group_by_color: false,
             jpeg_quality: 95,
             export_16bit: true,
+            export_dpi: 0,
             plugins_enabled: Vec::new(),
             ram_percent: 25,
             fast_memory: false,

@@ -3,7 +3,7 @@
 use std::io::Cursor;
 use std::path::Path;
 
-use image::codecs::jpeg::JpegEncoder;
+use image::codecs::jpeg::{JpegEncoder, PixelDensity};
 use image::{DynamicImage, ImageDecoder, ImageEncoder, ImageReader};
 use serde::{Deserialize, Serialize};
 
@@ -327,12 +327,21 @@ pub const WEBP_MAX_SIDE: usize = 16_383;
 /// `quality` (10-100) applies to JPEG, WebP and AVIF; WebP at 100 is lossless (and keeps the colour profile tag).
 /// The file is encoded in memory first and written with [`write_atomic`], so a failure never leaves a truncated file.
 pub fn save_rgba(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_color: [u8; 3]) -> Result<()> {
-    save_rgba_tagged(path, rgba, format, quality, flatten_color, false)
+    save_rgba_tagged(path, rgba, format, quality, flatten_color, false, 0)
 }
 
 /// Like [`save_rgba`]; with `srgb_tag` the sRGB colour profile is embedded (formats that can hold one), which tells
 /// colour-managed software that the colours of a picture converted at opening ([`Loaded::converted`]) are sRGB.
-pub fn save_rgba_tagged(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_color: [u8; 3], srgb_tag: bool) -> Result<()> {
+/// A `dpi` above 0 is written as the print resolution of PNG and JPEG files (the other formats have no field for it).
+pub fn save_rgba_tagged(
+    path: &Path,
+    rgba: &Rgba,
+    format: Format,
+    quality: u8,
+    flatten_color: [u8; 3],
+    srgb_tag: bool,
+    dpi: u16,
+) -> Result<()> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
     if format == Format::Webp && rgba.w.max(rgba.h) > WEBP_MAX_SIDE {
         return Err(Error::msg(format!(
@@ -389,22 +398,62 @@ pub fn save_rgba_tagged(path: &Path, rgba: &Rgba, format: Format, quality: u8, f
             Format::Jpeg => {
                 let mut e = JpegEncoder::new_with_quality(&mut out, quality.clamp(10, 100));
                 tag(&mut e);
+                if dpi > 0 {
+                    e.set_pixel_density(PixelDensity::dpi(dpi));
+                }
                 e.write_image(buf.as_raw(), w, h, image::ExtendedColorType::Rgb8)?
             }
             _ => DynamicImage::ImageRgb8(buf).write_to(&mut out, image::ImageFormat::Bmp)?,
         }
     }
-    write_atomic(path, &out.into_inner())?;
+    let mut bytes = out.into_inner();
+    if format == Format::Png && dpi > 0 {
+        png_density(&mut bytes, dpi);
+    }
+    write_atomic(path, &bytes)?;
     Ok(())
+}
+
+/// Write the print resolution in an encoded PNG: a `pHYs` chunk (pixels per metre) right after the header chunk,
+/// which the format allows anywhere before the picture data.
+fn png_density(png: &mut Vec<u8>, dpi: u16) {
+    // The signature (8 bytes), then IHDR: length, type, 13 bytes of data, CRC.
+    let at = 8 + 4 + 4 + 13 + 4;
+    if png.get(12..16) != Some(b"IHDR") || png.len() < at {
+        return;
+    }
+    let per_metre = (f64::from(dpi) / 0.0254).round() as u32;
+    let mut chunk = Vec::with_capacity(21);
+    chunk.extend_from_slice(&9u32.to_be_bytes());
+    chunk.extend_from_slice(b"pHYs");
+    chunk.extend_from_slice(&per_metre.to_be_bytes());
+    chunk.extend_from_slice(&per_metre.to_be_bytes());
+    chunk.push(1); // the unit is the metre
+    let crc = crc32(&chunk[4..]);
+    chunk.extend_from_slice(&crc.to_be_bytes());
+    png.splice(at..at, chunk);
+}
+
+/// The CRC-32 of PNG chunks (ISO 3309, polynomial 0xEDB88320).
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut c = !0u32;
+    for &b in bytes {
+        c ^= u32::from(b);
+        for _ in 0..8 {
+            c = if c & 1 == 1 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+        }
+    }
+    !c
 }
 
 /// Save 16-bit RGBA as PNG or TIFF (atomically, like [`save_rgba`]).
 pub fn save_rgba16(path: &Path, rgba: &Rgba16, format: Format) -> Result<()> {
-    save_rgba16_tagged(path, rgba, format, false)
+    save_rgba16_tagged(path, rgba, format, false, 0)
 }
 
-/// Like [`save_rgba16`], embedding the sRGB profile with `srgb_tag` (see [`save_rgba_tagged`]).
-pub fn save_rgba16_tagged(path: &Path, rgba: &Rgba16, format: Format, srgb_tag: bool) -> Result<()> {
+/// Like [`save_rgba16`], embedding the sRGB profile with `srgb_tag` and the print resolution `dpi` in a PNG (see
+/// [`save_rgba_tagged`]).
+pub fn save_rgba16_tagged(path: &Path, rgba: &Rgba16, format: Format, srgb_tag: bool, dpi: u16) -> Result<()> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
     let bytes: Vec<u8> = rgba.data.iter().flat_map(|v| v.to_ne_bytes()).collect();
     let mut out = Cursor::new(Vec::new());
@@ -426,7 +475,11 @@ pub fn save_rgba16_tagged(path: &Path, rgba: &Rgba16, format: Format, srgb_tag: 
         }
         _ => return Err(Error::msg("16-bit output needs PNG or TIFF")),
     }
-    write_atomic(path, &out.into_inner())?;
+    let mut bytes = out.into_inner();
+    if format == Format::Png && dpi > 0 {
+        png_density(&mut bytes, dpi);
+    }
+    write_atomic(path, &bytes)?;
     Ok(())
 }
 
@@ -544,18 +597,56 @@ mod tests {
             reader.into_decoder().unwrap().icc_profile().unwrap()
         };
         for (name, format) in [("t.png", Format::Png), ("t.jpg", Format::Jpeg), ("t.webp", Format::Webp)] {
-            save_rgba_tagged(&dir.join(name), &rgba, format, 100, [255; 3], true).unwrap(); // 100: WebP stays lossless
+            save_rgba_tagged(&dir.join(name), &rgba, format, 100, [255; 3], true, 0).unwrap(); // 100: WebP stays lossless
             assert_eq!(profile_of(name).as_deref(), Some(srgb_profile()), "{name}");
         }
         // The TIFF decoder of the `image` crate does not hand the profile back: look for it in the file.
-        save_rgba_tagged(&dir.join("t.tiff"), &rgba, Format::Tiff, 90, [255; 3], true).unwrap();
+        save_rgba_tagged(&dir.join("t.tiff"), &rgba, Format::Tiff, 90, [255; 3], true, 0).unwrap();
         let tiff = std::fs::read(dir.join("t.tiff")).unwrap();
         assert!(tiff.windows(srgb_profile().len()).any(|w| w == srgb_profile()), "the profile is stored in the TIFF");
         save_rgba(&dir.join("plain.png"), &rgba, Format::Png, 90, [255; 3]).unwrap();
         assert!(profile_of("plain.png").is_none());
         let deep = Rgba16 { w: 2, h: 2, data: vec![1000; 16] };
-        save_rgba16_tagged(&dir.join("d.png"), &deep, Format::Png, true).unwrap();
+        save_rgba16_tagged(&dir.join("d.png"), &deep, Format::Png, true, 0).unwrap();
         assert_eq!(profile_of("d.png").as_deref(), Some(srgb_profile()));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn exports_can_carry_the_print_resolution() {
+        assert_eq!(crc32(b"IEND"), 0xAE42_6082, "the CRC every PNG ends with");
+        let dir = std::env::temp_dir().join(format!("osc-dpi-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let rgba = Rgba::new(3, 2);
+        // pHYs: 300 dpi is 11811 pixels per metre, in both directions, unit 1 (metre).
+        let phys = |bytes: &[u8]| {
+            let i = bytes.windows(4).position(|w| w == b"pHYs")?;
+            Some((
+                u32::from_be_bytes(bytes[i + 4..i + 8].try_into().unwrap()),
+                u32::from_be_bytes(bytes[i + 8..i + 12].try_into().unwrap()),
+                bytes[i + 12],
+            ))
+        };
+        save_rgba_tagged(&dir.join("a.png"), &rgba, Format::Png, 95, [255; 3], true, 300).unwrap();
+        let png = std::fs::read(dir.join("a.png")).unwrap();
+        assert_eq!(phys(&png), Some((11811, 11811, 1)));
+        // The decoder checks every CRC and still finds the profile and the pixels.
+        let mut reader = ImageReader::open(dir.join("a.png")).unwrap().with_guessed_format().unwrap();
+        reader.no_limits();
+        assert_eq!(reader.into_decoder().unwrap().icc_profile().unwrap().as_deref(), Some(srgb_profile()));
+        assert_eq!(image::open(dir.join("a.png")).unwrap().to_rgba8().dimensions(), (3, 2));
+        save_rgba16_tagged(&dir.join("d.png"), &Rgba16 { w: 2, h: 2, data: vec![1000; 16] }, Format::Png, false, 72).unwrap();
+        let deep = std::fs::read(dir.join("d.png")).unwrap();
+        assert_eq!(phys(&deep), Some((2835, 2835, 1)));
+        assert!(image::open(dir.join("d.png")).is_ok());
+        // JPEG: the JFIF header right after the start marker, units 1 (dots per inch), then the two densities.
+        save_rgba_tagged(&dir.join("a.jpg"), &rgba, Format::Jpeg, 90, [255; 3], false, 300).unwrap();
+        let jpg = std::fs::read(dir.join("a.jpg")).unwrap();
+        assert_eq!(&jpg[6..11], b"JFIF\0");
+        assert_eq!((jpg[13], u16::from_be_bytes([jpg[14], jpg[15]]), u16::from_be_bytes([jpg[16], jpg[17]])), (1, 300, 300));
+        // Without a resolution, nothing is written.
+        save_rgba(&dir.join("plain.png"), &rgba, Format::Png, 95, [255; 3]).unwrap();
+        assert_eq!(phys(&std::fs::read(dir.join("plain.png")).unwrap()), None);
         std::fs::remove_dir_all(dir).ok();
     }
 

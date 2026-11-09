@@ -294,5 +294,7 @@
   "Turn the picture": "Повернуть изображение",
   "Rotate left": "Повернуть влево",
   "Rotate right": "Повернуть вправо",
-  "Mirror": "Отразить"
+  "Mirror": "Отразить",
+  "Print resolution (DPI)": "Разрешение печати (DPI)",
+  "Written in PNG and JPEG files: it sets the printed size. Empty: none.": "Записывается в файлы PNG и JPEG и задаёт размер при печати. Пусто: не записывается."
 }

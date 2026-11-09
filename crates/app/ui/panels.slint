@@ -1,5 +1,5 @@
 import { Theme, Icons } from "theme.slint";
-import { Icon, IconBtn, Btn, Heading, SliderRow, SwitchRow, SelectRow, Divider } from "widgets.slint";
+import { Icon, IconBtn, Btn, Heading, SliderRow, SwitchRow, SelectRow, NumberRow, Divider } from "widgets.slint";
 import { Backend, ModelRow } from "backend.slint";
 import { AboutSlint } from "std-widgets.slint";
 
@@ -600,6 +600,16 @@ export component SettingsDialog inherits Frame {
             toggled(v) => {
                 Backend.set-export16(v);
             }
+        }
+        NumberRow {
+            label: @tr("Print resolution (DPI)");
+            value: Backend.export-dpi;
+            changed(v) => {
+                Backend.set-export-dpi(v);
+            }
+        }
+        Note {
+            text: @tr("Written in PNG and JPEG files: it sets the printed size. Empty: none.");
         }
         if Backend.plugins.length > 0: Divider { }
         if Backend.plugins.length > 0: Heading {

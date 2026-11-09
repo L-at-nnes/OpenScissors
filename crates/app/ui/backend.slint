@@ -165,6 +165,8 @@ export global Backend {
     // -- menu
     in property <int> jpeg-quality: 95;
     in property <bool> export16: true;
+    // Print resolution written in PNG and JPEG exports, 0 = none.
+    in property <int> export-dpi;
     in property <int> lang-index;
     in property <[string]> lang-options;
     in property <[string]> recent;
@@ -251,6 +253,7 @@ export global Backend {
     callback open-recent(int);
     callback set-jpeg-quality(int);
     callback set-export16(bool);
+    callback set-export-dpi(int);
     callback set-language(int);
     callback plugin-toggle(int, bool);
     callback plugin-run(int);

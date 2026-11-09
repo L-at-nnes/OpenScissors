@@ -308,6 +308,32 @@ export component SizeRow inherits Rectangle {
     }
 }
 
+// A label and a whole number typed in at the right (empty = 0).
+export component NumberRow inherits Rectangle {
+    in property <string> label;
+    in property <int> value;
+    callback changed(int);
+    height: 36px;
+    Text {
+        x: 0;
+        width: parent.width - 72px;
+        text: root.label;
+        color: Theme.text-2;
+        font-size: Theme.fs-md;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    NumberBox {
+        x: parent.width - self.width;
+        y: (parent.height - self.height) / 2;
+        label: root.label;
+        value: root.value;
+        committed(v) => {
+            root.changed(v);
+        }
+    }
+}
+
 export component SwitchRow inherits Rectangle {
     in property <string> label;
     in property <bool> checked;
