@@ -167,6 +167,8 @@ export global Backend {
     in property <bool> export16: true;
     // Print resolution written in PNG, JPEG and TIFF exports, 0 = none.
     in property <int> export-dpi;
+    // Largest size of a JPEG, WebP or AVIF export in KB, 0 = none.
+    in property <int> export-max-kb;
     in property <int> lang-index;
     in property <[string]> lang-options;
     in property <[string]> recent;
@@ -259,6 +261,7 @@ export global Backend {
     callback set-jpeg-quality(int);
     callback set-export16(bool);
     callback set-export-dpi(int);
+    callback set-export-max-kb(int);
     callback set-language(int);
     callback plugin-toggle(int, bool);
     callback plugin-run(int);

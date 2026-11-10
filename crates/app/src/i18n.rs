@@ -75,6 +75,9 @@ pub const CORE_MESSAGES: &[&str] = &[
     "The source and destination folders must be different.",
     "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif).",
     r#"The suffix cannot hold \ / : * ? " < > | (it is added to the file names)."#,
+    // export
+    "A largest file size works with JPEG, WebP and AVIF.",
+    "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.",
     // projects and marks
     "project file is too large",
     "this is not an OpenScissors project",

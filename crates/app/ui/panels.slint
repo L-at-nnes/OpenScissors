@@ -643,6 +643,16 @@ export component SettingsDialog inherits Frame {
                 Backend.set-jpeg-quality(v);
             }
         }
+        NumberRow {
+            label: @tr("Largest file, in KB (JPEG, WebP, AVIF)");
+            value: Backend.export-max-kb;
+            changed(v) => {
+                Backend.set-export-max-kb(v);
+            }
+        }
+        Note {
+            text: @tr("The quality is lowered as much as needed for the file to hold in it. Empty: no limit.");
+        }
         SwitchRow {
             label: @tr("Export 16-bit when possible");
             checked: Backend.export16;

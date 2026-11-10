@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::document::Document;
 use crate::error::{Error, Result};
-use crate::io::{encode_rgba, encode_rgba16, load_image_deep, write_atomic, Format, Loaded, IMAGE_EXTENSIONS};
+use crate::io::{encode_rgba, encode_rgba16, encode_rgba_within, load_image_deep, write_atomic, Format, Loaded, IMAGE_EXTENSIONS};
 use crate::params::{BgMode, Params};
 use crate::types::{Image, Mask};
 
@@ -37,6 +37,8 @@ pub struct BatchOptions {
     pub jobs: usize,
     /// Added to the name of every result: `photo.jpg` gives `photo-cutout.png` with `-cutout`.
     pub suffix: String,
+    /// The largest size of a JPEG, WebP or AVIF result in bytes, reached by lowering the quality; 0 for none.
+    pub max_bytes: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -235,6 +237,7 @@ pub fn cut_loaded(loaded: Loaded, opts: &BatchOptions, predict: &dyn Fn(&Image) 
     let deep = (opts.export_16bit && matches!(opts.format, Format::Png | Format::Tiff)).then(|| job.run_deep()).flatten();
     match deep {
         Some(deep) => encode_rgba16(&deep, opts.format, loaded.converted, opts.dpi),
+        None if opts.max_bytes > 0 => encode_rgba_within(&job.run(), opts.format, opts.max_bytes, flatten, loaded.converted, opts.dpi),
         None => encode_rgba(&job.run(), opts.format, opts.quality, flatten, loaded.converted, opts.dpi),
     }
 }
@@ -361,6 +364,7 @@ mod tests {
             source: None,
             jobs: 1,
             suffix: String::new(),
+            max_bytes: 0,
         }
     }
 

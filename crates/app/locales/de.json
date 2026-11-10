@@ -306,5 +306,9 @@
   "{n} processed, {k} skipped, {m} failed.": "{n} bearbeitet, {k} ausgelassen, {m} fehlgeschlagen.",
   "Report: {file}": "Bericht: {file}",
   "The suffix cannot hold \\ / : * ? \" < > | (it is added to the file names).": "Der Zusatz darf \\ / : * ? \" < > | nicht enthalten (er wird an die Dateinamen angehängt).",
-  "Export the mask…": "Maske exportieren…"
+  "Export the mask…": "Maske exportieren…",
+  "Largest file, in KB (JPEG, WebP, AVIF)": "Größte Datei, in KB (JPEG, WebP, AVIF)",
+  "The quality is lowered as much as needed for the file to hold in it. Empty: no limit.": "Die Qualität wird so weit gesenkt, wie nötig, damit die Datei hineinpasst. Leer: keine Grenze.",
+  "A largest file size works with JPEG, WebP and AVIF.": "Eine größte Dateigröße gibt es für JPEG, WebP und AVIF.",
+  "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.": "Das Ergebnis passt selbst bei niedrigster Qualität nicht in {kb} KB: Wählen Sie eine kleinere Ausgabegröße."
 }

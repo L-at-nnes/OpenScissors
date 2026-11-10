@@ -448,9 +448,9 @@ impl Ctl {
     pub fn export_to(self: &Arc<Self>, target: &Path) -> Result<(), String> {
         let _saving = self.st.saving();
         let format = Format::from_path(target).ok_or_else(|| t("Unsupported file type: use png, jpg, webp, avif, bmp or tiff."))?;
-        let (quality, want16, dpi) = {
+        let (quality, want16, dpi, max_kb) = {
             let s = self.st.settings.guard();
-            (s.jpeg_quality, s.export_16bit && matches!(format, Format::Png | Format::Tiff), s.export_dpi)
+            (s.jpeg_quality, s.export_16bit && matches!(format, Format::Png | Format::Tiff), s.export_dpi, s.export_max_kb)
         };
         // The document is locked only to take what the export needs: the exact mask and the rendering are computed
         // without it, so the interface keeps answering during a long export.
@@ -474,6 +474,10 @@ impl Ctl {
         let why = if bits16 { None } else { why };
         match exported {
             Exported::Bits16(img) => io::save_rgba16_tagged(target, &img, format, srgb_tag, dpi),
+            Exported::Bits8(img, flatten) if max_kb > 0 && format.has_quality() => {
+                io::encode_rgba_within(&img, format, u64::from(max_kb) * 1000, flatten, srgb_tag, dpi)
+                    .and_then(|bytes| Ok(io::write_atomic(target, &bytes)?))
+            }
             Exported::Bits8(img, flatten) => io::save_rgba_tagged(target, &img, format, quality, flatten, srgb_tag, dpi),
         }
         .map_err(|e| tr_message(&e.to_string()))?;
@@ -909,7 +913,7 @@ impl Ctl {
             self.say(t("No AI model is ready. Choose and download a model first."), true);
             return;
         };
-        let (src, dst, defaults, quality, export_16bit, dpi) = {
+        let (src, dst, defaults, quality, export_16bit, dpi, max_kb) = {
             let s = self.st.settings.guard();
             (
                 s.batch_src.clone().unwrap_or_default(),
@@ -918,6 +922,7 @@ impl Ctl {
                 s.jpeg_quality,
                 s.export_16bit,
                 s.export_dpi,
+                s.export_max_kb,
             )
         };
         // The look of the image being edited, when asked for and there is one; otherwise the saved defaults.
@@ -974,6 +979,7 @@ impl Ctl {
                     source: subfolders.then_some(src),
                     jobs: 1,
                     suffix,
+                    max_bytes: if format.has_quality() { u64::from(max_kb) * 1000 } else { 0 },
                 };
                 let predict = |img: &openscissors_core::types::Image| model.predict(img, true);
                 let report = batch::run_batch(
@@ -1126,6 +1132,11 @@ impl Ctl {
 
     pub fn set_export16(self: &Arc<Self>, on: bool) {
         self.st.settings.guard().export_16bit = on;
+        self.save_settings();
+    }
+
+    pub fn set_export_max_kb(self: &Arc<Self>, kb: i32) {
+        self.st.settings.guard().export_max_kb = kb.max(0) as u32;
         self.save_settings();
     }
 

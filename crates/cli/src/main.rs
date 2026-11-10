@@ -31,12 +31,13 @@ const USAGE: &str = "usage:
   openscissors-cli batch <src-folder> <dst-folder> [--format png|jpg|webp|avif|tiff|bmp] [--quality 95]
                          [--model <id|file.onnx>] [--defaults] [--resume] [--report <report.json>] [--8bit]
                          [--dpi 300] [--gpu] [--preset <id>] [--bg <colour>] [--width <px>] [--height <px>]
-                         [--recursive] [--jobs 4] [--suffix -cutout]
+                         [--recursive] [--jobs 4] [--suffix -cutout] [--max-size 500k]
       cuts out every image of the folder (a picture that is already cut out keeps its transparency, a 16-bit one
       stays 16-bit in PNG unless --8bit); --defaults applies the layer settings saved in the app;
       --dpi writes the print resolution in PNG, JPEG and TIFF files; --preset applies a preset of the application
       (marketplace, marketplace-large, thumbnail, banner), --bg sets the background (transparent, white, black or
       #rrggbb), --width and --height the size of the result (both: exactly that size), after --defaults;
+      --max-size lowers the quality of JPEG, WebP and AVIF results until each holds in that size (500k, 2m);
       --suffix is added to the name of every result (photo.jpg gives photo-cutout.png);
       --jobs processes that many pictures at once (each one needs its own memory; the model still runs one
       picture at a time); --recursive takes the pictures of the subfolders too and writes each result in the same subfolder of
@@ -175,6 +176,28 @@ fn parse_jobs(value: Option<String>) -> Result<usize, String> {
         None => Ok(1),
         Some(v) => v.parse::<usize>().ok().filter(|n| (1..=64).contains(n)).ok_or_else(|| "jobs must be a number from 1 to 64".to_string()),
     }
+}
+
+/// The largest file size option: bytes, or `500k`, `2m` (1000 and 1 000 000 bytes); only for JPEG, WebP and AVIF.
+fn parse_max_size(value: Option<String>, format: Format) -> Result<u64, String> {
+    let Some(v) = value else { return Ok(0) };
+    if !format.has_quality() {
+        return Err("--max-size works with jpg, webp and avif".to_string());
+    }
+    let lower = v.to_ascii_lowercase();
+    let (number, unit) = match lower.strip_suffix('k') {
+        Some(n) => (n, 1000),
+        None => match lower.strip_suffix('m') {
+            Some(n) => (n, 1_000_000),
+            None => (lower.as_str(), 1),
+        },
+    };
+    number
+        .parse::<u64>()
+        .ok()
+        .filter(|&n| n > 0)
+        .map(|n| n * unit)
+        .ok_or_else(|| format!("--max-size must be a size such as 500k or 2m, not '{v}'"))
 }
 
 /// The format of `cut`: from the name of the output file, or from `--format` (PNG without it) for the standard output.
@@ -338,7 +361,20 @@ fn run(args: Vec<String>) -> Result<(), String> {
         Some("batch") => {
             check_options(
                 rest,
-                &["--format", "--quality", "--model", "--report", "--dpi", "--preset", "--bg", "--width", "--height", "--jobs", "--suffix"],
+                &[
+                    "--format",
+                    "--quality",
+                    "--model",
+                    "--report",
+                    "--dpi",
+                    "--preset",
+                    "--bg",
+                    "--width",
+                    "--height",
+                    "--jobs",
+                    "--suffix",
+                    "--max-size",
+                ],
                 &["--defaults", "--resume", "--8bit", "--gpu", "--recursive"],
             )?;
             let (src, dst) = (args.get(1).ok_or("source folder expected")?, args.get(2).ok_or("destination folder expected")?);
@@ -362,6 +398,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 source: recursive.then(|| PathBuf::from(src)),
                 jobs: parse_jobs(flag(&args, "--jobs"))?,
                 suffix,
+                max_bytes: parse_max_size(flag(&args, "--max-size"), format)?,
             };
             let predict = |img: &openscissors_core::types::Image| predictor.predict(img, true);
             let report = batch::run_batch(
@@ -399,7 +436,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         Some("cut") => {
             check_options(
                 rest,
-                &["--model", "--quality", "--dpi", "--preset", "--bg", "--width", "--height", "--format"],
+                &["--model", "--quality", "--dpi", "--preset", "--bg", "--width", "--height", "--format", "--max-size"],
                 &["--defaults", "--8bit", "--gpu"],
             )?;
             let (input, output) = (args.get(1).ok_or("input expected")?, Path::new(args.get(2).ok_or("output expected")?));
@@ -415,6 +452,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 source: None,
                 jobs: 1,
                 suffix: String::new(),
+                max_bytes: parse_max_size(flag(&args, "--max-size"), format)?,
             };
             // `-` reads the picture from the standard input and writes the result to the standard output.
             let picture = if input == "-" {
@@ -504,6 +542,11 @@ mod tests {
     fn quality_and_format_are_checked() {
         assert_eq!((parse_dpi(None), parse_dpi(Some("300".into()))), (Ok(0), Ok(300)));
         assert_eq!((parse_jobs(None), parse_jobs(Some("4".into()))), (Ok(1), Ok(4)));
+        assert_eq!(parse_max_size(Some("500k".into()), Format::Webp), Ok(500_000));
+        assert_eq!(parse_max_size(Some("2M".into()), Format::Jpeg), Ok(2_000_000));
+        assert_eq!(parse_max_size(None, Format::Png), Ok(0));
+        assert!(parse_max_size(Some("500k".into()), Format::Png).is_err(), "PNG has no quality");
+        assert!(parse_max_size(Some("big".into()), Format::Avif).is_err());
         assert!(parse_jobs(Some("0".into())).is_err() && parse_jobs(Some("many".into())).is_err());
         for bad in ["0", "-1", "70000", "high"] {
             assert!(parse_dpi(Some(bad.into())).is_err(), "{bad}");

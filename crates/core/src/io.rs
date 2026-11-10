@@ -298,6 +298,10 @@ impl Format {
             _ => None,
         }
     }
+    /// JPEG, WebP and AVIF are compressed with a quality setting (and can be made to fit a file size).
+    pub fn has_quality(self) -> bool {
+        matches!(self, Self::Jpeg | Self::Webp | Self::Avif)
+    }
     pub fn supports_alpha(self) -> bool {
         !matches!(self, Self::Jpeg | Self::Bmp)
     }
@@ -352,6 +356,41 @@ pub fn save_rgba_tagged(
 ) -> Result<()> {
     write_atomic(path, &encode_rgba(rgba, format, quality, flatten_color, srgb_tag, dpi)?)?;
     Ok(())
+}
+
+/// Like [`encode_rgba`] for the formats with a quality (JPEG, WebP, AVIF), with the highest quality whose file holds
+/// in `max_bytes`: a search over the quality, seven encodings at most. Fails when even the lowest quality is too big.
+pub fn encode_rgba_within(
+    rgba: &Rgba,
+    format: Format,
+    max_bytes: u64,
+    flatten_color: [u8; 3],
+    srgb_tag: bool,
+    dpi: u16,
+) -> Result<Vec<u8>> {
+    if !format.has_quality() {
+        return Err(Error::msg("A largest file size works with JPEG, WebP and AVIF."));
+    }
+    // 95 at most: WebP at 100 is lossless and does not get smaller with the quality.
+    let (mut low, mut high, mut best) = (10u8, 95u8, None);
+    while low <= high {
+        let quality = low + (high - low) / 2;
+        let bytes = encode_rgba(rgba, format, quality, flatten_color, srgb_tag, dpi)?;
+        if bytes.len() as u64 <= max_bytes {
+            best = Some(bytes);
+            low = quality + 1;
+        } else if quality == 10 {
+            break;
+        } else {
+            high = quality - 1;
+        }
+    }
+    best.ok_or_else(|| {
+        Error::msg(format!(
+            "The result does not hold in {} KB even at the lowest quality: choose a smaller output size.",
+            max_bytes.div_ceil(1000)
+        ))
+    })
 }
 
 /// The file [`save_rgba_tagged`] writes, in memory.
@@ -646,6 +685,26 @@ mod tests {
         save_rgba16_tagged(&dir.join("d.png"), &deep, Format::Png, true, 0).unwrap();
         assert_eq!(profile_of("d.png").as_deref(), Some(srgb_profile()));
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_file_size_is_reached_with_the_highest_quality_that_fits() {
+        let (w, h) = (96usize, 64usize);
+        let mut rgba = Rgba::new(w, h);
+        for (i, p) in rgba.data.chunks_exact_mut(4).enumerate() {
+            let v = ((i * 7919) % 251) as u8; // noise: the quality matters for the size
+            p.copy_from_slice(&[v, v.wrapping_mul(3), 255 - v, 255]);
+        }
+        for format in [Format::Jpeg, Format::Webp] {
+            let big = encode_rgba(&rgba, format, 95, [255; 3], false, 0).unwrap().len() as u64;
+            let small = encode_rgba(&rgba, format, 10, [255; 3], false, 0).unwrap().len() as u64;
+            let limit = (big + small) / 2;
+            let fitted = encode_rgba_within(&rgba, format, limit, [255; 3], false, 0).unwrap();
+            assert!(fitted.len() as u64 <= limit, "{format:?}: {} > {limit}", fitted.len());
+            assert!(fitted.len() as u64 > small, "{format:?}: not the lowest quality when a higher one fits");
+            assert!(encode_rgba_within(&rgba, format, small / 2, [255; 3], false, 0).is_err(), "{format:?}: cannot fit");
+        }
+        assert!(encode_rgba_within(&rgba, Format::Png, 1_000_000, [255; 3], false, 0).is_err(), "no quality in PNG");
     }
 
     #[test]
