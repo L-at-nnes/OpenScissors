@@ -296,7 +296,7 @@
   "Rotate right": "Tourner à droite",
   "Mirror": "Miroir",
   "Print resolution (DPI)": "Résolution d'impression (DPI)",
-  "Written in PNG and JPEG files: it sets the printed size. Empty: none.": "Écrite dans les fichiers PNG et JPEG : elle fixe la taille imprimée. Vide : aucune.",
+  "Written in PNG, JPEG and TIFF files: it sets the printed size. Empty: none.": "Écrite dans les fichiers PNG, JPEG et TIFF : elle fixe la taille imprimée. Vide : aucune.",
   "5. Options": "5. Options",
   "Include the subfolders": "Inclure les sous-dossiers",
   "Leave alone the pictures already done": "Ignorer les images déjà traitées",

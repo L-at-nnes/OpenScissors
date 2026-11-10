@@ -340,7 +340,7 @@ pub fn save_rgba(path: &Path, rgba: &Rgba, format: Format, quality: u8, flatten_
 
 /// Like [`save_rgba`]; with `srgb_tag` the sRGB colour profile is embedded (formats that can hold one), which tells
 /// colour-managed software that the colours of a picture converted at opening ([`Loaded::converted`]) are sRGB.
-/// A `dpi` above 0 is written as the print resolution of PNG and JPEG files (the other formats have no field for it).
+/// A `dpi` above 0 is written as the print resolution of PNG, JPEG and TIFF files (the others have no field for it).
 pub fn save_rgba_tagged(
     path: &Path,
     rgba: &Rgba,
@@ -399,11 +399,7 @@ pub fn encode_rgba(rgba: &Rgba, format: Format, quality: u8, flatten_color: [u8;
                 tag(&mut e);
                 e.write_image(buf, w, h, color)?
             }
-            _ => {
-                let mut e = image::codecs::tiff::TiffEncoder::new(&mut out);
-                tag(&mut e);
-                e.write_image(buf, w, h, color)?
-            }
+            _ => return encode_tiff::<tiff::encoder::colortype::RGBA8>(buf, w, h, srgb_tag, dpi),
         }
     } else {
         let flat = flatten(rgba, flatten_color);
@@ -474,6 +470,9 @@ pub fn save_rgba16_tagged(path: &Path, rgba: &Rgba16, format: Format, srgb_tag: 
 /// The file [`save_rgba16_tagged`] writes, in memory.
 pub fn encode_rgba16(rgba: &Rgba16, format: Format, srgb_tag: bool, dpi: u16) -> Result<Vec<u8>> {
     let (w, h) = (rgba.w as u32, rgba.h as u32);
+    if format == Format::Tiff {
+        return encode_tiff::<tiff::encoder::colortype::RGBA16>(&rgba.data, w, h, srgb_tag, dpi);
+    }
     let bytes: Vec<u8> = rgba.data.iter().flat_map(|v| v.to_ne_bytes()).collect();
     let mut out = Cursor::new(Vec::new());
     let tag = |e: &mut dyn ImageEncoder| {
@@ -487,11 +486,6 @@ pub fn encode_rgba16(rgba: &Rgba16, format: Format, srgb_tag: bool, dpi: u16) ->
             tag(&mut e);
             e.write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?
         }
-        Format::Tiff => {
-            let mut e = image::codecs::tiff::TiffEncoder::new(&mut out);
-            tag(&mut e);
-            e.write_image(&bytes, w, h, image::ExtendedColorType::Rgba16)?
-        }
         _ => return Err(Error::msg("16-bit output needs PNG or TIFF")),
     }
     let mut bytes = out.into_inner();
@@ -499,6 +493,30 @@ pub fn encode_rgba16(rgba: &Rgba16, format: Format, srgb_tag: bool, dpi: u16) ->
         png_density(&mut bytes, dpi);
     }
     Ok(bytes)
+}
+
+/// A TIFF compressed without loss (Deflate, with the horizontal predictor that makes photos compress better), with
+/// the sRGB profile and the print resolution when asked. `data` holds the samples of the colour type `C`.
+fn encode_tiff<C: tiff::encoder::colortype::ColorType>(data: &[C::Inner], w: u32, h: u32, srgb_tag: bool, dpi: u16) -> Result<Vec<u8>>
+where
+    [C::Inner]: tiff::encoder::TiffValue,
+{
+    use tiff::encoder::{Compression, DeflateLevel, Predictor, Rational, TiffEncoder};
+    let failed = |e: tiff::TiffError| Error::msg(format!("TIFF encoding failed: {e}"));
+    let mut out = Cursor::new(Vec::new());
+    let mut encoder = TiffEncoder::new(&mut out)
+        .map_err(failed)?
+        .with_compression(Compression::Deflate(DeflateLevel::Balanced))
+        .with_predictor(Predictor::Horizontal);
+    let mut image = encoder.new_image::<C>(w, h).map_err(failed)?;
+    if srgb_tag {
+        image.encoder().write_tag(tiff::tags::Tag::IccProfile, srgb_profile()).map_err(failed)?;
+    }
+    if dpi > 0 {
+        image.resolution(tiff::tags::ResolutionUnit::Inch, Rational { n: u32::from(dpi), d: 1 });
+    }
+    image.write_data(data).map_err(failed)?;
+    Ok(out.into_inner())
 }
 
 /// Save a mask as a grey PNG, atomically like [`save_rgba`].
@@ -628,6 +646,29 @@ mod tests {
         save_rgba16_tagged(&dir.join("d.png"), &deep, Format::Png, true, 0).unwrap();
         assert_eq!(profile_of("d.png").as_deref(), Some(srgb_profile()));
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_tiff_is_compressed_without_loss_and_carries_the_resolution() {
+        // A photo-like gradient: what the horizontal predictor and Deflate are for.
+        let (w, h) = (64usize, 48usize);
+        let mut rgba = Rgba::new(w, h);
+        for (i, p) in rgba.data.chunks_exact_mut(4).enumerate() {
+            let (x, y) = (i % w, i / w);
+            p.copy_from_slice(&[(x * 3) as u8, (y * 4) as u8, 120, if x < 8 { 0 } else { 255 }]);
+        }
+        let tiff = encode_rgba(&rgba, Format::Tiff, 90, [255; 3], true, 300).unwrap();
+        assert!(tiff.len() < w * h * 4 / 2, "compressed: {} bytes for {} of samples", tiff.len(), w * h * 4);
+        let back = load_image_bytes(&tiff).unwrap();
+        assert_eq!(&back.image.data[..], &rgba.data.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect::<Vec<_>>()[..], "no loss");
+        assert_eq!(back.alpha.map(|a| a.data[0]), Some(0));
+        assert!(tiff.windows(srgb_profile().len()).any(|x| x == srgb_profile()), "the profile");
+        let mut decoder = tiff::decoder::Decoder::new(Cursor::new(&tiff)).unwrap();
+        assert_eq!(decoder.get_tag(tiff::tags::Tag::XResolution).unwrap(), tiff::decoder::ifd::Value::Rational(300, 1));
+        assert_eq!(decoder.get_tag_u32(tiff::tags::Tag::ResolutionUnit).unwrap(), 2, "inches");
+        let deep = Rgba16 { w: 3, h: 2, data: (0..24).map(|v| v * 2000).collect() };
+        let back = load_image_bytes(&encode_rgba16(&deep, Format::Tiff, false, 0).unwrap()).unwrap();
+        assert_eq!(back.deep.map(|d| d.data[3]), Some(8000), "16-bit samples survive");
     }
 
     #[test]

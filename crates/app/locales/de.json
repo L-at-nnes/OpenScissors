@@ -296,7 +296,7 @@
   "Rotate right": "Nach rechts drehen",
   "Mirror": "Spiegeln",
   "Print resolution (DPI)": "Druckauflösung (DPI)",
-  "Written in PNG and JPEG files: it sets the printed size. Empty: none.": "Wird in PNG- und JPEG-Dateien geschrieben und legt die Druckgröße fest. Leer: keine.",
+  "Written in PNG, JPEG and TIFF files: it sets the printed size. Empty: none.": "Wird in PNG-, JPEG- und TIFF-Dateien geschrieben und legt die Druckgröße fest. Leer: keine.",
   "5. Options": "5. Optionen",
   "Include the subfolders": "Unterordner einbeziehen",
   "Leave alone the pictures already done": "Bereits bearbeitete Bilder auslassen",

@@ -34,7 +34,7 @@ const USAGE: &str = "usage:
                          [--recursive] [--jobs 4] [--suffix -cutout]
       cuts out every image of the folder (a picture that is already cut out keeps its transparency, a 16-bit one
       stays 16-bit in PNG unless --8bit); --defaults applies the layer settings saved in the app;
-      --dpi writes the print resolution in PNG and JPEG files; --preset applies a preset of the application
+      --dpi writes the print resolution in PNG, JPEG and TIFF files; --preset applies a preset of the application
       (marketplace, marketplace-large, thumbnail, banner), --bg sets the background (transparent, white, black or
       #rrggbb), --width and --height the size of the result (both: exactly that size), after --defaults;
       --suffix is added to the name of every result (photo.jpg gives photo-cutout.png);

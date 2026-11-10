@@ -296,7 +296,7 @@
   "Rotate right": "Повернуть вправо",
   "Mirror": "Отразить",
   "Print resolution (DPI)": "Разрешение печати (DPI)",
-  "Written in PNG and JPEG files: it sets the printed size. Empty: none.": "Записывается в файлы PNG и JPEG и задаёт размер при печати. Пусто: не записывается.",
+  "Written in PNG, JPEG and TIFF files: it sets the printed size. Empty: none.": "Записывается в файлы PNG, JPEG и TIFF и задаёт размер при печати. Пусто: не записывается.",
   "5. Options": "5. Параметры",
   "Include the subfolders": "Включая подпапки",
   "Leave alone the pictures already done": "Пропускать уже обработанные изображения",

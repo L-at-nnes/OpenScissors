@@ -27,7 +27,7 @@ pub struct BatchOptions {
     pub skip_existing: bool,
     /// Write 16-bit PNG or TIFF for a 16-bit source when the settings allow it, as the interactive export does.
     pub export_16bit: bool,
-    /// Print resolution written in PNG and JPEG files, 0 for none.
+    /// Print resolution written in PNG, JPEG and TIFF files, 0 for none.
     pub dpi: u16,
     /// The source folder when its subfolders are processed too ([`validate`] with `subfolders`): the result of
     /// `source/a/b.jpg` is written to `dst/a/b.png`. `None` for the pictures of one folder.

@@ -31,7 +31,7 @@ pub struct Settings {
     pub jpeg_quality: u8,
     /// Write 16-bit PNG/TIFF when the source is 16-bit and the settings allow it.
     pub export_16bit: bool,
-    /// Print resolution written in exported PNG and JPEG files (for the print size); 0 writes none.
+    /// Print resolution written in exported PNG, JPEG and TIFF files (for the print size); 0 writes none.
     pub export_dpi: u16,
     /// Ids of the plug-ins the user turned on (they never run by themselves).
     pub plugins_enabled: Vec<String>,
