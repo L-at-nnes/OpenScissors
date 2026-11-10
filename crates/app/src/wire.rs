@@ -123,6 +123,22 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
         c.ux.guard().batch.settings = i;
         c.refresh(R_BATCH);
     });
+    cb!(b, ctl, on_set_batch_option, |c, name, on| {
+        {
+            let mut ux = c.ux.guard();
+            match name.as_str() {
+                "subfolders" => ux.batch.subfolders = on,
+                "resume" => ux.batch.resume = on,
+                "report" => ux.batch.save_report = on,
+                _ => {}
+            }
+        }
+        c.refresh(R_BATCH);
+    });
+    cb!(b, ctl, on_set_batch_suffix, |c, text| {
+        c.ux.guard().batch.suffix = text.trim_end().to_string();
+        c.refresh(R_BATCH);
+    });
     cb!(b, ctl, on_run_batch, |c| c.run_batch());
     cb!(b, ctl, on_stop_batch, |c| c.stop_batch());
 

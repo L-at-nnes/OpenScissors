@@ -74,6 +74,7 @@ pub const CORE_MESSAGES: &[&str] = &[
     "The source folder does not exist.",
     "The source and destination folders must be different.",
     "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif).",
+    r#"The suffix cannot hold \ / : * ? " < > | (it is added to the file names)."#,
     // projects and marks
     "project file is too large",
     "this is not an OpenScissors project",

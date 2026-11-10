@@ -108,6 +108,14 @@ pub struct BatchUx {
     pub format: i32,
     /// 0 = the saved defaults, 1 = the settings of the open image.
     pub settings: i32,
+    /// The pictures of the subfolders too, each result in the same subfolder of the destination.
+    pub subfolders: bool,
+    /// Leave alone the pictures whose result is already in the destination.
+    pub resume: bool,
+    /// Write `openscissors-report.json` in the destination.
+    pub save_report: bool,
+    /// Added to the name of every result.
+    pub suffix: String,
 }
 
 /// What the interface needs besides the document itself.
@@ -618,6 +626,10 @@ impl Ctl {
         b.set_batch_dst(dst.clone().into());
         b.set_batch_format(ux.batch.format);
         b.set_batch_settings(ux.batch.settings);
+        b.set_batch_subfolders(ux.batch.subfolders);
+        b.set_batch_resume(ux.batch.resume);
+        b.set_batch_save_report(ux.batch.save_report);
+        b.set_batch_suffix(ux.batch.suffix.clone().into());
         b.set_batch_running(ux.batch.running);
         b.set_batch_done(ux.batch.done as i32);
         b.set_batch_total(ux.batch.total as i32);

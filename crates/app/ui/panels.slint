@@ -1,5 +1,5 @@
 import { Theme, Icons } from "theme.slint";
-import { Icon, IconBtn, Btn, Heading, SliderRow, SwitchRow, SelectRow, NumberRow, Divider } from "widgets.slint";
+import { Icon, IconBtn, Btn, Heading, SliderRow, SwitchRow, SelectRow, NumberRow, TextRow, Divider } from "widgets.slint";
 import { Backend, ModelRow } from "backend.slint";
 import { AboutSlint } from "std-widgets.slint";
 
@@ -468,6 +468,47 @@ export component BatchPanel inherits Frame {
                 selected(i) => {
                     Backend.set-batch-settings(i);
                 }
+            }
+        }
+        VerticalLayout {
+            spacing: 4px;
+            Heading {
+                text: @tr("5. Options");
+            }
+            SwitchRow {
+                label: @tr("Include the subfolders");
+                checked: Backend.batch-subfolders;
+                enabled: !Backend.batch-running;
+                toggled(v) => {
+                    Backend.set-batch-option("subfolders", v);
+                }
+            }
+            SwitchRow {
+                label: @tr("Leave alone the pictures already done");
+                checked: Backend.batch-resume;
+                enabled: !Backend.batch-running;
+                toggled(v) => {
+                    Backend.set-batch-option("resume", v);
+                }
+            }
+            SwitchRow {
+                label: @tr("Save a report (JSON) in the destination");
+                checked: Backend.batch-save-report;
+                enabled: !Backend.batch-running;
+                toggled(v) => {
+                    Backend.set-batch-option("report", v);
+                }
+            }
+            TextRow {
+                label: @tr("Add to the names");
+                value: Backend.batch-suffix;
+                enabled: !Backend.batch-running;
+                committed(text) => {
+                    Backend.set-batch-suffix(text);
+                }
+            }
+            Note {
+                text: @tr("With -cutout, photo.jpg gives photo-cutout.png.");
             }
         }
         if Backend.batch-running: VerticalLayout {

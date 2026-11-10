@@ -334,6 +334,61 @@ export component NumberRow inherits Rectangle {
     }
 }
 
+// A label and a short text typed in at the right, handed over on Enter or when the box loses the focus.
+export component TextRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> enabled: true;
+    callback committed(string);
+    height: 36px;
+    opacity: root.enabled ? 1 : 0.45;
+    Text {
+        x: 0;
+        width: parent.width - 136px;
+        text: root.label;
+        color: Theme.text-2;
+        font-size: Theme.fs-md;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Rectangle {
+        x: parent.width - self.width;
+        y: (parent.height - self.height) / 2;
+        width: 128px;
+        height: 28px;
+        border-radius: Theme.r-md;
+        border-width: 1px;
+        border-color: input.has-focus ? Theme.accent : Theme.line;
+        background: Theme.surface-2;
+        accessible-role: text-input;
+        accessible-label: root.label;
+        accessible-value: input.text;
+        input := TextInput {
+            x: 8px;
+            width: parent.width - 16px;
+            height: parent.height;
+            vertical-alignment: center;
+            single-line: true;
+            enabled: root.enabled;
+            color: Theme.text;
+            font-size: Theme.fs-md;
+            text: root.value;
+            accepted => {
+                root.committed(self.text);
+            }
+            changed has-focus => {
+                if (!self.has-focus) {
+                    root.committed(self.text);
+                }
+            }
+        }
+    }
+    // Typing replaces the binding of the text: it follows the value again whenever the value changes.
+    changed value => {
+        input.text = root.value;
+    }
+}
+
 export component SwitchRow inherits Rectangle {
     in property <string> label;
     in property <bool> checked;

@@ -50,7 +50,7 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 - **Avant et après** : le bouton à côté du zoom (ou <kbd>C</kbd>) fusionne les deux vues en une seule, avec une barre à faire glisser : l'original d'un côté, le résultat de l'autre.
 - **Rien de perdu** : le travail en cours est enregistré chaque minute ; si l'appli ou le PC s'arrête, il est proposé au démarrage suivant. Fermer une image qui a des marques propose d'enregistrer un projet, qui les garde (une image exportée ne les garde pas).
 - **Copier-coller** : <kbd>Ctrl</kbd>+<kbd>V</kbd> ouvre l'image du presse-papiers, avec sa transparence si elle est déjà détourée (ou un fichier image copié dans l'explorateur) ; un clic, ou <kbd>Ctrl</kbd>+<kbd>C</kbd>, copie le résultat avec sa transparence.
-- **Traitement par lot** d'un dossier entier : déposez le dossier sur la fenêtre, avec vos réglages enregistrés ou ceux de l'image en cours, en PNG, JPEG, WebP ou AVIF.
+- **Traitement par lot** d'un dossier entier : déposez le dossier sur la fenêtre, avec vos réglages enregistrés ou ceux de l'image en cours, en PNG, JPEG, WebP ou AVIF. Les sous-dossiers peuvent être inclus (chaque résultat va dans le même sous-dossier), les images déjà traitées laissées de côté (pour finir un lot interrompu), un suffixe ajouté aux noms (`photo-detoure.png`) et un rapport JSON enregistré à côté des résultats. Un suffixe avec `--suffix` en ligne de commande aussi.
 - **4 langues** : English (par défaut), Français, Deutsch, Русский.
 - **Plug-ins** (optionnels, désactivés tant que vous ne les activez pas) : de petits programmes lancés sur le fichier que vous venez d'enregistrer.
 

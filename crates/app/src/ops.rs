@@ -905,7 +905,11 @@ impl Ctl {
             _ => Format::Png,
         };
         let (src, dst) = (PathBuf::from(src), PathBuf::from(dst));
-        let files = match batch::validate(&src, &dst, false) {
+        let (subfolders, resume, save_report, suffix) = {
+            let ux = self.ux.guard();
+            (ux.batch.subfolders, ux.batch.resume, ux.batch.save_report, ux.batch.suffix.clone())
+        };
+        let files = match batch::check_suffix(&suffix).and_then(|_| batch::validate(&src, &dst, subfolders)) {
             Ok(f) => f,
             Err(e) => return self.say(tr_message(&e.to_string()), true),
         };
@@ -934,7 +938,18 @@ impl Ctl {
         };
         self.spawn_or(
             move || {
-                let opts = BatchOptions { dst, format, quality, params, skip_existing: false, export_16bit, dpi, source: None, jobs: 1 };
+                let opts = BatchOptions {
+                    dst: dst.clone(),
+                    format,
+                    quality,
+                    params,
+                    skip_existing: resume,
+                    export_16bit,
+                    dpi,
+                    source: subfolders.then_some(src),
+                    jobs: 1,
+                    suffix,
+                };
                 let predict = |img: &openscissors_core::types::Image| model.predict(img, true);
                 let report = batch::run_batch(
                     &files,
@@ -952,13 +967,22 @@ impl Ctl {
                     &cancel,
                 );
                 *me.st.batch.guard() = None;
-                let mut text = format!(
-                    "{}. {}",
-                    if report.cancelled { t("Cancelled") } else { t("Done") },
-                    tf("{n} processed, {m} failed.", &[("n", &report.processed.to_string()), ("m", &report.failed.len().to_string())])
-                );
+                let (n, k, m) = (report.processed.to_string(), report.skipped.to_string(), report.failed.len().to_string());
+                let counts = if report.skipped > 0 {
+                    tf("{n} processed, {k} skipped, {m} failed.", &[("n", &n), ("k", &k), ("m", &m)])
+                } else {
+                    tf("{n} processed, {m} failed.", &[("n", &n), ("m", &m)])
+                };
+                let mut text = format!("{}. {}", if report.cancelled { t("Cancelled") } else { t("Done") }, counts);
                 for f in report.failed.iter().take(5) {
                     text.push_str(&format!("\n{} {}", f.file, tr_message(&f.error)));
+                }
+                if save_report {
+                    let path = dst.join("openscissors-report.json");
+                    match io::write_atomic(&path, report.to_json().as_bytes()) {
+                        Ok(()) => text.push_str(&format!("\n{}", tf("Report: {file}", &[("file", &path.display().to_string())]))),
+                        Err(e) => text.push_str(&format!("\n{}", tr_message(&e.to_string()))),
+                    }
                 }
                 {
                     let mut ux = me.ux.guard();

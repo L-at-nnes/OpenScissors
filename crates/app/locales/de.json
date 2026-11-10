@@ -296,5 +296,14 @@
   "Rotate right": "Nach rechts drehen",
   "Mirror": "Spiegeln",
   "Print resolution (DPI)": "Druckauflösung (DPI)",
-  "Written in PNG and JPEG files: it sets the printed size. Empty: none.": "Wird in PNG- und JPEG-Dateien geschrieben und legt die Druckgröße fest. Leer: keine."
+  "Written in PNG and JPEG files: it sets the printed size. Empty: none.": "Wird in PNG- und JPEG-Dateien geschrieben und legt die Druckgröße fest. Leer: keine.",
+  "5. Options": "5. Optionen",
+  "Include the subfolders": "Unterordner einbeziehen",
+  "Leave alone the pictures already done": "Bereits bearbeitete Bilder auslassen",
+  "Save a report (JSON) in the destination": "Einen Bericht (JSON) im Zielordner speichern",
+  "Add to the names": "An die Namen anhängen",
+  "With -cutout, photo.jpg gives photo-cutout.png.": "Mit -freigestellt wird aus photo.jpg photo-freigestellt.png.",
+  "{n} processed, {k} skipped, {m} failed.": "{n} bearbeitet, {k} ausgelassen, {m} fehlgeschlagen.",
+  "Report: {file}": "Bericht: {file}",
+  "The suffix cannot hold \\ / : * ? \" < > | (it is added to the file names).": "Der Zusatz darf \\ / : * ? \" < > | nicht enthalten (er wird an die Dateinamen angehängt)."
 }

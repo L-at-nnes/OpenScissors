@@ -181,6 +181,10 @@ export global Backend {
     in property <int> batch-format;
     // 0 saved defaults, 1 the settings of the image being edited.
     in property <int> batch-settings;
+    in property <bool> batch-subfolders;
+    in property <bool> batch-resume;
+    in property <bool> batch-save-report;
+    in property <string> batch-suffix;
     in property <bool> batch-running;
     in property <int> batch-done;
     in property <int> batch-total;
@@ -260,6 +264,9 @@ export global Backend {
     callback pick-folder(bool);
     callback set-batch-format(int);
     callback set-batch-settings(int);
+    // subfolders, resume, report
+    callback set-batch-option(string, bool);
+    callback set-batch-suffix(string);
     callback run-batch();
     callback stop-batch();
 }

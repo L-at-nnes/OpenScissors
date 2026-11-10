@@ -296,5 +296,14 @@
   "Rotate right": "Повернуть вправо",
   "Mirror": "Отразить",
   "Print resolution (DPI)": "Разрешение печати (DPI)",
-  "Written in PNG and JPEG files: it sets the printed size. Empty: none.": "Записывается в файлы PNG и JPEG и задаёт размер при печати. Пусто: не записывается."
+  "Written in PNG and JPEG files: it sets the printed size. Empty: none.": "Записывается в файлы PNG и JPEG и задаёт размер при печати. Пусто: не записывается.",
+  "5. Options": "5. Параметры",
+  "Include the subfolders": "Включая подпапки",
+  "Leave alone the pictures already done": "Пропускать уже обработанные изображения",
+  "Save a report (JSON) in the destination": "Сохранить отчёт (JSON) в папке назначения",
+  "Add to the names": "Добавить к именам",
+  "With -cutout, photo.jpg gives photo-cutout.png.": "С -cutout из photo.jpg получится photo-cutout.png.",
+  "{n} processed, {k} skipped, {m} failed.": "Обработано: {n}, пропущено: {k}, с ошибкой: {m}.",
+  "Report: {file}": "Отчёт: {file}",
+  "The suffix cannot hold \\ / : * ? \" < > | (it is added to the file names).": "Суффикс не может содержать \\ / : * ? \" < > | (он добавляется к именам файлов)."
 }

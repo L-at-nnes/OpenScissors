@@ -35,6 +35,8 @@ pub struct BatchOptions {
     /// How many pictures are processed at once (1: one after the other). The model runs one picture at a time; the
     /// reading, the rendering and the writing of the others go on meanwhile. Each picture needs its own memory.
     pub jobs: usize,
+    /// Added to the name of every result: `photo.jpg` gives `photo-cutout.png` with `-cutout`.
+    pub suffix: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -136,6 +138,14 @@ pub fn validate(src: &Path, dst: &Path, subfolders: bool) -> Result<Vec<PathBuf>
     Ok(files)
 }
 
+/// The suffix ([`BatchOptions::suffix`]) must leave every result a plain file name in its folder.
+pub fn check_suffix(suffix: &str) -> Result<()> {
+    if suffix.chars().any(|c| c.is_control() || r#"\/:*?"<>|"#.contains(c)) {
+        return Err(Error::msg(r#"The suffix cannot hold \ / : * ? " < > | (it is added to the file names)."#));
+    }
+    Ok(())
+}
+
 /// `dir/stem.ext`, or `stem_1.ext`, `stem_2.ext`... when that name is taken. Nothing is overwritten.
 pub fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     let first = dir.join(format!("{stem}.{ext}"));
@@ -145,10 +155,10 @@ pub fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     (1..).map(|n| dir.join(format!("{stem}_{n}.{ext}"))).find(|p| !p.exists()).expect("an unused name exists")
 }
 
-/// The file name of the result of each of `files`: `stem.ext`, or `stem_<source extension>.ext` when several sources
-/// share a stem (`a.jpg` and `a.png`; letter case is ignored, as on Windows). Every source then has a result of its own,
-/// always the same one, so that [`BatchOptions::skip_existing`] finds it on the next run.
-pub fn output_names(files: &[PathBuf], ext: &str) -> Vec<String> {
+/// The file name of the result of each of `files`: `stem<suffix>.ext`, or `stem_<source extension><suffix>.ext` when
+/// several sources share a stem (`a.jpg` and `a.png`; letter case is ignored, as on Windows). Every source then has a
+/// result of its own, always the same one, so that [`BatchOptions::skip_existing`] finds it on the next run.
+pub fn output_names(files: &[PathBuf], suffix: &str, ext: &str) -> Vec<String> {
     let stem = |p: &Path| p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into());
     let mut count: HashMap<String, usize> = HashMap::new();
     for f in files {
@@ -160,9 +170,9 @@ pub fn output_names(files: &[PathBuf], ext: &str) -> Vec<String> {
         .map(|f| {
             let s = stem(f);
             let base = if count[&s.to_lowercase()] > 1 {
-                format!("{s}_{}", f.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default())
+                format!("{s}_{}{suffix}", f.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default())
             } else {
-                s
+                format!("{s}{suffix}")
             };
             let mut name = format!("{base}.{ext}");
             let mut n = 1;
@@ -248,7 +258,7 @@ pub fn run_batch(
     }
     for indices in by_folder.values() {
         let group: Vec<PathBuf> = indices.iter().map(|&i| files[i].clone()).collect();
-        for (&i, name) in indices.iter().zip(output_names(&group, opts.format.extension())) {
+        for (&i, name) in indices.iter().zip(output_names(&group, &opts.suffix, opts.format.extension())) {
             names[i] = name;
         }
     }
@@ -350,6 +360,7 @@ mod tests {
             dpi: 0,
             source: None,
             jobs: 1,
+            suffix: String::new(),
         }
     }
 
@@ -532,7 +543,13 @@ mod tests {
         assert_eq!(image::open(dst.join("A_jpg.png")).unwrap().width(), 14);
         let again = run_batch(&files, &o, &half_mask, &mut |_| {}, &AtomicBool::new(false));
         assert_eq!((again.processed, again.skipped), (0, 3), "everything is found on the second run");
-        assert_eq!(output_names(&[PathBuf::from("x.png"), PathBuf::from("y.png")], "webp"), ["x.webp", "y.webp"]);
+        assert_eq!(output_names(&[PathBuf::from("x.png"), PathBuf::from("y.png")], "", "webp"), ["x.webp", "y.webp"]);
+        let names = output_names(&[PathBuf::from("a.jpg"), PathBuf::from("a.png"), PathBuf::from("b.png")], "-cutout", "png");
+        assert_eq!(names, ["a_jpg-cutout.png", "a_png-cutout.png", "b-cutout.png"], "the suffix comes last");
+        assert!(check_suffix(" (cut out)").is_ok() && check_suffix("").is_ok());
+        for bad in ["/../x", "\\x", "a:b", "x?", "\n"] {
+            assert!(check_suffix(bad).is_err(), "{bad:?} could leave the folder or is no file name");
+        }
         std::fs::remove_dir_all(root).ok();
     }
 
