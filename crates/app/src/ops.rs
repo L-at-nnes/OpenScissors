@@ -589,6 +589,31 @@ impl Ctl {
         });
     }
 
+    /// Save the mask of the result as a grey PNG at the size of the picture, for another program. The exact mask is
+    /// computed without the document lock, as for an export.
+    pub fn export_mask_dialog(self: &Arc<Self>) {
+        let me = self.clone();
+        self.spawn(move || {
+            let file = format!("{}-mask.png", stem(me.doc_name().as_deref(), "image"));
+            let Some(mut target) = dialogs::save_file(me.last_dir().as_deref(), &t("Export the mask…"), &file, &[("PNG", &["png"])])
+            else {
+                return;
+            };
+            if !target.extension().is_some_and(|e| e.eq_ignore_ascii_case("png")) {
+                target.set_extension("png");
+            }
+            let job = me.st.doc.guard().as_mut().map(|d| d.export_job());
+            let result = match job {
+                Some(job) => io::save_mask_png(&target, &job.mask()).map_err(|e| tr_message(&e.to_string())),
+                None => Err(t("No image is open.")),
+            };
+            match result {
+                Ok(()) => me.say(tf("Saved {name}", &[("name", &file_label(&target))]), false),
+                Err(e) => me.say(e, true),
+            }
+        });
+    }
+
     pub fn save_marks_dialog(self: &Arc<Self>) {
         let me = self.clone();
         self.spawn(move || {

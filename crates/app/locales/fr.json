@@ -305,5 +305,6 @@
   "With -cutout, photo.jpg gives photo-cutout.png.": "Avec -detoure, photo.jpg donne photo-detoure.png.",
   "{n} processed, {k} skipped, {m} failed.": "{n} traitée(s), {k} ignorée(s), {m} en échec.",
   "Report: {file}": "Rapport : {file}",
-  "The suffix cannot hold \\ / : * ? \" < > | (it is added to the file names).": "Le suffixe ne peut pas contenir \\ / : * ? \" < > | (il est ajouté aux noms de fichiers)."
+  "The suffix cannot hold \\ / : * ? \" < > | (it is added to the file names).": "Le suffixe ne peut pas contenir \\ / : * ? \" < > | (il est ajouté aux noms de fichiers).",
+  "Export the mask…": "Exporter le masque…"
 }

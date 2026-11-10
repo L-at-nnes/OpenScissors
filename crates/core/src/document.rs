@@ -1027,6 +1027,21 @@ impl ExportJob {
         self.edit_mark
     }
 
+    /// The mask of the result for another program: at the size of the picture, uncropped, after the offset and the
+    /// feathering (255 = kept, 0 = removed).
+    pub fn mask(&self) -> Mask {
+        let computed;
+        let alpha = match (&self.alpha, &self.pending) {
+            (Some(a), _) => a,
+            (None, Some(job)) => {
+                computed = job.run();
+                &computed
+            }
+            (None, None) => unreachable!("an export job has a mask or the job that computes it"),
+        };
+        render::finished_alpha(alpha, &self.params)
+    }
+
     fn with_scene<R>(&self, f: impl FnOnce(&Scene) -> R) -> R {
         let computed;
         let alpha = match (&self.alpha, &self.pending) {
@@ -1314,6 +1329,22 @@ mod tests {
         assert_eq!(&out.data[(20 * 50 + 25) * 4..(20 * 50 + 25) * 4 + 4], &[10, 20, 30, 255]);
         let e = d.export();
         assert_eq!((e.w, e.h), (50, 40));
+    }
+
+    #[test]
+    fn the_mask_for_another_program_is_the_finished_one_at_the_size_of_the_picture() {
+        let mut d = Document::new(4, disc_scene(80, 60), None);
+        d.set_param("mask.graphcut", json!(true)).unwrap();
+        d.add_stroke(Stroke { kind: StrokeKind::Keep, width: 5, points: vec![[40.5, 30.5]] });
+        d.add_stroke(Stroke { kind: StrokeKind::Remove, width: 5, points: vec![[5.5, 5.5]] });
+        d.set_param("foreground.feather", json!(2)).unwrap();
+        d.set_param("background.aspect_ratio", json!("1:1")).unwrap();
+        assert!(d.computing());
+        let mask = d.export_job().mask();
+        assert_eq!((mask.w, mask.h), (80, 60), "uncropped");
+        let exact = d.alpha_blocking().clone();
+        assert!(mask == render::finished_alpha(&exact, d.params()), "the exact mask, feathered");
+        assert_eq!((mask.get(40, 30), mask.get(2, 2)), (255, 0));
     }
 
     #[test]

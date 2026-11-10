@@ -256,6 +256,14 @@ export component MenuPanel inherits Frame {
                 Backend.save-as();
             }
         }
+        MenuRow {
+            text: @tr("Export the mask…");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.popover = 0;
+                Backend.export-mask();
+            }
+        }
         Divider { }
         MenuRow {
             text: @tr("Save project…");
