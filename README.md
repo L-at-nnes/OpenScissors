@@ -77,7 +77,7 @@ Windows 10/11 (64-bit), Linux x64 and macOS on Apple Silicon each have their bui
 2. Run `OpenScissors.exe` (`OpenScissors` on Linux and macOS).
 3. Open an image (the button, <kbd>Ctrl</kbd>+<kbd>O</kbd>, drag and drop, paste with <kbd>Ctrl</kbd>+<kbd>V</kbd>, or `OpenScissors.exe photo.jpg`).
 
-From 2.0 on, a release also gets an AppImage for Linux and an `OpenScissors.app` for macOS, which keep their files in your profile; Scoop and winget manifests are ready in `packaging/`. [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) explains them and how to sign the builds.
+The releases after 2.0 also get an AppImage for Linux and an `OpenScissors.app` for macOS, which keep their files in your profile; Scoop and winget manifests are ready in `packaging/`. [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) explains them and how to sign the builds.
 
 The first time, no AI model is installed (they are not bundled). Click the chip at the top, pick one, press **Download**. The file is checked against a SHA-256 before it is used. A download that is cut (cancelled, connection lost, or nothing received for a minute) resumes where it stopped the next time you press **Download**; a file that is already there is checked again before it is trusted.
 
