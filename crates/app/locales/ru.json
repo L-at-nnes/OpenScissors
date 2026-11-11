@@ -312,5 +312,19 @@
   "A largest file size works with JPEG, WebP and AVIF.": "Предельный размер файла работает с JPEG, WebP и AVIF.",
   "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.": "Результат не укладывается в {kb} КБ даже при самом низком качестве: выберите меньший размер вывода.",
   "Export layers (PSD)…": "Экспортировать слои (PSD)…",
-  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "Файл PSD вмещает не более {max} пикселей по стороне; это изображение — {w} x {h} пикселей."
+  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "Файл PSD вмещает не более {max} пикселей по стороне; это изображение — {w} x {h} пикселей.",
+  "Keyboard shortcuts": "Сочетания клавиш",
+  "Paste an image": "Вставить изображение",
+  "Zoom in or out": "Увеличить или уменьшить",
+  "Actual size": "Реальный размер",
+  "Smaller or larger marker": "Маркер меньше или больше",
+  "Pan with the mouse while held": "Удерживайте, чтобы сдвигать мышью",
+  "Space": "Пробел",
+  "Pan the view (faster with Shift)": "Сдвинуть вид (быстрее с Shift)",
+  "Move the crop (10 px with Shift)": "Сдвинуть кадрирование (10 px с Shift)",
+  "Previous or next picture of the folder": "Предыдущее или следующее изображение папки",
+  "Apply the smart selection": "Применить умное выделение",
+  "Remove the last point": "Убрать последнюю точку",
+  "Close a panel, cancel": "Закрыть панель, отменить",
+  "This list": "Этот список"
 }

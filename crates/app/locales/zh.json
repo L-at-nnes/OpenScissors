@@ -312,5 +312,19 @@
   "A largest file size works with JPEG, WebP and AVIF.": "最大文件大小仅适用于 JPEG、WebP 和 AVIF。",
   "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.": "即使使用最低质量，结果也无法控制在 {kb} KB 以内：请选择更小的输出尺寸。",
   "Export layers (PSD)…": "导出图层 (PSD)…",
-  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "PSD 文件每边最多 {max} px；此图片为 {w} x {h} px。"
+  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "PSD 文件每边最多 {max} px；此图片为 {w} x {h} px。",
+  "Keyboard shortcuts": "键盘快捷键",
+  "Paste an image": "粘贴图像",
+  "Zoom in or out": "放大或缩小",
+  "Actual size": "实际大小",
+  "Smaller or larger marker": "缩小或放大标记",
+  "Pan with the mouse while held": "按住时用鼠标平移",
+  "Space": "空格键",
+  "Pan the view (faster with Shift)": "平移视图（按住 Shift 更快）",
+  "Move the crop (10 px with Shift)": "移动裁剪框（按住 Shift 移动 10 px）",
+  "Previous or next picture of the folder": "文件夹中的上一张或下一张图片",
+  "Apply the smart selection": "应用智能选择",
+  "Remove the last point": "移除最后一个点",
+  "Close a panel, cancel": "关闭面板，取消",
+  "This list": "此列表"
 }

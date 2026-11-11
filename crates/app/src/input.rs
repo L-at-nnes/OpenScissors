@@ -341,6 +341,13 @@ impl Ctl {
                 return self.move_crop(dx, dy);
             }
         }
+        if c == '?' || special(Key::F1) {
+            return self.with_ui(|_, ui| {
+                use slint::ComponentHandle;
+                let b = ui.global::<crate::Backend>();
+                b.set_popover(if b.get_popover() == 6 { 0 } else { 6 });
+            });
+        }
         if special(Key::PageDown) {
             return self.open_neighbour(1);
         }

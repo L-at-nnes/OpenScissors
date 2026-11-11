@@ -333,11 +333,89 @@ export component MenuPanel inherits Frame {
             }
         }
         MenuRow {
+            text: @tr("Keyboard shortcuts");
+            hint: "?";
+            clicked => {
+                Backend.popover = 6;
+            }
+        }
+        MenuRow {
             text: @tr("About");
             clicked => {
                 Backend.popover = 4;
             }
         }
+    }
+}
+
+// One shortcut: what it does, and its keys in a chip at the right.
+component KeyRow inherits Rectangle {
+    in property <string> label;
+    in property <string> keys;
+    height: 22px;
+    Text {
+        x: 0;
+        width: parent.width - chip.width - 8px;
+        text: root.label;
+        color: Theme.text-2;
+        font-size: Theme.fs-sm;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    chip := Rectangle {
+        x: parent.width - self.width;
+        y: (parent.height - self.height) / 2;
+        width: key-text.preferred-width + 12px;
+        height: 18px;
+        border-radius: Theme.r-sm;
+        background: Theme.surface-3;
+        key-text := Text {
+            text: root.keys;
+            color: Theme.text;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+export component ShortcutsPanel inherits Frame {
+    width: 400px;
+    content-height: col.preferred-height;
+    col := VerticalLayout {
+        spacing: 1px;
+        PanelHead {
+            title: @tr("Keyboard shortcuts");
+        }
+        KeyRow { label: @tr("Open image"); keys: "Ctrl+O"; }
+        KeyRow { label: @tr("Paste an image"); keys: "Ctrl+V"; }
+        KeyRow { label: @tr("Copy the result"); keys: "Ctrl+C"; }
+        KeyRow { label: @tr("Save"); keys: "Ctrl+S"; }
+        KeyRow { label: @tr("Save as…"); keys: "Ctrl+Shift+S"; }
+        KeyRow { label: @tr("Undo"); keys: "Ctrl+Z"; }
+        KeyRow { label: @tr("Redo"); keys: "Ctrl+Y · Ctrl+Shift+Z"; }
+        KeyRow { label: @tr("Zoom in or out"); keys: "Ctrl++ · Ctrl+-"; }
+        KeyRow { label: @tr("Actual size"); keys: "Ctrl+0"; }
+        KeyRow { label: @tr("Zoom to fit"); keys: "Ctrl+9"; }
+        Divider { }
+        KeyRow { label: @tr("Mark areas to keep"); keys: "F"; }
+        KeyRow { label: @tr("Mark areas to remove"); keys: "B"; }
+        KeyRow { label: @tr("Mark areas where hair is, for soft edges"); keys: "H"; }
+        KeyRow { label: @tr("Erase hair markings"); keys: "Shift+H"; }
+        KeyRow { label: @tr("Erase markings and prediction"); keys: "E"; }
+        KeyRow { label: @tr("Smart select"); keys: "S"; }
+        KeyRow { label: @tr("Move image"); keys: "M"; }
+        KeyRow { label: @tr("Smaller or larger marker"); keys: "[ · ]"; }
+        KeyRow { label: @tr("Before and after"); keys: "C"; }
+        Divider { }
+        KeyRow { label: @tr("Pan with the mouse while held"); keys: @tr("Space"); }
+        KeyRow { label: @tr("Pan the view (faster with Shift)"); keys: "← ↑ → ↓"; }
+        KeyRow { label: @tr("Move the crop (10 px with Shift)"); keys: "Alt+← ↑ → ↓"; }
+        KeyRow { label: @tr("Previous or next picture of the folder"); keys: "PgUp · PgDn"; }
+        KeyRow { label: @tr("Apply the smart selection"); keys: "Enter"; }
+        KeyRow { label: @tr("Remove the last point"); keys: "Backspace"; }
+        KeyRow { label: @tr("Close a panel, cancel"); keys: "Esc"; }
+        KeyRow { label: @tr("This list"); keys: "? · F1"; }
     }
 }
 

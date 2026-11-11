@@ -126,7 +126,7 @@ Delete `data/` to start over, delete `models/` to free space. Nothing is written
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> fit · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | wheel pans, <kbd>Ctrl</kbd>+wheel zooms |
 | <kbd>Enter</kbd> apply a smart selection · <kbd>Backspace</kbd> remove the last click · <kbd>Esc</kbd> cancel | |
 
-The brush is **off by default**: the app starts on the *Move* tool, so the pointer never paints by surprise. The shortcuts follow the characters printed on the keys, so they also work on a French (AZERTY) keyboard: Ctrl+à and Ctrl+ç zoom like Ctrl+0 and Ctrl+9, AltGr+( and AltGr+) give the brush size keys [ and ].
+<kbd>?</kbd> (or <kbd>F1</kbd>, or *Keyboard shortcuts* in the menu) shows them all in the window. The brush is **off by default**: the app starts on the *Move* tool, so the pointer never paints by surprise. The shortcuts follow the characters printed on the keys, so they also work on a French (AZERTY) keyboard: Ctrl+à and Ctrl+ç zoom like Ctrl+0 and Ctrl+9, AltGr+( and AltGr+) give the brush size keys [ and ].
 
 ## Privacy
 

@@ -312,5 +312,19 @@
   "A largest file size works with JPEG, WebP and AVIF.": "Una dimensione massima del file funziona con JPEG, WebP e AVIF.",
   "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.": "Il risultato non sta in {kb} KB nemmeno alla qualità più bassa: scegli una dimensione di uscita più piccola.",
   "Export layers (PSD)…": "Esporta i livelli (PSD)…",
-  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "Un file PSD contiene al massimo {max} px per lato; questa immagine è di {w} x {h} px."
+  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "Un file PSD contiene al massimo {max} px per lato; questa immagine è di {w} x {h} px.",
+  "Keyboard shortcuts": "Scorciatoie da tastiera",
+  "Paste an image": "Incolla un'immagine",
+  "Zoom in or out": "Ingrandisci o riduci",
+  "Actual size": "Dimensione reale",
+  "Smaller or larger marker": "Pennello più piccolo o più grande",
+  "Pan with the mouse while held": "Tieni premuto per spostare con il mouse",
+  "Space": "Spazio",
+  "Pan the view (faster with Shift)": "Sposta la vista (più veloce con Shift)",
+  "Move the crop (10 px with Shift)": "Sposta il ritaglio (10 px con Shift)",
+  "Previous or next picture of the folder": "Immagine precedente o successiva della cartella",
+  "Apply the smart selection": "Applica la selezione intelligente",
+  "Remove the last point": "Rimuovi l'ultimo punto",
+  "Close a panel, cancel": "Chiudi un pannello, annulla",
+  "This list": "Questo elenco"
 }

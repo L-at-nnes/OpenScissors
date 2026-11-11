@@ -312,5 +312,19 @@
   "A largest file size works with JPEG, WebP and AVIF.": "最大ファイルサイズは JPEG、WebP、AVIF で使えます。",
   "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.": "最低品質でも結果が {kb} KB に収まりません：出力サイズを小さくしてください。",
   "Export layers (PSD)…": "レイヤーを書き出す (PSD)…",
-  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "PSD ファイルの一辺は最大 {max} px です。この画像は {w} x {h} px です。"
+  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "PSD ファイルの一辺は最大 {max} px です。この画像は {w} x {h} px です。",
+  "Keyboard shortcuts": "キーボードショートカット",
+  "Paste an image": "画像を貼り付け",
+  "Zoom in or out": "拡大・縮小",
+  "Actual size": "実際のサイズ",
+  "Smaller or larger marker": "マーカーを小さく・大きく",
+  "Pan with the mouse while held": "押している間マウスで移動",
+  "Space": "スペース",
+  "Pan the view (faster with Shift)": "表示を移動（Shift で速く）",
+  "Move the crop (10 px with Shift)": "切り抜き範囲を移動（Shift で 10 px）",
+  "Previous or next picture of the folder": "フォルダー内の前・次の画像",
+  "Apply the smart selection": "スマート選択を適用",
+  "Remove the last point": "最後の点を取り消す",
+  "Close a panel, cancel": "パネルを閉じる・キャンセル",
+  "This list": "この一覧"
 }
