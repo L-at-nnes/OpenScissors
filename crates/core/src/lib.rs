@@ -15,6 +15,7 @@ pub mod params;
 pub mod paths;
 pub mod plugin;
 pub mod project;
+pub mod psd;
 pub mod render;
 pub mod settings;
 pub mod sync;

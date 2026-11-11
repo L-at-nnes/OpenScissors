@@ -618,6 +618,32 @@ impl Ctl {
         });
     }
 
+    /// Save the picture and the cut-out as layers of a Photoshop file (the mask is a layer mask there), computed
+    /// without the document lock.
+    pub fn export_psd_dialog(self: &Arc<Self>) {
+        let me = self.clone();
+        self.spawn(move || {
+            let file = format!("{}-layers.psd", stem(me.doc_name().as_deref(), "image"));
+            let Some(mut target) =
+                dialogs::save_file(me.last_dir().as_deref(), &t("Export layers (PSD)…"), &file, &[("Photoshop", &["psd"])])
+            else {
+                return;
+            };
+            if !target.extension().is_some_and(|e| e.eq_ignore_ascii_case("psd")) {
+                target.set_extension("psd");
+            }
+            let job = me.st.doc.guard().as_mut().map(|d| d.export_job());
+            let result = match job {
+                Some(job) => job.psd().and_then(|bytes| Ok(io::write_atomic(&target, &bytes)?)).map_err(|e| tr_message(&e.to_string())),
+                None => Err(t("No image is open.")),
+            };
+            match result {
+                Ok(()) => me.say(tf("Saved {name}", &[("name", &file_label(&target))]), false),
+                Err(e) => me.say(e, true),
+            }
+        });
+    }
+
     pub fn save_marks_dialog(self: &Arc<Self>) {
         let me = self.clone();
         self.spawn(move || {

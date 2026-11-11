@@ -34,6 +34,7 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     cb!(b, ctl, on_save, |c| c.save());
     cb!(b, ctl, on_save_as, |c| c.save_as());
     cb!(b, ctl, on_export_mask, |c| c.export_mask_dialog());
+    cb!(b, ctl, on_export_psd, |c| c.export_psd_dialog());
     cb!(b, ctl, on_undo, |c| c.undo());
     cb!(b, ctl, on_redo, |c| c.redo());
     cb!(b, ctl, on_zoom_in, |c| c.zoom_in());

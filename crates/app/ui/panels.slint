@@ -264,6 +264,14 @@ export component MenuPanel inherits Frame {
                 Backend.export-mask();
             }
         }
+        MenuRow {
+            text: @tr("Export layers (PSD)…");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.popover = 0;
+                Backend.export-psd();
+            }
+        }
         Divider { }
         MenuRow {
             text: @tr("Save project…");

@@ -1042,6 +1042,11 @@ impl ExportJob {
         render::finished_alpha(alpha, &self.params)
     }
 
+    /// The picture and the cut-out as layers of a Photoshop file, the mask editable there ([`crate::psd::encode_psd`]).
+    pub fn psd(&self) -> Result<Vec<u8>> {
+        crate::psd::encode_psd(&self.image, &self.mask())
+    }
+
     fn with_scene<R>(&self, f: impl FnOnce(&Scene) -> R) -> R {
         let computed;
         let alpha = match (&self.alpha, &self.pending) {
@@ -1345,6 +1350,8 @@ mod tests {
         let exact = d.alpha_blocking().clone();
         assert!(mask == render::finished_alpha(&exact, d.params()), "the exact mask, feathered");
         assert_eq!((mask.get(40, 30), mask.get(2, 2)), (255, 0));
+        let psd = d.export_job().psd().unwrap();
+        assert!(psd.ends_with(&mask.data), "the flattened transparency of the PSD is that mask");
     }
 
     #[test]

@@ -310,5 +310,7 @@
   "Largest file, in KB (JPEG, WebP, AVIF)": "Наибольший файл, в КБ (JPEG, WebP, AVIF)",
   "The quality is lowered as much as needed for the file to hold in it. Empty: no limit.": "Качество снижается настолько, насколько нужно, чтобы файл уложился в этот размер. Пусто: без ограничения.",
   "A largest file size works with JPEG, WebP and AVIF.": "Предельный размер файла работает с JPEG, WebP и AVIF.",
-  "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.": "Результат не укладывается в {kb} КБ даже при самом низком качестве: выберите меньший размер вывода."
+  "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.": "Результат не укладывается в {kb} КБ даже при самом низком качестве: выберите меньший размер вывода.",
+  "Export layers (PSD)…": "Экспортировать слои (PSD)…",
+  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "Файл PSD вмещает не более {max} пикселей по стороне; это изображение — {w} x {h} пикселей."
 }

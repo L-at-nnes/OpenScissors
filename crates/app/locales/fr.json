@@ -310,5 +310,7 @@
   "Largest file, in KB (JPEG, WebP, AVIF)": "Fichier le plus lourd, en Ko (JPEG, WebP, AVIF)",
   "The quality is lowered as much as needed for the file to hold in it. Empty: no limit.": "La qualité est baissée autant qu'il le faut pour que le fichier y tienne. Vide : aucune limite.",
   "A largest file size works with JPEG, WebP and AVIF.": "Une taille de fichier maximale fonctionne avec JPEG, WebP et AVIF.",
-  "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.": "Le résultat ne tient pas dans {kb} Ko même à la qualité la plus basse : choisissez une taille de sortie plus petite."
+  "The result does not hold in {kb} KB even at the lowest quality: choose a smaller output size.": "Le résultat ne tient pas dans {kb} Ko même à la qualité la plus basse : choisissez une taille de sortie plus petite.",
+  "Export layers (PSD)…": "Exporter les calques (PSD)…",
+  "A PSD file holds at most {max} px per side; this picture is {w} x {h} px.": "Un fichier PSD contient au plus {max} px de côté ; cette image fait {w} x {h} px."
 }
