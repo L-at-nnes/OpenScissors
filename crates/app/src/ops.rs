@@ -513,6 +513,7 @@ impl Ctl {
             tf("Saved {name}", &[("name", &name)])
         };
         self.say(msg, false);
+        self.run_plugins_after_save(target);
         Ok(())
     }
 
@@ -1068,7 +1069,7 @@ impl Ctl {
             if enabled {
                 let ok = dialogs::confirm(
                     &tf("Turn on {name}?", &[("name", &p.manifest.name)]),
-                    &t("A plug-in is a program you installed. It runs only when you click Run, on the file you saved."),
+                    &t("A plug-in is a program you installed. It runs only when you click Run, or after each save if you ask for it, on the file you saved."),
                     t("Turn on"),
                     t("Cancel"),
                 );
@@ -1097,27 +1098,67 @@ impl Ctl {
             if !me.st.settings.guard().plugins_enabled.contains(&p.manifest.id) {
                 return me.say(t("This plug-in is not enabled."), true);
             }
-            let name = p.manifest.name.clone();
-            me.say(tf("Running {name}…", &[("name", &name)]), false);
-            match openscissors_core::plugin::run(&p, Path::new(&file), openscissors_core::plugin::RUN_TIMEOUT) {
-                Ok(r) => {
-                    let last = r.output.lines().rfind(|l| !l.trim().is_empty()).unwrap_or("").to_string();
-                    if r.success {
-                        me.say(
-                            if last.is_empty() {
-                                tf("{name} finished", &[("name", &name)])
-                            } else {
-                                tf("{name}: {output}", &[("name", &name), ("output", &last)])
-                            },
-                            false,
-                        );
-                    } else {
-                        me.say(tf("{name} failed: {output}", &[("name", &name), ("output", &last)]), true);
-                    }
-                }
-                Err(e) => me.say(tr_message(&e.to_string()), true),
+            me.run_plugin(&p, Path::new(&file));
+        });
+    }
+
+    /// Let plug-in `index` run on each saved result, or stop it.
+    pub fn plugin_after_save(self: &Arc<Self>, index: usize, on: bool) {
+        let Some(Ok(p)) = self.plugins_listed().into_iter().nth(index).map(|d| d.plugin) else { return };
+        {
+            let mut s = self.st.settings.guard();
+            s.plugins_after_save.retain(|x| x != &p.manifest.id);
+            if on {
+                s.plugins_after_save.push(p.manifest.id.clone());
+            }
+        }
+        self.save_settings();
+        self.refresh(R_MENU);
+    }
+
+    /// The plug-ins turned on and asked to run after each save, on `file` just saved (those that take its type), one
+    /// after the other on a worker thread.
+    fn run_plugins_after_save(self: &Arc<Self>, file: &Path) {
+        let ids = {
+            let s = self.st.settings.guard();
+            s.plugins_after_save.iter().filter(|id| s.plugins_enabled.contains(id)).cloned().collect::<Vec<_>>()
+        };
+        if ids.is_empty() {
+            return;
+        }
+        let plugins: Vec<_> = self
+            .plugins_listed()
+            .into_iter()
+            .filter_map(|d| d.plugin.ok())
+            .filter(|p| ids.contains(&p.manifest.id) && p.manifest.accepts(file))
+            .collect();
+        let (me, file) = (self.clone(), file.to_path_buf());
+        self.spawn(move || {
+            for p in &plugins {
+                me.run_plugin(p, &file);
             }
         });
+    }
+
+    /// Run `p` on `file` within its time limit and say how it went, and which file it wrote if it wrote one.
+    fn run_plugin(self: &Arc<Self>, p: &openscissors_core::plugin::Plugin, file: &Path) {
+        let name = p.manifest.name.clone();
+        self.say(tf("Running {name}…", &[("name", &name)]), false);
+        match openscissors_core::plugin::run(p, file, p.manifest.timeout()) {
+            Ok(r) => {
+                let last = r.output.lines().rfind(|l| !l.trim().is_empty()).unwrap_or("").to_string();
+                if !r.success {
+                    self.say(tf("{name} failed: {output}", &[("name", &name), ("output", &last)]), true);
+                } else if let Some(written) = &r.produced {
+                    self.say(tf("{name} wrote {file}", &[("name", &name), ("file", &file_label(written))]), false);
+                } else if last.is_empty() {
+                    self.say(tf("{name} finished", &[("name", &name)]), false);
+                } else {
+                    self.say(tf("{name}: {output}", &[("name", &name), ("output", &last)]), false);
+                }
+            }
+            Err(e) => self.say(tr_message(&e.to_string()), true),
+        }
     }
 
     // -- settings

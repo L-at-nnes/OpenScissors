@@ -2,7 +2,7 @@
   "1. Source folder": "1. Carpeta de origen",
   "2. Destination folder": "2. Carpeta de destino",
   "3. Result format": "3. Formato del resultado",
-  "A plug-in is a program you installed. It runs only when you click Run, on the file you saved.": "Un complemento es un programa que usted instaló. Solo se ejecuta cuando hace clic en Ejecutar, sobre el archivo que guardó.",
+  "A plug-in is a program you installed. It runs only when you click Run, or after each save if you ask for it, on the file you saved.": "Un complemento es un programa que usted instaló. Solo se ejecuta cuando hace clic en Ejecutar, o tras cada guardado si lo pide, sobre el archivo que guardó.",
   "AI models": "Modelos de IA",
   "Add": "Añadir",
   "Add your own: put model.onnx and a model.json in a new folder there.": "Añada los suyos: ponga model.onnx y un model.json en una carpeta nueva allí.",
@@ -326,5 +326,7 @@
   "Apply the smart selection": "Aplicar la selección inteligente",
   "Remove the last point": "Quitar el último punto",
   "Close a panel, cancel": "Cerrar un panel, cancelar",
-  "This list": "Esta lista"
+  "This list": "Esta lista",
+  "Run after each save": "Ejecutar tras cada guardado",
+  "{name} wrote {file}": "{name} escribió {file}"
 }

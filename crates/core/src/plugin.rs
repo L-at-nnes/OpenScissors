@@ -8,10 +8,12 @@
 //! ```
 //!
 //! `command` is a file inside the plug-in folder (never a path outside it, never a shell string); `args` may use
-//! `{input}` (the exported file) and `{dir}` (its folder). A plug-in is never run automatically: the user turns it
-//! on, then clicks *Run* on the last saved file. It runs with the plug-in folder as working directory, is killed
-//! after 60 seconds (with everything it started), and the last lines of its output are shown. Plug-ins are code the user installed: OpenScissors
-//! grants them nothing, and says so when one is enabled.
+//! `{input}` (the exported file), `{dir}` (its folder) and `{output}` (`<name>-<id>.<ext>` beside it: a file the
+//! plug-in may write, such as an upscaled or optimised copy, which the application then names). A plug-in only runs
+//! when the user turned it on, then either clicks *Run* on the last saved file or asks for it to run after each save.
+//! It runs with the plug-in folder as working directory, is killed after `timeout_seconds` (60 by default, at most an
+//! hour) with everything it started, and the last lines of its output are shown. Plug-ins are code the user
+//! installed: OpenScissors grants them nothing, and says so when one is enabled.
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -51,6 +53,22 @@ pub struct Manifest {
     /// File extensions the plug-in accepts (lower case, no dot); empty = any.
     #[serde(default)]
     pub extensions: Vec<String>,
+    /// Seconds the plug-in may run before it is stopped (1 to 3600); 60 without it.
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
+}
+
+impl Manifest {
+    /// How long the plug-in may run ([`Manifest::timeout_seconds`]).
+    pub fn timeout(&self) -> Duration {
+        self.timeout_seconds.map_or(RUN_TIMEOUT, |s| Duration::from_secs(s.clamp(1, 3600)))
+    }
+
+    /// Whether the plug-in takes files with the extension of `file` (any, when it lists none).
+    pub fn accepts(&self, file: &Path) -> bool {
+        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+        self.extensions.is_empty() || self.extensions.iter().any(|e| e.eq_ignore_ascii_case(ext))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -71,6 +89,18 @@ pub struct RunOutput {
     pub success: bool,
     /// Last part of what the program printed (standard output and error).
     pub output: String,
+    /// The file the plug-in wrote at `{output}` ([`output_path`]), when it did.
+    pub produced: Option<PathBuf>,
+}
+
+/// The file a plug-in may write for `input` (its `{output}`): `<name>-<plug-in id>.<ext>` in the same folder.
+pub fn output_path(plugin: &Plugin, input: &Path) -> PathBuf {
+    let stem = input.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = match input.extension() {
+        Some(ext) => format!("{stem}-{}.{}", plugin.manifest.id, ext.to_string_lossy()),
+        None => format!("{stem}-{}", plugin.manifest.id),
+    };
+    input.with_file_name(name)
 }
 
 fn validate(m: &Manifest, dir: &Path) -> Result<()> {
@@ -94,7 +124,7 @@ fn validate(m: &Manifest, dir: &Path) -> Result<()> {
         while let Some(open) = rest.find('{') {
             let close = rest[open..].find('}').ok_or_else(|| Error::msg("unbalanced '{' in args"))? + open;
             let name = &rest[open + 1..close];
-            if name != "input" && name != "dir" {
+            if !matches!(name, "input" | "dir" | "output") {
                 return Err(Error::msg(format!("unknown placeholder '{{{name}}}' in args")));
             }
             rest = &rest[close + 1..];
@@ -124,10 +154,11 @@ pub fn discover(plugins_dir: &Path) -> Vec<Discovered> {
     found
 }
 
-/// Replace `{input}` and `{dir}` in one pass: a file name that itself contains `{dir}` stays as it is.
-fn expand(arg: &str, input: &Path) -> String {
+/// Replace `{input}`, `{dir}` and `{output}` in one pass: a file name that itself contains `{dir}` stays as it is.
+fn expand(arg: &str, input: &Path, output: &Path) -> String {
     let dir = input.parent().map(|p| p.display().to_string()).unwrap_or_default();
     let file = input.display().to_string();
+    let out_file = output.display().to_string();
     let mut out = String::with_capacity(arg.len());
     let mut rest = arg;
     while let Some(i) = rest.find('{') {
@@ -138,6 +169,9 @@ fn expand(arg: &str, input: &Path) -> String {
             rest = t;
         } else if let Some(t) = tail.strip_prefix("{dir}") {
             out.push_str(&dir);
+            rest = t;
+        } else if let Some(t) = tail.strip_prefix("{output}") {
+            out.push_str(&out_file);
             rest = t;
         } else {
             out.push('{');
@@ -153,13 +187,15 @@ pub fn run(plugin: &Plugin, input: &Path, timeout: Duration) -> Result<RunOutput
     if !input.is_file() {
         return Err(Error::msg("the file to process does not exist"));
     }
-    let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    let wanted = &plugin.manifest.extensions;
-    if !wanted.is_empty() && !wanted.iter().any(|e| e.eq_ignore_ascii_case(&ext)) {
-        return Err(Error::msg(format!("this plug-in handles: {}", wanted.join(", "))));
+    if !plugin.manifest.accepts(input) {
+        return Err(Error::msg(format!("this plug-in handles: {}", plugin.manifest.extensions.join(", "))));
     }
+    // `{output}` counts as produced when the plug-in creates it, or changes it when it was already there.
+    let out_path = output_path(plugin, input);
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let before = modified(&out_path);
     let mut cmd = Command::new(plugin.dir.join(&plugin.manifest.command));
-    cmd.args(plugin.manifest.args.iter().map(|a| expand(a, input)))
+    cmd.args(plugin.manifest.args.iter().map(|a| expand(a, input, &out_path)))
         .current_dir(&plugin.dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -206,7 +242,8 @@ pub fn run(plugin: &Plugin, input: &Path, timeout: Duration) -> Result<RunOutput
     let output = String::from_utf8_lossy(&printed.guard()).into_owned();
     let output = output.trim();
     let tail: String = output.chars().rev().take(OUTPUT_TAIL).collect::<Vec<_>>().into_iter().rev().collect();
-    Ok(RunOutput { success: status.success(), output: tail })
+    let produced = (status.success() && out_path.is_file() && modified(&out_path) != before).then_some(out_path);
+    Ok(RunOutput { success: status.success(), output: tail, produced })
 }
 
 /// Copy what `r` produces into `into`, as it comes, keeping only the last [`OUTPUT_KEEP`] bytes or so.
@@ -403,6 +440,35 @@ mod tests {
     }
 
     #[test]
+    fn a_plugin_can_write_a_file_of_its_own_and_set_its_time_limit() {
+        let root = tmp("output");
+        install(
+            &root,
+            "copy",
+            serde_json::json!({ "id": "copy", "name": "C", "args": ["{input}", "{output}"], "timeout_seconds": 90 }),
+            "copy /y \"%~1\" \"%~2\" >nul",
+            "cp \"$1\" \"$2\"",
+        );
+        install(&root, "quiet", serde_json::json!({ "id": "quiet", "name": "Q", "timeout_seconds": 0 }), "echo nothing", "echo nothing");
+        let file = root.join("photo.png");
+        std::fs::write(&file, b"x").unwrap();
+        let found = discover(&root);
+        let get = |f: &str| found.iter().find(|d| d.folder == f).unwrap().plugin.clone().unwrap();
+        let (copy, quiet) = (get("copy"), get("quiet"));
+        assert_eq!(
+            (copy.manifest.timeout(), quiet.manifest.timeout()),
+            (Duration::from_secs(90), Duration::from_secs(1)),
+            "kept within 1 s to an hour"
+        );
+        assert_eq!(output_path(&copy, &file), root.join("photo-copy.png"));
+        let out = run(&copy, &file, copy.manifest.timeout()).unwrap();
+        assert_eq!(out.produced.as_deref(), Some(root.join("photo-copy.png").as_path()), "{out:?}");
+        let out = run(&quiet, &file, Duration::from_secs(20)).unwrap();
+        assert!(out.success && out.produced.is_none(), "nothing written: nothing to show");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn failing_and_slow_plugins_are_handled() {
         let root = tmp("slow");
         install(&root, "fail", serde_json::json!({ "id": "fail", "name": "F" }), "echo boom 1>&2\r\nexit /b 3", "echo boom >&2; exit 3");
@@ -458,8 +524,13 @@ mod tests {
     #[test]
     fn placeholders_are_replaced_in_one_pass() {
         let input = Path::new("/photos/{dir}/a{input}.png");
-        assert_eq!(expand("{input}", input), "/photos/{dir}/a{input}.png");
-        assert_eq!(expand("--in={input} --dir={dir} {other}", input), "--in=/photos/{dir}/a{input}.png --dir=/photos/{dir} {other}");
-        assert_eq!(expand("plain {", input), "plain {");
+        let output = Path::new("/photos/out.png");
+        assert_eq!(expand("{input}", input, output), "/photos/{dir}/a{input}.png");
+        assert_eq!(
+            expand("--in={input} --dir={dir} {other}", input, output),
+            "--in=/photos/{dir}/a{input}.png --dir=/photos/{dir} {other}"
+        );
+        assert_eq!(expand("plain {", input, output), "plain {");
+        assert_eq!(expand("-o={output}", input, output), "-o=/photos/out.png");
     }
 }

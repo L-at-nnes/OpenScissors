@@ -652,12 +652,16 @@ impl Ctl {
     }
 
     fn plugin_rows(&self) -> Vec<PluginRow> {
-        let enabled = self.st.settings.guard().plugins_enabled.clone();
+        let (enabled, after) = {
+            let s = self.st.settings.guard();
+            (s.plugins_enabled.clone(), s.plugins_after_save.clone())
+        };
         self.plugins_listed()
             .into_iter()
             .map(|d| match d.plugin {
                 Ok(p) => PluginRow {
                     enabled: enabled.contains(&p.manifest.id),
+                    after_save: after.contains(&p.manifest.id),
                     name: p.manifest.name.into(),
                     description: p.manifest.description.into(),
                     error: SharedString::new(),
@@ -666,6 +670,7 @@ impl Ctl {
                     name: d.folder.into(),
                     description: SharedString::new(),
                     enabled: false,
+                    after_save: false,
                     error: crate::i18n::tr_message(&e).into(),
                 },
             })

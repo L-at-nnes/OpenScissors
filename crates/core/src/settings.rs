@@ -37,6 +37,8 @@ pub struct Settings {
     pub export_max_kb: u32,
     /// Ids of the plug-ins the user turned on (they never run by themselves).
     pub plugins_enabled: Vec<String>,
+    /// Ids of the plug-ins (turned on) that run on each saved result, one after the other.
+    pub plugins_after_save: Vec<String>,
     /// Share of the physical memory the application may use: 25 (default) or 50.
     pub ram_percent: u8,
     /// Keep the memory arena on for speed (uses more than twice the memory).
@@ -64,6 +66,7 @@ impl Default for Settings {
             export_dpi: 0,
             export_max_kb: 0,
             plugins_enabled: Vec::new(),
+            plugins_after_save: Vec::new(),
             ram_percent: 25,
             fast_memory: false,
             accelerator: Accelerator::Cpu,

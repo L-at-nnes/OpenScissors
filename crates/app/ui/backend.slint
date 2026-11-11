@@ -59,6 +59,8 @@ export struct PluginRow {
     name: string,
     description: string,
     enabled: bool,
+    // Runs on each saved result.
+    after-save: bool,
     error: string,
 }
 
@@ -268,6 +270,7 @@ export global Backend {
     callback set-language(int);
     callback plugin-toggle(int, bool);
     callback plugin-run(int);
+    callback plugin-after-save(int, bool);
     callback pick-folder(bool);
     callback set-batch-format(int);
     callback set-batch-settings(int);

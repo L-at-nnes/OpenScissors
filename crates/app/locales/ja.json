@@ -2,7 +2,7 @@
   "1. Source folder": "1. 元のフォルダー",
   "2. Destination folder": "2. 保存先フォルダー",
   "3. Result format": "3. 結果の形式",
-  "A plug-in is a program you installed. It runs only when you click Run, on the file you saved.": "プラグインはあなたがインストールしたプログラムです。「実行」をクリックしたときだけ、保存したファイルに対して動きます。",
+  "A plug-in is a program you installed. It runs only when you click Run, or after each save if you ask for it, on the file you saved.": "プラグインはあなたがインストールしたプログラムです。「実行」をクリックしたとき、または指定した場合は保存のたびに、保存したファイルに対してだけ動きます。",
   "AI models": "AI モデル",
   "Add": "追加",
   "Add your own: put model.onnx and a model.json in a new folder there.": "独自のモデルを追加：そこに新しいフォルダーを作り、model.onnx と model.json を入れます。",
@@ -326,5 +326,7 @@
   "Apply the smart selection": "スマート選択を適用",
   "Remove the last point": "最後の点を取り消す",
   "Close a panel, cancel": "パネルを閉じる・キャンセル",
-  "This list": "この一覧"
+  "This list": "この一覧",
+  "Run after each save": "保存のたびに実行",
+  "{name} wrote {file}": "{name} が {file} を書き出しました"
 }

@@ -2,7 +2,7 @@
   "1. Source folder": "1. Quellordner",
   "2. Destination folder": "2. Zielordner",
   "3. Result format": "3. Ergebnisformat",
-  "A plug-in is a program you installed. It runs only when you click Run, on the file you saved.": "Ein Plug-in ist ein Programm, das Sie installiert haben. Es läuft nur, wenn Sie auf Ausführen klicken, und zwar mit der gespeicherten Datei.",
+  "A plug-in is a program you installed. It runs only when you click Run, or after each save if you ask for it, on the file you saved.": "Ein Plug-in ist ein Programm, das Sie installiert haben. Es läuft nur, wenn Sie auf Ausführen klicken, oder nach jedem Speichern, wenn Sie das wünschen, auf der gespeicherten Datei.",
   "AI models": "KI-Modelle",
   "Add": "Hinzufügen",
   "Add your own: put model.onnx and a model.json in a new folder there.": "Eigenes Modell: model.onnx und eine model.json in einen neuen Unterordner legen.",
@@ -326,5 +326,7 @@
   "Apply the smart selection": "Intelligente Auswahl anwenden",
   "Remove the last point": "Letzten Punkt entfernen",
   "Close a panel, cancel": "Ein Fenster schließen, abbrechen",
-  "This list": "Diese Liste"
+  "This list": "Diese Liste",
+  "Run after each save": "Nach jedem Speichern ausführen",
+  "{name} wrote {file}": "{name} hat {file} geschrieben"
 }

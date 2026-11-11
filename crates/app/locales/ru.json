@@ -2,7 +2,7 @@
   "1. Source folder": "1. Исходная папка",
   "2. Destination folder": "2. Папка назначения",
   "3. Result format": "3. Формат результата",
-  "A plug-in is a program you installed. It runs only when you click Run, on the file you saved.": "Плагин — это программа, которую вы установили. Он запускается только по кнопке «Запустить» и только для сохранённого вами файла.",
+  "A plug-in is a program you installed. It runs only when you click Run, or after each save if you ask for it, on the file you saved.": "Плагин — это программа, которую вы установили. Он запускается только по кнопке «Запустить» или после каждого сохранения, если вы это включили, и работает с сохранённым файлом.",
   "AI models": "Модели ИИ",
   "Add": "Добавить",
   "Add your own: put model.onnx and a model.json in a new folder there.": "Свою модель: поместите model.onnx и model.json в новую папку там.",
@@ -326,5 +326,7 @@
   "Apply the smart selection": "Применить умное выделение",
   "Remove the last point": "Убрать последнюю точку",
   "Close a panel, cancel": "Закрыть панель, отменить",
-  "This list": "Этот список"
+  "This list": "Этот список",
+  "Run after each save": "Запускать после каждого сохранения",
+  "{name} wrote {file}": "{name} записал {file}"
 }

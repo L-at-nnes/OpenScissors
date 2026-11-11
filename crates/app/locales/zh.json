@@ -2,7 +2,7 @@
   "1. Source folder": "1. 源文件夹",
   "2. Destination folder": "2. 目标文件夹",
   "3. Result format": "3. 结果格式",
-  "A plug-in is a program you installed. It runs only when you click Run, on the file you saved.": "插件是您安装的程序。只有当您点击“运行”时，它才会对您保存的文件运行。",
+  "A plug-in is a program you installed. It runs only when you click Run, or after each save if you ask for it, on the file you saved.": "插件是您安装的程序。只有当您点击“运行”时，或在您要求时于每次保存后，它才会对您保存的文件运行。",
   "AI models": "AI 模型",
   "Add": "添加",
   "Add your own: put model.onnx and a model.json in a new folder there.": "添加您自己的模型：在那里新建一个文件夹，放入 model.onnx 和 model.json。",
@@ -326,5 +326,7 @@
   "Apply the smart selection": "应用智能选择",
   "Remove the last point": "移除最后一个点",
   "Close a panel, cancel": "关闭面板，取消",
-  "This list": "此列表"
+  "This list": "此列表",
+  "Run after each save": "每次保存后运行",
+  "{name} wrote {file}": "{name} 已写入 {file}"
 }

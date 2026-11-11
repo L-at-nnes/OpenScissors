@@ -774,6 +774,13 @@ export component SettingsDialog inherits Frame {
                     Backend.plugin-toggle(i, v);
                 }
             }
+            if pl.enabled: SwitchRow {
+                label: @tr("Run after each save");
+                checked: pl.after-save;
+                toggled(v) => {
+                    Backend.plugin-after-save(i, v);
+                }
+            }
             if pl.enabled: Btn {
                 text: @tr("Run on the last saved file");
                 enabled: Backend.can-run-plugin;
