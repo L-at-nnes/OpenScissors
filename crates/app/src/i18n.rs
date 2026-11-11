@@ -7,10 +7,28 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
-pub const LOCALES: &[(&str, &str)] = &[("en", "English"), ("fr", "Français"), ("de", "Deutsch"), ("ru", "Русский")];
+pub const LOCALES: &[(&str, &str)] = &[
+    ("en", "English"),
+    ("fr", "Français"),
+    ("de", "Deutsch"),
+    ("es", "Español"),
+    ("it", "Italiano"),
+    ("pt-BR", "Português (Brasil)"),
+    ("ru", "Русский"),
+    ("zh", "简体中文"),
+    ("ja", "日本語"),
+];
 
-const SOURCES: &[(&str, &str)] =
-    &[("fr", include_str!("../locales/fr.json")), ("de", include_str!("../locales/de.json")), ("ru", include_str!("../locales/ru.json"))];
+const SOURCES: &[(&str, &str)] = &[
+    ("fr", include_str!("../locales/fr.json")),
+    ("de", include_str!("../locales/de.json")),
+    ("es", include_str!("../locales/es.json")),
+    ("it", include_str!("../locales/it.json")),
+    ("pt-BR", include_str!("../locales/pt-BR.json")),
+    ("ru", include_str!("../locales/ru.json")),
+    ("zh", include_str!("../locales/zh.json")),
+    ("ja", include_str!("../locales/ja.json")),
+];
 
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
 
@@ -25,8 +43,9 @@ pub fn resolve(tag: &str) -> &'static str {
     if let Some((code, _)) = LOCALES.iter().find(|(c, _)| c.eq_ignore_ascii_case(&tag)) {
         return code;
     }
-    let base = tag.split('-').next().unwrap_or("").to_ascii_lowercase();
-    LOCALES.iter().find(|(c, _)| c.eq_ignore_ascii_case(&base)).map(|(c, _)| *c).unwrap_or("en")
+    // Otherwise the same language from another country: pt-PT gives pt-BR, zh-TW gives zh.
+    let base = |t: &str| t.split('-').next().unwrap_or("").to_ascii_lowercase();
+    LOCALES.iter().find(|(c, _)| base(c) == base(&tag)).map(|(c, _)| *c).unwrap_or("en")
 }
 
 /// Index in [`LOCALES`] of the locale for a setting ("auto" follows the system), and its code.
@@ -36,6 +55,20 @@ pub fn apply(setting: &str) -> &'static str {
     let idx = LOCALES.iter().position(|(c, _)| *c == code).unwrap_or(0);
     CURRENT.store(idx, Ordering::Relaxed);
     code
+}
+
+/// The font of the interface for the language `code`: Chinese and Japanese each need a font of their own (the
+/// fallback of the system font lacks the characters of one or the other).
+pub fn font_family(code: &str) -> &'static str {
+    match code {
+        "zh" if cfg!(windows) => "Microsoft YaHei UI",
+        "zh" if cfg!(target_os = "macos") => "PingFang SC",
+        "zh" => "Noto Sans CJK SC",
+        "ja" if cfg!(windows) => "Yu Gothic UI",
+        "ja" if cfg!(target_os = "macos") => "Hiragino Sans",
+        "ja" => "Noto Sans CJK JP",
+        _ => "Segoe UI",
+    }
 }
 
 pub fn code() -> &'static str {
@@ -384,8 +417,10 @@ mod tests {
         assert_eq!(resolve("fr-CA"), "fr");
         assert_eq!(resolve("de_AT"), "de");
         assert_eq!(resolve("ru-RU"), "ru");
-        assert_eq!(resolve("pt-PT"), "en"); // not translated: English
-        assert_eq!(resolve("zh-CN"), "en");
+        assert_eq!(resolve("pt-PT"), "pt-BR", "the same language from another country");
+        assert_eq!((resolve("pt-br"), resolve("es-MX"), resolve("it-IT")), ("pt-BR", "es", "it"));
+        assert_eq!((resolve("zh-CN"), resolve("zh-Hans-CN"), resolve("ja-JP")), ("zh", "zh", "ja"));
+        assert_eq!(resolve("ko-KR"), "en", "not translated: English");
         assert_eq!(resolve("EN-us"), "en");
     }
 }

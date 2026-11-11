@@ -595,6 +595,7 @@ impl Ctl {
     fn sync_menu(self: &Arc<Self>, ui: &MainWindow) {
         let b = ui.global::<Backend>();
         let s = self.st.settings.guard().clone();
+        b.set_font_family(i18n::font_family(i18n::code()).into());
         b.set_jpeg_quality(s.jpeg_quality as i32);
         b.set_export16(s.export_16bit);
         b.set_export_dpi(i32::from(s.export_dpi));

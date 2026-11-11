@@ -93,6 +93,8 @@ export global Backend {
     // -- document
     in property <bool> has-doc;
     in property <string> doc-title;
+    // The font of the interface, which depends on the language (Chinese and Japanese need their own).
+    in property <string> font-family: "Segoe UI";
     in property <bool> can-undo;
     in property <bool> can-redo;
     in property <ParamsV> p;
