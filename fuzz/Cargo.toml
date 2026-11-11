@@ -1,0 +1,45 @@
+# Fuzz targets for the readers of outside files (cargo-fuzz, nightly): `cargo +nightly fuzz run <target>`.
+# A workspace of its own, so that the main build and its tests never need libFuzzer.
+[package]
+name = "openscissors-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+openscissors-core = { path = "../crates/core" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "decode_image"
+path = "fuzz_targets/decode_image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "load_project"
+path = "fuzz_targets/load_project.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "marks"
+path = "fuzz_targets/marks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "settings"
+path = "fuzz_targets/settings.rs"
+test = false
+doc = false
+bench = false

@@ -5,6 +5,7 @@ on:
   schedule:
     # New advisories appear without any commit: look again every Monday.
     - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 jobs:
   test:
@@ -108,3 +109,24 @@ jobs:
         with:
           name: openscissors-windows-portable
           path: dist/OpenScissors/**/*
+
+  fuzz:
+    # The readers of outside files (pictures, projects, marks, settings) get random input for a few minutes each,
+    # every week and on demand. An input that crashes one is kept as an artifact (see CONTRIBUTING.md).
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - name: Fuzz each target for two minutes
+        run: |
+          for target in decode_image load_project marks settings; do
+            cargo fuzz run "$target" -- -max_total_time=120 -rss_limit_mb=4096 -max_len=1048576
+          done
+      - name: Keep the inputs that failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts

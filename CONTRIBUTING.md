@@ -13,6 +13,15 @@ Commit messages: `type(scope): short description` (`feat`, `fix`, `refactor`, `d
 
 The CI also opens the real window on Linux (xvfb) after the tests: `tests/smoke.json` is a selftest scenario on `tests/data/synthetic_cutout.png`, and the snapshots are kept as an artifact of the run.
 
+## Fuzzing
+
+`fuzz/` holds fuzz targets for every reader of outside files: `decode_image` (any picture format), `load_project`
+(`.osproj`), `marks` (`.psm`) and `settings` (`settings.json`). They need a nightly toolchain and cargo-fuzz:
+`cargo install cargo-fuzz`, then `cargo +nightly fuzz run decode_image` (stop it with Ctrl+C, or add
+`-- -max_total_time=300`). An input that makes a target crash lands in `fuzz/artifacts/<target>/`; replay it with
+`cargo +nightly fuzz run <target> <file>` and turn it into a test once fixed. The `fuzz` job of CI runs each target for
+two minutes every Monday and on demand, and keeps such inputs as an artifact.
+
 ## Releasing
 
 1. Bump `version` in `Cargo.toml` (and `Cargo.lock`, by building once), commit it: `chore(release): bump version to X.Y.Z`.
