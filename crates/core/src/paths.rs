@@ -7,11 +7,12 @@ use std::path::{Path, PathBuf};
 /// The folder of the application:
 /// 1. `OPENSCISSORS_HOME` when it is set;
 /// 2. `portable-dev/` at the top of the source tree in a debug build;
-/// 3. the folder of the executable (the portable layout), when it can be written;
-/// 4. otherwise a folder in the user's profile (a read-only drive, Program Files).
+/// 3. the folder of the executable (the portable layout), when it can be written and is not inside a macOS
+///    application bundle (writing there would break its signature);
+/// 4. otherwise a folder in the user's profile (a read-only drive, Program Files, an AppImage, `OpenScissors.app`).
 pub fn root() -> PathBuf {
     let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_else(|| PathBuf::from("."));
-    let writable = is_writable(&exe_dir);
+    let writable = !in_app_bundle(&exe_dir) && is_writable(&exe_dir);
     pick_root(std::env::var_os("OPENSCISSORS_HOME"), cfg!(debug_assertions), exe_dir, writable)
 }
 
@@ -23,6 +24,11 @@ fn pick_root(home: Option<OsString>, debug: bool, exe_dir: PathBuf, exe_dir_writ
         _ if exe_dir_writable => exe_dir,
         _ => fallback_dir(),
     }
+}
+
+/// The executable is in `Something.app/Contents/MacOS`.
+fn in_app_bundle(exe_dir: &Path) -> bool {
+    exe_dir.ends_with("Contents/MacOS") && exe_dir.parent().and_then(Path::parent).and_then(Path::extension).is_some_and(|e| e == "app")
 }
 
 fn is_writable(dir: &Path) -> bool {
@@ -58,6 +64,13 @@ mod tests {
         assert_eq!(pick_root(Some(OsString::new()), false, exe.clone(), true), exe, "an empty variable counts as unset");
         let fallback = pick_root(None, false, exe.clone(), false);
         assert!(fallback.ends_with("OpenScissors") && fallback != exe, "a read-only folder: the profile, {fallback:?}");
+    }
+
+    #[test]
+    fn a_macos_application_bundle_is_recognised() {
+        assert!(in_app_bundle(Path::new("/Applications/OpenScissors.app/Contents/MacOS")));
+        assert!(!in_app_bundle(Path::new("/Users/me/OpenScissors")), "the portable folder");
+        assert!(!in_app_bundle(Path::new("/Users/me/Contents/MacOS")), "not in a .app");
     }
 
     #[test]
