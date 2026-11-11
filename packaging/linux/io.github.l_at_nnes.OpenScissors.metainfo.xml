@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.l_at_nnes.OpenScissors</id>
+  <name>OpenScissors</name>
+  <summary>Remove the background of a photo, offline</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <description>
+    <p>
+      OpenScissors cuts out the subject of a photo with an AI model that runs on your computer, then lets you
+      correct the mask with a brush, change the background, add a shadow, crop and export. Nothing is sent anywhere.
+    </p>
+    <p>A whole folder can be processed at once, and a command line tool does the same from a script.</p>
+  </description>
+  <launchable type="desktop-id">io.github.l_at_nnes.OpenScissors.desktop</launchable>
+  <url type="homepage">https://github.com/L-at-nnes/OpenScissors</url>
+  <url type="bugtracker">https://github.com/L-at-nnes/OpenScissors/issues</url>
+  <categories>
+    <category>Graphics</category>
+    <category>Photography</category>
+  </categories>
+  <provides>
+    <binary>OpenScissors</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="2.0.0" date="2026-11-18"/>
+  </releases>
+</component>

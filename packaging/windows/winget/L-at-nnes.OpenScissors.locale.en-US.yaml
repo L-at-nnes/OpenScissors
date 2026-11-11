@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: L-at-nnes.OpenScissors
+PackageVersion: 2.0.0
+PackageLocale: en-US
+Publisher: OpenScissors
+PackageName: OpenScissors
+License: Apache-2.0
+LicenseUrl: https://github.com/L-at-nnes/OpenScissors/blob/main/LICENSE
+PackageUrl: https://github.com/L-at-nnes/OpenScissors
+ShortDescription: Offline background remover
+Description: >-
+  OpenScissors cuts out the subject of a photo with an AI model that runs on your computer, then lets you correct the
+  mask with a brush, change the background, add a shadow, crop and export. A whole folder can be processed at once,
+  and a command line tool does the same from a script. Nothing is sent anywhere.
+Tags:
+  - background-remover
+  - photo
+  - image-editing
+  - ai
+  - offline
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

@@ -75,6 +75,8 @@ Windows 10/11 (64 bits), Linux x64 et macOS sur Apple Silicon ont chacun leur bu
 2. Lancez `OpenScissors.exe` (`OpenScissors` sous Linux et macOS).
 3. Ouvrez une image (le bouton, <kbd>Ctrl</kbd>+<kbd>O</kbd>, glisser-déposer, coller avec <kbd>Ctrl</kbd>+<kbd>V</kbd>, ou `OpenScissors.exe photo.jpg`).
 
+À partir de la 2.0, une release reçoit aussi une AppImage pour Linux et un `OpenScissors.app` pour macOS, qui gardent leurs fichiers dans votre profil ; des manifestes Scoop et winget sont prêts dans `packaging/`. [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) les explique, ainsi que la signature des builds.
+
 Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fournis). Cliquez sur la pastille en haut, choisissez-en un, **Télécharger**. Le fichier est vérifié par SHA-256 avant usage. Un téléchargement coupé (annulé, connexion perdue, ou plus rien reçu pendant une minute) reprend là où il s'était arrêté au prochain **Télécharger** ; un fichier déjà présent est revérifié avant d'être utilisé.
 
 | Modèle | Téléchargement | Mémoire | Pour |

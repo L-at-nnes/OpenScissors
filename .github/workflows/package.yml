@@ -1,0 +1,57 @@
+name: package
+
+# The installable forms of a release, beside the portable zips of `release.yml`: an AppImage for Linux and an
+# OpenScissors.app for macOS (signed ad hoc; see docs/DISTRIBUTION.md for a Developer ID and notarization).
+# A workflow of its own: a failure here never stops a release. "Run workflow" builds them as artifacts only.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  appimage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev python3-pil
+      - run: bash packaging/linux/build-appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openscissors-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.AppImage --repo "$GITHUB_REPOSITORY"
+
+  macos-app:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: bash packaging/macos/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openscissors-macos-app
+          path: dist/OpenScissors-*-macos-arm64.zip
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/OpenScissors-*-macos-arm64.zip --repo "$GITHUB_REPOSITORY"

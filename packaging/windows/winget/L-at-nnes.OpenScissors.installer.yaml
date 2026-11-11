@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+# The portable zip of the release: nothing to install, winget unpacks it and adds the two commands.
+PackageIdentifier: L-at-nnes.OpenScissors
+PackageVersion: 2.0.0
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: OpenScissors\OpenScissors.exe
+    PortableCommandAlias: openscissors
+  - RelativeFilePath: OpenScissors\openscissors-cli.exe
+    PortableCommandAlias: openscissors-cli
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/L-at-nnes/OpenScissors/releases/download/v2.0.0/OpenScissors-2.0.0-portable-win-x64.zip
+    InstallerSha256: REPLACE-WITH-THE-SHA256-OF-THE-ZIP-FROM-SHA256SUMS.txt
+ManifestType: installer
+ManifestVersion: 1.6.0

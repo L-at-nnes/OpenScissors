@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=OpenScissors
+GenericName=Background remover
+Comment=Remove the background of a photo, offline
+Comment[fr]=Détourer une photo, hors ligne
+Comment[de]=Den Hintergrund eines Fotos entfernen, offline
+Comment[es]=Quitar el fondo de una foto, sin conexión
+Exec=OpenScissors %f
+Icon=io.github.l_at_nnes.OpenScissors
+Terminal=false
+Categories=Graphics;Photography;RasterGraphics;
+MimeType=image/png;image/jpeg;image/webp;image/tiff;image/bmp;image/gif;
+Keywords=background;remove;cut out;mask;photo;
+StartupWMClass=OpenScissors
