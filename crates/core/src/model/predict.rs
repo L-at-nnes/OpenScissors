@@ -89,8 +89,8 @@ impl GpuProvider {
 }
 
 /// The providers this build can try, best first.
+#[allow(unused_mut, clippy::vec_init_then_push)] // the pushes depend on the platform and the features
 fn gpu_providers() -> Vec<GpuProvider> {
-    #[allow(unused_mut, clippy::vec_init_then_push)] // the pushes depend on the platform and the features
     let mut list = Vec::new();
     #[cfg(feature = "cuda")]
     list.push(GpuProvider::Cuda);
