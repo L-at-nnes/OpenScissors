@@ -26,6 +26,9 @@ pub struct Settings {
     /// "Save Current as Defaults" target; used for new documents and for batch processing.
     pub defaults: Params,
     pub marker_size: u32,
+    /// The marker size is in pixels of the screen (the brush keeps its size on screen whatever the zoom), not of the
+    /// picture.
+    pub marker_on_screen: bool,
     /// "Group by Color Similarity" stays on between sessions.
     pub group_by_color: bool,
     pub jpeg_quality: u8,
@@ -62,6 +65,7 @@ impl Default for Settings {
             chosen_model: None,
             defaults: Params::default(),
             marker_size: 30,
+            marker_on_screen: false,
             group_by_color: false,
             jpeg_quality: 95,
             export_16bit: true,

@@ -171,6 +171,8 @@ export global Backend {
     in property <bool> export16: true;
     // Print resolution written in PNG, JPEG and TIFF exports, 0 = none.
     in property <int> export-dpi;
+    // The marker size is in pixels of the screen, whatever the zoom.
+    in property <bool> marker-on-screen;
     // Largest size of a JPEG, WebP or AVIF export in KB, 0 = none.
     in property <int> export-max-kb;
     in property <int> lang-index;
@@ -270,6 +272,7 @@ export global Backend {
     callback set-language(int);
     // 0 = the system, 1 = dark, 2 = light.
     callback set-theme(int);
+    callback set-marker-on-screen(bool);
     callback plugin-toggle(int, bool);
     callback plugin-run(int);
     callback plugin-after-save(int, bool);

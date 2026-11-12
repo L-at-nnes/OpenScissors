@@ -35,7 +35,7 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 ## Ce que ça fait
 
 - **Détourage automatique** dès l'ouverture d'une image. Le résultat s'affiche à côté de l'original ; les deux vues zooment et se déplacent ensemble.
-- **Correction au pinceau** : marquer ce qu'il faut garder, effacer ce qui dépasse, et un outil **cheveux** pour des bords doux, calculé en pleine résolution autour des traits pour que les mèches fines restent nettes.
+- **Correction au pinceau** : marquer ce qu'il faut garder, effacer ce qui dépasse, et un outil **cheveux** pour des bords doux, calculé en pleine résolution autour des traits pour que les mèches fines restent nettes. La taille du pinceau est en pixels de l'image, ou de l'écran quel que soit le zoom (*Réglages*).
 - **Corrections du masque en un clic** : boucher les trous, retirer les taches, garder la plus grande partie, durcir les bords flous ou inverser le masque, chacune annulable en une étape.
 - **Grouper par couleur** (traits verts et rouges) quand l'IA hésite : les zones de couleur proche suivent vos traits.
 - **Sélection intelligente** : cliquez ce que vous voulez, clic droit ce que vous ne voulez pas, ou tracez un cadre (modèle SAM 2, léger). Un clic ambigu reçoit trois propositions (une partie, le tout, un entre-deux) : <kbd>Tab</kbd> passe de l'une à l'autre, <kbd>Entrée</kbd> applique celle affichée.

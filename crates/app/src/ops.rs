@@ -877,6 +877,14 @@ impl Ctl {
         self.refresh(R_MAIN | R_VIEW);
     }
 
+    /// Keep the brush its size on screen whatever the zoom (`on`), or in pixels of the picture.
+    pub fn set_marker_on_screen(self: &Arc<Self>, on: bool) {
+        self.ux.guard().marker_on_screen = on;
+        self.st.settings.guard().marker_on_screen = on;
+        self.save_settings();
+        self.refresh(R_MENU | R_VIEW);
+    }
+
     pub fn set_marker(self: &Arc<Self>, n: i32) {
         let n = n.clamp(1, 300) as u32;
         {

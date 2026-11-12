@@ -688,6 +688,13 @@ export component SettingsDialog inherits Frame {
                 Backend.set-theme(i);
             }
         }
+        SwitchRow {
+            label: @tr("Brush size on the screen, whatever the zoom");
+            checked: Backend.marker-on-screen;
+            toggled(v) => {
+                Backend.set-marker-on-screen(v);
+            }
+        }
         Divider { }
         Heading {
             text: @tr("Performance");

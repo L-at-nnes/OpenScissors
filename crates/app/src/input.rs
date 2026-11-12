@@ -233,7 +233,7 @@ impl Ctl {
                 }
             }
             if let Some(points) = ux.stroke.take() {
-                action = Action::Stroke(ux.tool, ux.marker, points);
+                action = Action::Stroke(ux.tool, ux.brush_width().round() as u32, points);
             }
             action
         };

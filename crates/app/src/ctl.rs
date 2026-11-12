@@ -123,6 +123,8 @@ pub struct Ux {
     pub doc: Option<DocState>,
     pub tool: Tool,
     pub marker: u32,
+    /// See [`openscissors_core::settings::Settings::marker_on_screen`].
+    pub marker_on_screen: bool,
     pub view: View,
     pub pane: (f64, f64),
     pub dpr: f64,
@@ -157,6 +159,17 @@ pub struct Ux {
     pub render_key: Option<String>,
     /// A new model was chosen: predict the open image again with it.
     pub repredict: bool,
+}
+
+impl Ux {
+    /// The width of a mark in pixels of the picture: the marker size, or the marker size on screen at this zoom.
+    pub fn brush_width(&self) -> f64 {
+        if self.marker_on_screen {
+            (self.marker as f64 / self.view.scale.max(1e-6)).max(1.0)
+        } else {
+            self.marker as f64
+        }
+    }
 }
 
 pub struct Ctl {
@@ -288,7 +301,10 @@ impl Ctl {
         let locale = st.settings.guard().locale.clone();
         let code = i18n::apply(&locale);
         let _ = slint::select_bundled_translation(code);
-        let marker = st.settings.guard().marker_size;
+        let (marker, marker_on_screen) = {
+            let s = st.settings.guard();
+            (s.marker_size, s.marker_on_screen)
+        };
         let current_doc = Arc::new(AtomicU64::new(0));
         let weak = ui.as_weak();
         let alive = current_doc.clone();
@@ -318,6 +334,7 @@ impl Ctl {
                 doc: None,
                 tool: Tool::Move,
                 marker,
+                marker_on_screen,
                 view: View::default(),
                 pane: (0.0, 0.0),
                 dpr: 1.0,
@@ -612,6 +629,7 @@ impl Ctl {
         b.set_font_family(i18n::font_family(i18n::code()).into());
         ui.global::<crate::Theme>().set_mode(theme_mode(&s.theme));
         b.set_jpeg_quality(s.jpeg_quality as i32);
+        b.set_marker_on_screen(s.marker_on_screen);
         b.set_export16(s.export_16bit);
         b.set_export_dpi(i32::from(s.export_dpi));
         b.set_export_max_kb(s.export_max_kb.min(i32::MAX as u32) as i32);
@@ -722,7 +740,7 @@ impl Ctl {
                     Tool::Hair => slint::Color::from_argb_u8(140, 240, 200, 40),
                     _ => slint::Color::from_argb_u8(115, 255, 255, 255),
                 };
-                (d, color, ux.marker as f32 * v.scale as f32)
+                (d, color, ux.brush_width() as f32 * v.scale as f32)
             }
             _ => (String::new(), slint::Color::from_argb_u8(0, 0, 0, 0), 1.0),
         };
@@ -761,7 +779,7 @@ impl Ctl {
                 b.set_brush_visible(true);
                 b.set_brush_x(x as f32);
                 b.set_brush_y(y as f32);
-                b.set_brush_d(ux.marker as f32 * v.scale as f32);
+                b.set_brush_d(ux.brush_width() as f32 * v.scale as f32);
             }
             _ => b.set_brush_visible(false),
         }
