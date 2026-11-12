@@ -13,6 +13,11 @@ use crate::types::{Image, Mask};
 /// Images with more than this many pixels are solved on a reduced copy (see [`working_size`]).
 const MAX_PIXELS: usize = 360_000;
 const SMALL_SIDE: usize = 600;
+/// Pixels of known foreground and background kept around the hair strokes, for the solve to lean on.
+const STROKE_MARGIN: usize = 48;
+/// The region around the strokes is solved at full resolution up to this many pixels, reduced less past it.
+const REGION_MAX_PIXELS: usize = 1_000_000;
+const REGION_SMALL_SIDE: usize = 800;
 /// Regularisation of the local colour model (colours in 0..1).
 const EPSILON: f64 = 1e-7;
 const CG_ITERATIONS: usize = 150;
@@ -258,14 +263,50 @@ fn solve(img: &[[f64; 3]], w: usize, h: usize, unknown: &[bool], known: &[f64], 
 /// Pixels with `alpha > 128` (after an optional feather blur) are certain foreground, the
 /// others certain background; the hair strokes are the unknown band where the soft alpha is
 /// estimated from the image colours.
+///
+/// Only the region around the strokes is solved, at full resolution when it is small enough (a hair band on a large
+/// photo keeps its single-pixel strands), on a copy reduced less than the whole picture would be otherwise.
 pub fn hair_matting(image: &Image, alpha: &Mask, hair: &Mask, feather: u32) -> Mask {
     let (w, h) = (image.w, image.h);
     if hair.is_empty_mask() {
         return alpha.clone();
     }
+    let strokes = Mask { w, h, data: hair.data.iter().map(|&v| if v > 0 { 255 } else { 0 }).collect() };
+    if let Some(bb) = crate::render::crop::alpha_bbox(&strokes) {
+        let (x0, y0) = ((bb.x0 as usize).saturating_sub(STROKE_MARGIN), (bb.y0 as usize).saturating_sub(STROKE_MARGIN));
+        let (x1, y1) = ((bb.x1 as usize + STROKE_MARGIN).min(w), (bb.y1 as usize + STROKE_MARGIN).min(h));
+        if (x1 - x0) * (y1 - y0) < w * h {
+            let (cw, ch) = (x1 - x0, y1 - y0);
+            let rows = |data: &[u8], ch_: usize| -> Vec<u8> {
+                (y0..y1).flat_map(|y| data[(y * w + x0) * ch_..(y * w + x1) * ch_].iter().copied()).collect()
+            };
+            let sub_img = Image { w: cw, h: ch, data: rows(&image.data, 3) };
+            let sub_alpha = Mask { w: cw, h: ch, data: rows(&alpha.data, 1) };
+            let sub_hair = Mask { w: cw, h: ch, data: rows(&hair.data, 1) };
+            if let Some(sub) = matte(&sub_img, &sub_alpha, &sub_hair, feather, REGION_MAX_PIXELS, REGION_SMALL_SIDE) {
+                let mut out = alpha.clone();
+                for y in y0..y1 {
+                    for x in x0..x1 {
+                        if hair.data[y * w + x] > 0 {
+                            out.data[y * w + x] = sub.data[(y - y0) * cw + x - x0];
+                        }
+                    }
+                }
+                return out;
+            }
+        }
+    }
+    // The strokes cover the picture, or their region holds only one side: the whole picture, reduced.
+    matte(image, alpha, hair, feather, MAX_PIXELS, SMALL_SIDE).unwrap_or_else(|| alpha.clone())
+}
+
+/// The matting of `image` inside `hair`, solved on a copy reduced past `max_pixels` (see [`working_size`]). `None`
+/// when there is nothing to solve: no stroke, or no known foreground or background around them.
+fn matte(image: &Image, alpha: &Mask, hair: &Mask, feather: u32, max_pixels: usize, small_side: usize) -> Option<Mask> {
+    let (w, h) = (image.w, image.h);
     let decided = if feather > 0 { box_blur_u8(&alpha.data, w, h, 1, feather as usize) } else { alpha.data.clone() };
 
-    let working = working_size(w, h, MAX_PIXELS, SMALL_SIDE);
+    let working = working_size(w, h, max_pixels, small_side);
     let reduced = working.is_some();
     let (sw, sh) = working.unwrap_or((w, h));
     let (small, dec_s, hair_s) = if reduced {
@@ -284,7 +325,7 @@ pub fn hair_matting(image: &Image, alpha: &Mask, hair: &Mask, feather: u32) -> M
     let has_fg = (0..sw * sh).any(|i| !unknown[i] && known[i] > 0.5);
     let has_bg = (0..sw * sh).any(|i| !unknown[i] && known[i] < 0.5);
     if !unknown.iter().any(|&u| u) || !has_fg || !has_bg {
-        return alpha.clone();
+        return None;
     }
 
     let img: Vec<[f64; 3]> = small.data.chunks_exact(3).map(|p| [p[0] as f64 / 255.0, p[1] as f64 / 255.0, p[2] as f64 / 255.0]).collect();
@@ -298,14 +339,14 @@ pub fn hair_matting(image: &Image, alpha: &Mask, hair: &Mask, feather: u32) -> M
                 out.data[i] = (v.clamp(0.0, 1.0) * 255.0).round() as u8;
             }
         }
-        return out;
+        return Some(out);
     }
     // Back to full resolution: guided refinement on the image edges, band by band, only around the hair strokes (the
     // only pixels kept), with the reach of the filter around them so that the result is the one of the whole picture.
     let low = Mask { w: sw, h: sh, data: soft.iter().map(|&v| (v * 255.0).round() as u8).collect() };
     let Some(bb) = crate::render::crop::alpha_bbox(&Mask { w, h, data: hair.data.iter().map(|&v| if v > 0 { 255 } else { 0 }).collect() })
     else {
-        return out;
+        return Some(out);
     };
     let reach = 2 * REFINE_RADIUS + 1;
     let (x0, y0) = ((bb.x0 as usize).saturating_sub(reach), (bb.y0 as usize).saturating_sub(reach));
@@ -327,7 +368,7 @@ pub fn hair_matting(image: &Image, alpha: &Mask, hair: &Mask, feather: u32) -> M
             }
         }
     }
-    out
+    Some(out)
 }
 
 /// Rows refined together by [`refine_in_bands`]. The filter's working buffers cost about 56 bytes per pixel of the
@@ -454,28 +495,43 @@ mod tests {
     }
 
     #[test]
-    fn refining_around_the_strokes_gives_the_result_of_the_whole_picture() {
-        // A short hair stroke on a large picture: only its surroundings are refined now.
-        let (w, h) = (900, 700);
-        let (img, alpha, mut hair, _) = ramp_scene(w, h, 400, 480);
-        hair.data.iter_mut().enumerate().for_each(|(i, v)| *v = if (300..360).contains(&(i / w)) { *v } else { 0 });
+    fn thin_strands_keep_their_width_when_the_strokes_cover_a_small_part_of_a_large_picture() {
+        // One-pixel light strands every 4 px on a dark background, between a light subject and the background, on a
+        // picture far over the reduction threshold: around the strokes it is solved at full size, so a strand stays a
+        // strand instead of a grey blur.
+        let (w, h) = (1600usize, 1200usize);
+        let mut img = Image::new(w, h);
+        let mut alpha = Mask::new(w, h);
+        let mut hair = Mask::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                let fg = x >= 820 || (x >= 760 && x % 4 == 0); // the subject, then its strands
+                let v = if fg { 235 } else { 25 };
+                img.data[(y * w + x) * 3..(y * w + x) * 3 + 3].copy_from_slice(&[v, v, v]);
+                alpha.data[y * w + x] = if x >= 790 { 255 } else { 0 };
+                if (500..700).contains(&y) && (760..820).contains(&x) {
+                    hair.data[y * w + x] = 255;
+                }
+            }
+        }
+        let t = std::time::Instant::now();
         let out = hair_matting(&img, &alpha, &hair, 0);
-        // The same computation over the whole picture, as it was done before.
-        let decided = alpha.clone();
-        let (sw, sh) = working_size(w, h, MAX_PIXELS, SMALL_SIDE).unwrap();
-        let small = resize_image(&img, sw, sh, Interp::Area);
-        let dec_s = resize_mask(&decided, sw, sh, Interp::Area);
-        let hair_s = resize_mask(&hair, sw, sh, Interp::Area);
-        let unknown: Vec<bool> = hair_s.data.iter().map(|&v| v > 0).collect();
-        let known: Vec<f64> = dec_s.data.iter().map(|&v| if v > 128 { 1.0 } else { 0.0 }).collect();
-        let pix: Vec<[f64; 3]> =
-            small.data.chunks_exact(3).map(|p| [p[0] as f64 / 255.0, p[1] as f64 / 255.0, p[2] as f64 / 255.0]).collect();
-        let guess: Vec<f64> = dec_s.data.iter().map(|&v| v as f64 / 255.0).collect();
-        let soft = solve(&pix, sw, sh, &unknown, &known, &guess);
-        let low = Mask { w: sw, h: sh, data: soft.iter().map(|&v| (v * 255.0).round() as u8).collect() };
-        let whole = refine_in_bands(&img.gray().data, &resize_mask(&low, w, h, Interp::Bilinear).data, w, h, REFINE_BAND_ROWS);
-        let worst = (0..w * h).filter(|&i| hair.data[i] > 0).map(|i| out.data[i].abs_diff(whole[i])).max().unwrap();
-        assert!(worst <= 2, "differs from the whole-picture result by {worst}");
+        eprintln!("hair matting in a region of {w}x{h}: {:?}", t.elapsed());
+        let (mut on, mut off, mut n) = (0f64, 0f64, 0f64);
+        for y in 520..680 {
+            for x in 768..800 {
+                let a = out.data[y * w + x] as f64 / 255.0;
+                if x % 4 == 0 {
+                    on += a;
+                } else {
+                    off += a;
+                }
+                n += 1.0;
+            }
+        }
+        let (on, off) = (on / (n / 4.0), off / (n * 3.0 / 4.0));
+        assert!(on > 0.7 && off < 0.3, "strands {on:.2}, between them {off:.2}");
+        assert_eq!(out.data[100 * w + 100], 0, "outside the strokes: untouched");
     }
 
     #[test]

@@ -9,18 +9,18 @@ Reproduce: `cargo run --release -p openscissors-core --example perf_audit -- <mo
 |---|---|---|
 | Guided upsampling to full format, 12 Mpx | <= 500 ms | 291 ms |
 | Graph-cut (reduced to 600 px), 12 Mpx | <= 800 ms | 504 ms |
-| Hair matting, 12 Mpx | <= 1500 ms | 953 ms |
+| Hair matting, 12 Mpx (a band around a subject 2000 px wide) | <= 1500 ms | 1042 ms |
 | Preview after a stroke, both views, 12 Mpx | <= 50 ms | 26 ms |
 | Pan / zoom redraw of the result view, 12 Mpx | <= 50 ms | 19 ms |
 | Full-resolution export with shadow, 12 Mpx | <= 3000 ms | 219 ms |
-| Textured fill behind a subject covering a quarter of the picture, 12 Mpx (in the background) | <= 3000 ms | 2334 ms |
+| Textured fill behind a subject covering a quarter of the picture, 12 Mpx (in the background) | <= 3000 ms | 1771 ms |
 | Peak heap, 24 Mpx edit and export | <= 2 GB | 0.47 GB |
 | IS-Net inference, 1024 px image | <= 1000 ms | 768 ms |
 
 Not in the table: prediction end to end on a 12 Mpx photo with IS-Net takes about 1.1 s (inference plus
 resizing and the guided upsampling above).
 
-Hair matting refines its mask in bands of 128 rows, so the guided filter costs memory per band, not per picture
+Hair matting solves only the region around the hair strokes: at full resolution up to 1 megapixel (a band on part of a head keeps its one-pixel strands), reduced to an 800 px side past that (the band of the table, around a whole subject), instead of reducing the whole picture to 0.36 megapixel as before. It refines its mask in bands of 128 rows, so the guided filter costs memory per band, not per picture
 (it was the one big buffer left on photos of 33 megapixels and more); on 12 Mpx the bands cost a few percent of time.
 The export renders only the cropped region. Figures re-measured after these changes.
 
