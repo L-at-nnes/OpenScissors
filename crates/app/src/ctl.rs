@@ -270,6 +270,15 @@ fn file_name(path: &str) -> String {
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
 }
 
+/// The index of the colour setting in [`crate::Theme`]: 0 follows the system, 1 dark (the default), 2 light.
+pub fn theme_mode(setting: &str) -> i32 {
+    match setting {
+        "auto" => 0,
+        "light" => 2,
+        _ => 1,
+    }
+}
+
 impl Ctl {
     pub fn new(ui: &MainWindow) -> Arc<Self> {
         let st = Arc::new(AppState::new());
@@ -596,6 +605,7 @@ impl Ctl {
         let b = ui.global::<Backend>();
         let s = self.st.settings.guard().clone();
         b.set_font_family(i18n::font_family(i18n::code()).into());
+        ui.global::<crate::Theme>().set_mode(theme_mode(&s.theme));
         b.set_jpeg_quality(s.jpeg_quality as i32);
         b.set_export16(s.export_16bit);
         b.set_export_dpi(i32::from(s.export_dpi));

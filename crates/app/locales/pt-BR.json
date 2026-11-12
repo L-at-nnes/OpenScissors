@@ -328,5 +328,8 @@
   "Close a panel, cancel": "Fechar um painel, cancelar",
   "This list": "Esta lista",
   "Run after each save": "Executar após cada salvamento",
-  "{name} wrote {file}": "{name} gravou {file}"
+  "{name} wrote {file}": "{name} gravou {file}",
+  "Appearance": "Aparência",
+  "Dark": "Escuro",
+  "Light": "Claro"
 }

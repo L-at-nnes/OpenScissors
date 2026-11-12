@@ -268,6 +268,8 @@ export global Backend {
     callback set-export-dpi(int);
     callback set-export-max-kb(int);
     callback set-language(int);
+    // 0 = the system, 1 = dark, 2 = light.
+    callback set-theme(int);
     callback plugin-toggle(int, bool);
     callback plugin-run(int);
     callback plugin-after-save(int, bool);

@@ -1,25 +1,31 @@
-// Design tokens: a quiet, dark, neutral palette (the photo is the interface) with one cool accent; semantic colours
-// only for the tools. The values are the sRGB conversion of OKLCH tokens, tinted toward the cool hue 255.
+import { Palette } from "std-widgets.slint";
+
+// Design tokens: a quiet, neutral palette (the photo is the interface) with one cool accent; semantic colours only for
+// the tools. Dark by default; the light variant keeps the same hues, darker accents for contrast on white. The values
+// are the sRGB conversion of OKLCH tokens, tinted toward the cool hue 255.
 export global Theme {
-    out property <color> bg: #0e1114;
-    out property <color> canvas: #090b0e;
-    out property <color> surface-1: #171a1e;
-    out property <color> surface-2: #202328;
-    out property <color> surface-3: #2a2e33;
-    out property <color> line: #33373c;
-    out property <color> line-strong: #494d54;
-    out property <color> text: #eceff2;
-    out property <color> text-2: #aeb1b6;
-    out property <color> text-3: #92959a;
-    out property <color> accent: #6fb8f5;
-    out property <color> accent-strong: #499fe3;
-    out property <color> accent-ink: #0a131a;
-    out property <color> accent-soft: #1b354b;
-    out property <color> keep: #4fce74;
-    out property <color> remove: #f75d59;
-    out property <color> hair: #e9c944;
-    out property <color> warn: #ebbd57;
-    out property <color> danger: #f66d67;
+    // 0 = follow the system, 1 = dark, 2 = light (set from the settings).
+    in-out property <int> mode: 1;
+    out property <bool> light: root.mode == 2 || (root.mode == 0 && Palette.color-scheme == ColorScheme.light);
+    out property <color> bg: root.light ? #f3f4f6 : #0e1114;
+    out property <color> canvas: root.light ? #e4e6e9 : #090b0e;
+    out property <color> surface-1: root.light ? #ffffff : #171a1e;
+    out property <color> surface-2: root.light ? #f8f9fa : #202328;
+    out property <color> surface-3: root.light ? #eceef1 : #2a2e33;
+    out property <color> line: root.light ? #d8dbdf : #33373c;
+    out property <color> line-strong: root.light ? #b6bac0 : #494d54;
+    out property <color> text: root.light ? #15181c : #eceff2;
+    out property <color> text-2: root.light ? #454a51 : #aeb1b6;
+    out property <color> text-3: root.light ? #686d75 : #92959a;
+    out property <color> accent: root.light ? #1f74c4 : #6fb8f5;
+    out property <color> accent-strong: root.light ? #1763a8 : #499fe3;
+    out property <color> accent-ink: root.light ? #ffffff : #0a131a;
+    out property <color> accent-soft: root.light ? #d5e6f6 : #1b354b;
+    out property <color> keep: root.light ? #2a9a4b : #4fce74;
+    out property <color> remove: root.light ? #d23a35 : #f75d59;
+    out property <color> hair: root.light ? #a8850b : #e9c944;
+    out property <color> warn: root.light ? #9c6d00 : #ebbd57;
+    out property <color> danger: root.light ? #cc3d37 : #f66d67;
 
     out property <length> r-sm: 4px;
     out property <length> r-md: 6px;

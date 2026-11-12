@@ -274,7 +274,7 @@ fn main() {
 
 /// A scenario written as JSON: a list of steps such as
 /// `{"click":[x,y]}`, `{"rclick":[x,y]}`, `{"drag":[x0,y0,x1,y1]}`, `{"key":"z","ctrl":true}`,
-/// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"param":["background.mode","original"]}`, `{"language":n}` (0 = the system, then the list), `{"drop_folder":"dir"}`, `{"tab":n}`, `{"popover":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
+/// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"param":["background.mode","original"]}`, `{"language":n}` (0 = the system, then the list), `{"theme":n}` (0 system, 1 dark, 2 light), `{"drop_folder":"dir"}`, `{"tab":n}`, `{"popover":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
 fn run_script(d: &Driver, path: &str) {
     use slint::platform::{Key, PointerEventButton, WindowEvent};
     let steps: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(path).expect("script")).expect("json");
@@ -359,6 +359,9 @@ fn run_script(d: &Driver, path: &str) {
         } else if let Some(dir) = step["drop_folder"].as_str() {
             d.ctl.batch_from_folder(std::path::PathBuf::from(dir));
             d.settle(500);
+        } else if let Some(i) = step["theme"].as_i64() {
+            d.ui(move |c, _| c.set_theme(i as i32));
+            d.settle(400);
         } else if let Some(i) = step["language"].as_u64() {
             d.ui(move |c, _| c.set_language(i as usize));
             d.settle(400);

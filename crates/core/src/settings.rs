@@ -47,6 +47,8 @@ pub struct Settings {
     pub accelerator: Accelerator,
     /// Interface language: "en" (default), another code such as "fr", or "auto" (follow the system).
     pub locale: String,
+    /// Colours of the interface: "dark" (default), "light", or "auto" (follow the system).
+    pub theme: String,
     pub last_dir: Option<String>,
     pub batch_src: Option<String>,
     pub batch_dst: Option<String>,
@@ -71,6 +73,7 @@ impl Default for Settings {
             fast_memory: false,
             accelerator: Accelerator::Cpu,
             locale: "en".into(),
+            theme: "dark".into(),
             last_dir: None,
             batch_src: None,
             batch_dst: None,

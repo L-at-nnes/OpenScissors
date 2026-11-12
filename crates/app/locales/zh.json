@@ -328,5 +328,8 @@
   "Close a panel, cancel": "关闭面板，取消",
   "This list": "此列表",
   "Run after each save": "每次保存后运行",
-  "{name} wrote {file}": "{name} 已写入 {file}"
+  "{name} wrote {file}": "{name} 已写入 {file}",
+  "Appearance": "外观",
+  "Dark": "深色",
+  "Light": "浅色"
 }

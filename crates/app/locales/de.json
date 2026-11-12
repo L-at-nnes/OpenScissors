@@ -328,5 +328,8 @@
   "Close a panel, cancel": "Ein Fenster schließen, abbrechen",
   "This list": "Diese Liste",
   "Run after each save": "Nach jedem Speichern ausführen",
-  "{name} wrote {file}": "{name} hat {file} geschrieben"
+  "{name} wrote {file}": "{name} hat {file} geschrieben",
+  "Appearance": "Darstellung",
+  "Dark": "Dunkel",
+  "Light": "Hell"
 }

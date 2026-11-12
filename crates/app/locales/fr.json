@@ -328,5 +328,8 @@
   "Close a panel, cancel": "Fermer un panneau, annuler",
   "This list": "Cette liste",
   "Run after each save": "Lancer après chaque enregistrement",
-  "{name} wrote {file}": "{name} a écrit {file}"
+  "{name} wrote {file}": "{name} a écrit {file}",
+  "Appearance": "Apparence",
+  "Dark": "Sombre",
+  "Light": "Clair"
 }

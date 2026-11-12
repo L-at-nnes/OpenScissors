@@ -328,5 +328,8 @@
   "Close a panel, cancel": "パネルを閉じる・キャンセル",
   "This list": "この一覧",
   "Run after each save": "保存のたびに実行",
-  "{name} wrote {file}": "{name} が {file} を書き出しました"
+  "{name} wrote {file}": "{name} が {file} を書き出しました",
+  "Appearance": "外観",
+  "Dark": "ダーク",
+  "Light": "ライト"
 }

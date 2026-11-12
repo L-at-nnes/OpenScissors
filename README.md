@@ -53,6 +53,7 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 - **Nothing lost**: the work in progress is saved every minute; if the application or the PC stops, it is offered back at the next start. Closing a picture that has marks offers to save a project, which keeps them (an exported picture does not).
 - **Copy and paste**: <kbd>Ctrl</kbd>+<kbd>V</kbd> opens the picture on the clipboard, keeping its transparency if it is already cut out (or an image file copied in your file manager); one click, or <kbd>Ctrl</kbd>+<kbd>C</kbd>, copies the result with its transparency.
 - **Batch mode** for a whole folder: drop the folder on the window, use your saved settings or those of the image you are editing, save as PNG, JPEG, WebP or AVIF. Subfolders can be included (each result goes to the same subfolder), the pictures already done can be left alone (to finish an interrupted batch), a suffix can be added to the names (`photo-cutout.png`) and a JSON report saved next to the results. A suffix with `--suffix` in the command line too.
+- **Dark or light**, or following the system (*Settings*, *Appearance*).
 - **9 languages**: English (default), Français, Deutsch, Español, Italiano, Português (Brasil), Русский, 简体中文, 日本語. Chinese and Japanese use a font of their own (Microsoft YaHei UI / Yu Gothic UI on Windows, PingFang SC / Hiragino Sans on macOS, Noto Sans CJK on Linux).
 - **Plug-ins** (optional, off until you turn them on): small programs that run on the file you just saved.
 

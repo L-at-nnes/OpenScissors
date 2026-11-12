@@ -1176,6 +1176,18 @@ impl Ctl {
         self.refresh(R_ALL);
     }
 
+    /// The colours of the interface: 0 follows the system, 1 dark, 2 light.
+    pub fn set_theme(self: &Arc<Self>, index: i32) {
+        self.st.settings.guard().theme = match index {
+            0 => "auto",
+            2 => "light",
+            _ => "dark",
+        }
+        .into();
+        self.save_settings();
+        self.refresh(R_MENU);
+    }
+
     pub fn clear_recent(self: &Arc<Self>) {
         self.st.settings.guard().recent.clear();
         self.save_settings();

@@ -117,6 +117,7 @@ pub fn wire(ui: &MainWindow, ctl: &Arc<Ctl>) {
     cb!(b, ctl, on_set_language, |c, i| c.set_language(i.max(0) as usize));
     cb!(b, ctl, on_plugin_toggle, |c, i, on| c.plugin_toggle(i as usize, on));
     cb!(b, ctl, on_plugin_run, |c, i| c.plugin_run(i as usize));
+    cb!(b, ctl, on_set_theme, |c, i| c.set_theme(i));
     cb!(b, ctl, on_plugin_after_save, |c, i, on| c.plugin_after_save(i as usize, on));
     cb!(b, ctl, on_pick_folder, |c, source| c.pick_folder(source));
     cb!(b, ctl, on_set_batch_format, |c, i| {

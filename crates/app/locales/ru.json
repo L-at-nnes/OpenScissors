@@ -328,5 +328,8 @@
   "Close a panel, cancel": "Закрыть панель, отменить",
   "This list": "Этот список",
   "Run after each save": "Запускать после каждого сохранения",
-  "{name} wrote {file}": "{name} записал {file}"
+  "{name} wrote {file}": "{name} записал {file}",
+  "Appearance": "Оформление",
+  "Dark": "Тёмное",
+  "Light": "Светлое"
 }

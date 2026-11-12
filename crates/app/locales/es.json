@@ -328,5 +328,8 @@
   "Close a panel, cancel": "Cerrar un panel, cancelar",
   "This list": "Esta lista",
   "Run after each save": "Ejecutar tras cada guardado",
-  "{name} wrote {file}": "{name} escribió {file}"
+  "{name} wrote {file}": "{name} escribió {file}",
+  "Appearance": "Apariencia",
+  "Dark": "Oscuro",
+  "Light": "Claro"
 }

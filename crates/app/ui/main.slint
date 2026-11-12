@@ -644,7 +644,7 @@ component ViewPane inherits Rectangle {
             background: #000000b0;
             sz := Text {
                 text: Backend.crop-label;
-                color: Theme.text;
+                color: #eceff2; // light on the dark pill, in both themes
                 font-size: Theme.fs-xs;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -724,7 +724,7 @@ component ViewPane inherits Rectangle {
         background: #000000a0;
         lbl := Text {
             text: root.label;
-            color: Theme.text-2;
+            color: #c8cbd0; // light on the dark pill, in both themes
             font-size: Theme.fs-xs;
             font-weight: 600;
             horizontal-alignment: center;

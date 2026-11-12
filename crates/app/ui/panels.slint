@@ -677,6 +677,16 @@ export component SettingsDialog inherits Frame {
                 Backend.set-language(i);
             }
         }
+        Heading {
+            text: @tr("Appearance");
+        }
+        SelectRow {
+            options: [@tr("System default"), @tr("Dark"), @tr("Light")];
+            current: Theme.mode;
+            selected(i) => {
+                Backend.set-theme(i);
+            }
+        }
         Divider { }
         Heading {
             text: @tr("Performance");
