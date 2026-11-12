@@ -60,22 +60,76 @@ pub(crate) fn cpu_session(model_path: &Path, fast_memory: bool) -> Result<Sessio
     Ok(b.commit_from_file(model_path)?)
 }
 
-/// DirectML (any DirectX 12 GPU on Windows). Errors when the provider cannot be used.
-#[cfg(windows)]
-fn gpu_session(model_path: &Path) -> Result<Session> {
-    use ort::ep;
-    Ok(Session::builder(environment()?)?
-        .with_execution_providers([ep::DirectML::default().build().error_on_failure()])?
-        // Both are required by the DirectML provider.
-        .with_memory_pattern(false)?
-        .with_parallel_execution(false)?
-        .with_optimization_level(GraphOptimizationLevel::Level3)?
-        .commit_from_file(model_path)?)
+/// A graphics card provider of ONNX Runtime, in the order they are tried.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuProvider {
+    /// NVIDIA cards, in a build with the `cuda` feature (needs the CUDA 12 runtime and cuDNN 9 installed).
+    #[cfg(feature = "cuda")]
+    Cuda,
+    /// Any DirectX 12 card on Windows.
+    #[cfg(windows)]
+    DirectMl,
+    /// The GPU and the Neural Engine of a Mac.
+    #[cfg(target_os = "macos")]
+    CoreMl,
 }
 
-#[cfg(not(windows))]
-fn gpu_session(_model_path: &Path) -> Result<Session> {
-    Err(Error::msg("GPU acceleration is not available on this platform yet"))
+impl GpuProvider {
+    /// What the status shows when a model runs on it.
+    fn label(self) -> &'static str {
+        match self {
+            #[cfg(feature = "cuda")]
+            GpuProvider::Cuda => "GPU (CUDA)",
+            #[cfg(windows)]
+            GpuProvider::DirectMl => "GPU (DirectML)",
+            #[cfg(target_os = "macos")]
+            GpuProvider::CoreMl => "GPU (Core ML)",
+        }
+    }
+}
+
+/// The providers this build can try, best first.
+fn gpu_providers() -> Vec<GpuProvider> {
+    #[allow(unused_mut, clippy::vec_init_then_push)] // the pushes depend on the platform and the features
+    let mut list = Vec::new();
+    #[cfg(feature = "cuda")]
+    list.push(GpuProvider::Cuda);
+    #[cfg(windows)]
+    list.push(GpuProvider::DirectMl);
+    #[cfg(target_os = "macos")]
+    list.push(GpuProvider::CoreMl);
+    list
+}
+
+/// A session on the first graphics card provider that loads `model_path`, and its label. Each provider is tried on its
+/// own, so that a CUDA build without the CUDA runtime still falls back on DirectML.
+fn gpu_session(model_path: &Path) -> Result<(Session, &'static str)> {
+    let mut last = Error::msg("GPU acceleration is not available on this platform yet");
+    for provider in gpu_providers() {
+        match provider_session(provider, model_path) {
+            Ok(session) => return Ok((session, provider.label())),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
+}
+
+fn provider_session(provider: GpuProvider, model_path: &Path) -> Result<Session> {
+    use ort::ep;
+    let builder = Session::builder(environment()?)?.with_optimization_level(GraphOptimizationLevel::Level3)?;
+    let mut builder = match provider {
+        #[cfg(feature = "cuda")]
+        GpuProvider::Cuda => builder.with_execution_providers([ep::CUDA::default().build().error_on_failure()])?,
+        #[cfg(windows)]
+        GpuProvider::DirectMl => builder
+            .with_execution_providers([ep::DirectML::default().build().error_on_failure()])?
+            // Both are required by the DirectML provider.
+            .with_memory_pattern(false)?
+            .with_parallel_execution(false)?,
+        #[cfg(target_os = "macos")]
+        GpuProvider::CoreMl => builder.with_execution_providers([ep::CoreML::default().build().error_on_failure()])?,
+    };
+    Ok(builder.commit_from_file(model_path)?)
 }
 
 impl Predictor {
@@ -100,12 +154,13 @@ impl Predictor {
         match accelerator {
             Accelerator::Cpu => Self::from_session(spec, cpu_session(model_path, fast_memory)?, "CPU"),
             Accelerator::Gpu => {
-                let p = Self::from_session(spec, gpu_session(model_path)?, "GPU")?;
+                let (session, label) = gpu_session(model_path)?;
+                let p = Self::from_session(spec, session, label)?;
                 p.warmup()?;
                 Ok(p)
             }
             Accelerator::Auto => {
-                let gpu = gpu_session(model_path).and_then(|s| Self::from_session(spec, s, "GPU"));
+                let gpu = gpu_session(model_path).and_then(|(s, label)| Self::from_session(spec, s, label));
                 match gpu.and_then(|p| p.warmup().map(|_| p)) {
                     Ok(p) => Ok(p),
                     Err(_) => Self::from_session(spec, cpu_session(model_path, fast_memory)?, "CPU"),
@@ -264,6 +319,25 @@ fn bilinear_taps(src: usize, dst: usize) -> Vec<(usize, usize, f32)> {
             (a, (a + 1).min(src - 1), f - a as f32)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod gpu_tests {
+    use super::*;
+
+    #[test]
+    fn the_providers_of_the_build_are_tried_in_order_and_named() {
+        let list = gpu_providers();
+        #[cfg(windows)]
+        assert_eq!(list.last().map(|p| p.label()), Some("GPU (DirectML)"), "DirectML last on Windows: {list:?}");
+        #[cfg(feature = "cuda")]
+        assert_eq!(list.first().map(|p| p.label()), Some("GPU (CUDA)"), "CUDA first when built in");
+        #[cfg(target_os = "macos")]
+        assert_eq!(list, vec![GpuProvider::CoreMl]);
+        #[cfg(all(not(windows), not(target_os = "macos"), not(feature = "cuda")))]
+        assert!(list.is_empty() && gpu_session(Path::new("x.onnx")).is_err(), "no GPU provider in this build");
+        assert!(list.iter().all(|p| p.label().starts_with("GPU (")));
+    }
 }
 
 #[cfg(test)]

@@ -191,7 +191,7 @@ Détails dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) et [docs/PERF.md](doc
 
 ## Limites connues
 
-- Le mode GPU (DirectML) fonctionne mais n'a rien accéléré sur la carte essayée ; il reste optionnel.
+- Le mode GPU est optionnel (*Réglages*, *Calcul*). Il utilise DirectML sous Windows (toute carte DirectX 12) et Core ML sous macOS. Les cartes NVIDIA peuvent passer par CUDA avec une version compilée par `cargo build --release --features cuda` (elle télécharge la version CUDA d'ONNX Runtime, et la machine doit avoir le runtime CUDA 12 et cuDNN 9) : CUDA est alors essayé en premier, puis DirectML ou le processeur s'il ne se charge pas. La barre d'état indique lequel tourne. Sur la carte essayée (GTX 1660 SUPER), DirectML n'a pas accéléré les modèles ; les chemins CUDA et Core ML suivent la documentation d'ONNX Runtime et n'ont pas été mesurés ici.
 - Les images à gamut large sont converties en sRGB : les couleurs hors sRGB sont écrêtées. L'AVIF s'écrit mais ne s'ouvre pas.
 - Le fonctionnement avec un lecteur d'écran (voir [docs/PERF.md](docs/PERF.md)) n'a pas été testé avec un vrai lecteur d'écran.
 - Une image est refusée, avec un message, quand elle ne tiendrait pas dans le budget mémoire (environ 24 octets par pixel une fois ouverte : une photo 8K demande ~0,8 Go, 100 mégapixels ~2,3 Go) ou dépasse 500 mégapixels. L'historique d'annulation ne garde qu'environ 384 Mo (un sixième du budget mémoire sur une petite machine) : les plus anciennes étapes sont oubliées en premier.

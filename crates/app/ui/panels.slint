@@ -698,7 +698,7 @@ export component SettingsDialog inherits Frame {
             font-size: Theme.fs-md;
         }
         SelectRow {
-            options: [@tr("CPU (reference, always works)"), @tr("GPU (DirectML, experimental)"), @tr("Automatic (GPU if it works)")];
+            options: [@tr("CPU (reference, always works)"), @tr("GPU (experimental)"), @tr("Automatic (GPU if it works)")];
             current: Backend.accel-index;
             selected(i) => {
                 Backend.set-accelerator(i);

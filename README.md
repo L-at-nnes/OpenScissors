@@ -193,7 +193,7 @@ More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PERF.md](docs/PER
 
 ## Known limits
 
-- The GPU mode (DirectML) works but didn't make anything faster on the card I tried, so it stays optional.
+- The GPU mode is optional (*Settings*, *Processing*). It uses DirectML on Windows (any DirectX 12 card) and Core ML on macOS. NVIDIA cards can use CUDA in a build made with `cargo build --release --features cuda` (it downloads the CUDA build of ONNX Runtime, and the machine needs the CUDA 12 runtime and cuDNN 9): CUDA is then tried first, and DirectML or the processor when it cannot load. The status bar says which one runs. On the card I tried (GTX 1660 SUPER) DirectML did not make the models faster; the CUDA and Core ML paths follow the ONNX Runtime documentation and have not been measured here.
 - Wide-gamut pictures are converted to sRGB, so colours outside sRGB are clipped. AVIF can be written but not opened.
 - The screen reader support (see [docs/PERF.md](docs/PERF.md)) has not been tested with a real screen reader.
 - A picture is refused, with a message, when it would not fit the memory budget (about 24 bytes per pixel once opened: an 8K photo needs ~0.8 GB, 100 megapixels ~2.3 GB) or is over 500 megapixels. The undo history keeps at most about 384 MB (a sixth of the memory budget on a small machine): the oldest steps are forgotten first.

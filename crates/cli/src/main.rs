@@ -44,7 +44,7 @@ const USAGE: &str = "usage:
       <dst-folder>; --resume leaves alone the images whose result is already in <dst-folder>, so that running the same
       command again after an error or an interruption does only what is left; --report writes a JSON
       report (one entry per image: done, skipped or failed, the file written, the error, the time)
-  --gpu (compare, predict, cut, batch) runs the model on the graphics card when one can (DirectML on Windows), and
+  --gpu (compare, predict, cut, batch) runs the model on the graphics card when one can (CUDA in a `cuda` build, DirectML on Windows, Core ML on macOS), and
       on the processor otherwise; the one used is printed";
 
 /// The folder of the application, the same one the window uses.

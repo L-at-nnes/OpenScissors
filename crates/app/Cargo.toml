@@ -12,6 +12,8 @@ build = "build.rs"
 default = ["software"]
 software = ["slint/renderer-software", "slint/software-renderer-systemfonts"]
 gl = ["slint/renderer-femtovg"]
+# NVIDIA graphics cards through CUDA (see the `cuda` feature of openscissors-core).
+cuda = ["openscissors-core/cuda"]
 
 [dependencies]
 openscissors-core = { path = "../core" }
