@@ -490,6 +490,14 @@ export component Dock inherits Rectangle {
                             Backend.set-int("shadow.offset_y", v);
                         }
                     }
+                    SliderRow {
+                        label: @tr("Reflection");
+                        value: Backend.p.reflection;
+                        unit: "%";
+                        changed(v) => {
+                            Backend.set-int("shadow.reflection", v);
+                        }
+                    }
                     ColorRow {
                         label: @tr("Color");
                         value: Backend.p.sh-color;

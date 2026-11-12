@@ -207,6 +207,30 @@ fn render_region_with(scene: &Scene, region: Rect, out_w: usize, out_h: usize, m
         }
     };
 
+    // Reflection: the subject mirrored under its lowest row, finished like the subject, fading out over half its height.
+    let reflection = (p.shadow.reflection > 0).then(|| subject_rows(scene.alpha)).flatten().map(|(top, bottom)| {
+        let ground = bottom as f64 + 1.0;
+        let mirrored = Rect::new(exp.x0, 2.0 * ground - exp.y1, exp.x1, 2.0 * ground - exp.y0);
+        let ma = finish_alpha_scaled(sample_mask(scene.alpha, mirrored, ew, eh, interp), p.mask.offset, p.foreground.feather, scale);
+        let mut mf = sample_image(scene.image, mirrored, ew, eh, interp, false);
+        defringe::defringe(&mut mf, &ma, (p.foreground.defringe as f64 * scale).round() as usize);
+        adjust_colors(&mut mf, p.foreground.brightness, p.foreground.saturation, p.foreground.warmth);
+        let fade = ((bottom - top + 1) as f64 / 2.0).max(1.0);
+        let k = p.shadow.reflection as f64 / 100.0;
+        // Row `ey` of the window shows row `eh - 1 - ey` of the mirrored sample, with this weight.
+        let weight: Vec<f32> = (0..eh)
+            .map(|ey| {
+                let y = exp.y0 + (ey as f64 + 0.5) / scale;
+                if y <= ground {
+                    0.0
+                } else {
+                    (k * (1.0 - (y - ground) / fade).max(0.0)) as f32
+                }
+            })
+            .collect();
+        (ma, mf, weight)
+    });
+
     // Shadow: blurred subject mask, shifted by the offset.
     let shadow: Option<Vec<u8>> = p.shadow.enabled.then(|| {
         let blurred = gaussian_blur_u8(&a.data, ew, eh, 1, shadow_sigma);
@@ -224,6 +248,17 @@ fn render_region_with(scene: &Scene, region: Rect, out_w: usize, out_h: usize, m
             let i = ey * ew + x + pl;
             let mut col = [bg.data[i * 3] as f32, bg.data[i * 3 + 1] as f32, bg.data[i * 3 + 2] as f32];
             let mut alpha = if bg_opaque { 1.0f32 } else { 0.0 };
+            if let Some((ma, mf, weight)) = &reflection {
+                let j = (eh - 1 - ey) * ew + x + pl;
+                let ra = ma.data[j] as f32 / 255.0 * weight[ey];
+                let na = ra + alpha * (1.0 - ra);
+                if na > 0.0 {
+                    for c in 0..3 {
+                        col[c] = (mf.data[j * 3 + c] as f32 * ra + col[c] * alpha * (1.0 - ra)) / na;
+                    }
+                }
+                alpha = na;
+            }
             if let Some(s) = &shadow {
                 // The shadow at this pixel is the blurred mask `shift` further back; nothing comes from outside the window.
                 let (sx, sy) = ((x + pl) as isize - shift.0, ey as isize - shift.1);
@@ -252,6 +287,15 @@ fn render_region_with(scene: &Scene, region: Rect, out_w: usize, out_h: usize, m
         }
     });
     Rgba { w: out_w, h: out_h, data: out }
+}
+
+/// The first and the last row where the subject shows (alpha above the noise level of [`crop::BBOX_MIN_ALPHA`]).
+/// Searched from each end, so it stops early on a usual picture.
+fn subject_rows(alpha: &Mask) -> Option<(usize, usize)> {
+    let row = |y: usize| alpha.data[y * alpha.w..(y + 1) * alpha.w].iter().any(|&v| v >= crop::BBOX_MIN_ALPHA);
+    let top = (0..alpha.h).find(|&y| row(y))?;
+    let bottom = (top..alpha.h).rev().find(|&y| row(y))?;
+    Some((top, bottom))
 }
 
 const OVERLAY_RGB: [f32; 3] = [61.0, 190.0, 74.0];
@@ -435,6 +479,8 @@ pub fn deep_blocker(params: &Params) -> Option<&'static str> {
         Some("a foreground effect is active")
     } else if params.shadow.enabled {
         Some("the shadow is on")
+    } else if params.shadow.reflection > 0 {
+        Some("the reflection is on")
     } else {
         None
     }
@@ -572,6 +618,39 @@ mod tests {
         let on = full(&Scene { image: &img, alpha: &alpha, params: &params, bg_image: None, filled: None, frame: None });
         assert!(on.data[outside] > 0 && (on.data[outside] as u32) < 255 * 75 / 100 + 1);
         assert_eq!(&on.data[outside - 3..outside], &[0, 0, 0]); // shadow colour
+    }
+
+    #[test]
+    fn a_reflection_mirrors_the_subject_under_it_and_fades_out() {
+        // A 20 x 20 subject (red above, blue below) standing at row 40 of a transparent 60 x 80 picture.
+        let (w, h) = (60usize, 80usize);
+        let mut img = Image::new(w, h);
+        let mut alpha = Mask::new(w, h);
+        for y in 20..40 {
+            for x in 20..40 {
+                alpha.data[y * w + x] = 255;
+                let c = if y < 30 { [220, 20, 20] } else { [20, 20, 220] };
+                img.data[(y * w + x) * 3..(y * w + x) * 3 + 3].copy_from_slice(&c);
+            }
+        }
+        let mut params = Params::default();
+        let render = |p: &Params| {
+            let scene = Scene { image: &img, alpha: &alpha, params: p, bg_image: None, filled: None, frame: None };
+            render_region(&scene, Rect::new(0.0, 0.0, w as f64, h as f64), w, h)
+        };
+        let px = |out: &Rgba, x: usize, y: usize| out.data[(y * w + x) * 4..(y * w + x) * 4 + 4].to_vec();
+        assert_eq!(px(&render(&params), 30, 41)[3], 0, "no reflection by default");
+        params.shadow.reflection = 60;
+        let out = render(&params);
+        let near = px(&out, 30, 40);
+        assert!(near[2] > 180 && near[0] < 60, "right under the subject: its bottom (blue), {near:?}");
+        assert!((140..=160).contains(&near[3]), "at the ground the reflection has its opacity: {near:?}");
+        let far = px(&out, 30, 48);
+        assert!(far[3] < near[3] && far[3] > 0, "it fades: {far:?}");
+        assert_eq!(px(&out, 30, 52)[3], 0, "gone after half the height of the subject");
+        assert_eq!(px(&out, 10, 41)[3], 0, "only under the subject");
+        assert_eq!(px(&out, 30, 25), px(&render(&Params::default()), 30, 25), "the subject itself is unchanged");
+        assert_eq!(deep_blocker(&params), Some("the reflection is on"));
     }
 
     #[test]

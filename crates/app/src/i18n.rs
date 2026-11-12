@@ -103,6 +103,7 @@ pub const CORE_MESSAGES: &[&str] = &[
     "the edge clean-up is on",
     "a foreground effect is active",
     "the shadow is on",
+    "the reflection is on",
     // batch
     "The source folder does not exist.",
     "The source and destination folders must be different.",

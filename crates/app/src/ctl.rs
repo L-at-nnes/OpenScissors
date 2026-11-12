@@ -270,6 +270,7 @@ pub fn params_v(p: &Params) -> ParamsV {
         sh_blur: p.shadow.blur_radius as i32,
         sh_color: rgb(p.shadow.color),
         sh_dx: p.shadow.offset_x,
+        reflection: p.shadow.reflection as i32,
         sh_dy: p.shadow.offset_y,
         has_crop: p.crop.is_some(),
         preset: PRESETS.iter().position(|q| q.matches(p)).map_or(0, |i| i as i32 + 1),

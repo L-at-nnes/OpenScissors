@@ -335,5 +335,7 @@
   "Candidate {n} of {total}. Tab shows the next one, Enter applies it.": "Propuesta {n} de {total}. Tab muestra la siguiente, Intro la aplica.",
   "Next candidate of the smart selection": "Siguiente propuesta de la selección inteligente",
   "Trained on people: hair, faces and shoulders. Full size, slow on a CPU; best with a GPU.": "Entrenado con personas: cabello, caras y hombros. Versión completa, lenta en CPU; mejor con una GPU.",
-  "Brush size on the screen, whatever the zoom": "Tamaño del pincel en pantalla, sea cual sea el zoom"
+  "Brush size on the screen, whatever the zoom": "Tamaño del pincel en pantalla, sea cual sea el zoom",
+  "Reflection": "Reflejo",
+  "the reflection is on": "el reflejo está activado"
 }
