@@ -333,5 +333,6 @@
   "Dark": "Dunkel",
   "Light": "Hell",
   "Candidate {n} of {total}. Tab shows the next one, Enter applies it.": "Vorschlag {n} von {total}. Tab zeigt den nächsten, Enter übernimmt ihn.",
-  "Next candidate of the smart selection": "Nächster Vorschlag der intelligenten Auswahl"
+  "Next candidate of the smart selection": "Nächster Vorschlag der intelligenten Auswahl",
+  "Trained on people: hair, faces and shoulders. Full size, slow on a CPU; best with a GPU.": "Auf Menschen trainiert: Haare, Gesichter und Schultern. Volle Größe, langsam auf der CPU; am besten mit einer GPU."
 }

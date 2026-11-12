@@ -87,6 +87,7 @@ Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fourni
 | BiRefNet lite | 224 Mo | ~5 Go | cheveux et structures fines, quelques secondes |
 | BiRefNet lite, demi-précision | 115 Mo | ~5 Go | pareil, pensé pour les GPU |
 | BiRefNet complet | 973 Mo | lourd | meilleure qualité, lent sur processeur |
+| BiRefNet portrait | 973 Mo | lourd | personnes : cheveux, visages, épaules ; lent sur processeur |
 | SAM 2.1 tiny | 156 Mo | ~1 Go pendant la sélection | l'outil Sélection intelligente |
 
 L'appli prend le modèle le plus léger que vous avez tant que vous n'en choisissez pas un autre, et refuse un modèle qui ne tiendrait pas dans son budget mémoire plutôt que de figer votre PC.

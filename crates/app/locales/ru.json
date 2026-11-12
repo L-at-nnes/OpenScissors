@@ -333,5 +333,6 @@
   "Dark": "Тёмное",
   "Light": "Светлое",
   "Candidate {n} of {total}. Tab shows the next one, Enter applies it.": "Вариант {n} из {total}. Tab — следующий, Enter — применить.",
-  "Next candidate of the smart selection": "Следующий вариант умного выделения"
+  "Next candidate of the smart selection": "Следующий вариант умного выделения",
+  "Trained on people: hair, faces and shoulders. Full size, slow on a CPU; best with a GPU.": "Обучена на людях: волосы, лица и плечи. Полная версия, медленная на CPU; лучше всего с GPU."
 }

@@ -333,5 +333,6 @@
   "Dark": "ダーク",
   "Light": "ライト",
   "Candidate {n} of {total}. Tab shows the next one, Enter applies it.": "候補 {n}/{total}。Tab で次の候補、Enter で適用。",
-  "Next candidate of the smart selection": "スマート選択の次の候補"
+  "Next candidate of the smart selection": "スマート選択の次の候補",
+  "Trained on people: hair, faces and shoulders. Full size, slow on a CPU; best with a GPU.": "人物向けに学習：髪、顔、肩。フルサイズで CPU では遅く、GPU との併用が最適です。"
 }

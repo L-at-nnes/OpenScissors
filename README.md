@@ -89,6 +89,7 @@ The first time, no AI model is installed (they are not bundled). Click the chip 
 | BiRefNet lite | 224 MB | ~5 GB | hair and thin structures, a few seconds |
 | BiRefNet lite, half precision | 115 MB | ~5 GB | the same, made for GPUs |
 | BiRefNet full | 973 MB | heavy | best quality, slow on a CPU |
+| BiRefNet portrait | 973 MB | heavy | people: hair, faces, shoulders; slow on a CPU |
 | SAM 2.1 tiny | 156 MB | ~1 GB while selecting | the Smart select tool |
 
 The app picks the lightest model you have until you choose another one, and refuses a model that wouldn't fit in its memory budget instead of freezing your PC.
