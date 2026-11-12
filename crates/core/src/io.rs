@@ -12,7 +12,7 @@ use crate::sync::LockExt;
 use crate::types::{Image, Image16, Mask, Rgba, Rgba16};
 
 /// File extensions that can be opened (the formats the `image` crate is built with). The first frame of a GIF is read.
-pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp", "gif"];
+pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp", "gif", "jxl"];
 
 /// Largest picture ever accepted, in pixels (500 megapixels). It only guards against a header that lies about its
 /// size; what the machine can really hold is decided by [`check_dimensions`] from the memory budget.
@@ -217,11 +217,21 @@ pub fn load_image(path: &Path) -> Result<Image> {
 
 /// Like [`load_image`], and keeps the 16-bit samples of 16-bit PNG and TIFF files.
 pub fn load_image_deep(path: &Path) -> Result<Loaded> {
+    register_extra_formats();
     load_reader(ImageReader::open(path)?.with_guessed_format()?)
+}
+
+/// Formats `image` does not read by itself, plugged into its readers once: JPEG XL (`jxl-oxide`, pure Rust).
+fn register_extra_formats() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        jxl_oxide::integration::register_image_decoding_hook();
+    });
 }
 
 /// Like [`load_image_deep`], for a file already in memory (read from a pipe).
 pub fn load_image_bytes(bytes: &[u8]) -> Result<Loaded> {
+    register_extra_formats();
     load_reader(ImageReader::new(Cursor::new(bytes)).with_guessed_format()?)
 }
 
@@ -728,6 +738,26 @@ mod tests {
         let deep = Rgba16 { w: 3, h: 2, data: (0..24).map(|v| v * 2000).collect() };
         let back = load_image_bytes(&encode_rgba16(&deep, Format::Tiff, false, 0).unwrap()).unwrap();
         assert_eq!(back.deep.map(|d| d.data[3]), Some(8000), "16-bit samples survive");
+    }
+
+    #[test]
+    fn jpeg_xl_pictures_are_read() {
+        use zune_core::bit_depth::BitDepth;
+        use zune_core::colorspace::ColorSpace;
+        use zune_core::options::EncoderOptions;
+        let (w, h) = (5usize, 3usize);
+        let pixels: Vec<u8> = (0..w * h * 3).map(|i| (i * 13 % 256) as u8).collect();
+        let jxl =
+            zune_jpegxl::JxlSimpleEncoder::new(&pixels, EncoderOptions::new(w, h, ColorSpace::RGB, BitDepth::Eight)).encode().unwrap();
+        let back = load_image_bytes(&jxl).unwrap();
+        assert_eq!((back.image.w, back.image.h), (w, h));
+        assert_eq!(back.image.data, pixels, "lossless");
+        let dir = std::env::temp_dir().join(format!("osc-jxl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.jxl"), &jxl).unwrap();
+        assert_eq!(load_image(&dir.join("a.jxl")).unwrap().data, pixels, "from a file too");
+        assert!(IMAGE_EXTENSIONS.contains(&"jxl"));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

@@ -8,6 +8,9 @@ rust-version.workspace = true
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
+# Writes the JPEG XL pictures the tests read back (the application only reads them).
+zune-jpegxl = "0.4"
+zune-core = "0.4"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -25,6 +28,8 @@ ureq = { version = "3", features = ["rustls"] }
 webp = { version = "0.3", default-features = false }
 # The TIFF encoder of `image` writes no compression and no resolution: the `tiff` crate it uses does both.
 tiff = { version = "0.11", default-features = false, features = ["deflate"] }
+# JPEG XL pictures, read through the decoding hooks of `image` (pure Rust).
+jxl-oxide = { version = "0.12", default-features = false, features = ["image"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"

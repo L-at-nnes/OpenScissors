@@ -237,7 +237,7 @@
   "the edge clean-up is on": "边缘清理已开启",
   "The source folder does not exist.": "源文件夹不存在。",
   "The source and destination folders must be different.": "源文件夹和目标文件夹必须不同。",
-  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif).": "源文件夹中没有支持的图像（jpg、png、bmp、tif、webp、gif）。",
+  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif, jxl).": "源文件夹中没有支持的图像（jpg、png、bmp、tif、webp、gif、jxl）。",
   "project file is too large": "项目文件过大",
   "this is not an OpenScissors project": "这不是 OpenScissors 项目",
   "unsupported image encoding '{encoding}'": "不支持的图像编码“{encoding}”",

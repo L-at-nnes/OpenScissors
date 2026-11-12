@@ -12,6 +12,8 @@ permissive list of `deny.toml` (`cargo deny check licenses`); `cargo deny list` 
 | moxcms (also used by `image`) | colour profile conversion to sRGB | BSD-3-Clause / Apache-2.0 |
 | webp, libwebp (C library, built from source) | lossy WebP export | MIT or Apache-2.0 (wrapper) / BSD-3-Clause (libwebp) |
 | ravif, rav1e (through `image`) | AVIF export | BSD-3-Clause / BSD-2-Clause |
+| tiff (also used by `image`) | compressed TIFF export with a resolution | MIT |
+| jxl-oxide | JPEG XL import | MIT / Apache-2.0 |
 | rayon, serde, serde_json, thiserror, sha2, hex, base64, ureq | core utilities, checked downloads | MIT / Apache-2.0 |
 | rustls, ring, webpki-roots (through ureq) | HTTPS for the model downloads | Apache-2.0 / ISC / MIT; CDLA-Permissive-2.0 (root certificates) |
 | arboard | system clipboard | MIT / Apache-2.0 |

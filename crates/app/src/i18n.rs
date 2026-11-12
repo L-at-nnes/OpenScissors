@@ -106,7 +106,7 @@ pub const CORE_MESSAGES: &[&str] = &[
     // batch
     "The source folder does not exist.",
     "The source and destination folders must be different.",
-    "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif).",
+    "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif, jxl).",
     r#"The suffix cannot hold \ / : * ? " < > | (it is added to the file names)."#,
     // export
     "A largest file size works with JPEG, WebP and AVIF.",

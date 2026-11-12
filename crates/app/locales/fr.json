@@ -237,7 +237,7 @@
   "the edge clean-up is on": "le nettoyage des bords est actif",
   "The source folder does not exist.": "Le dossier source n'existe pas.",
   "The source and destination folders must be different.": "Les dossiers source et destination doivent être différents.",
-  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif).": "Le dossier source ne contient aucune image prise en charge (jpg, png, bmp, tif, webp, gif).",
+  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif, jxl).": "Le dossier source ne contient aucune image prise en charge (jpg, png, bmp, tif, webp, gif, jxl).",
   "project file is too large": "le fichier de projet est trop gros",
   "this is not an OpenScissors project": "ce n'est pas un projet OpenScissors",
   "unsupported image encoding '{encoding}'": "codage d'image non pris en charge « {encoding} »",

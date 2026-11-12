@@ -237,7 +237,7 @@
   "the edge clean-up is on": "die Kantenbereinigung ist aktiv",
   "The source folder does not exist.": "Der Quellordner existiert nicht.",
   "The source and destination folders must be different.": "Quell- und Zielordner müssen verschieden sein.",
-  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif).": "Der Quellordner enthält kein unterstütztes Bild (jpg, png, bmp, tif, webp, gif).",
+  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif, jxl).": "Der Quellordner enthält kein unterstütztes Bild (jpg, png, bmp, tif, webp, gif, jxl).",
   "project file is too large": "die Projektdatei ist zu groß",
   "this is not an OpenScissors project": "das ist kein OpenScissors-Projekt",
   "unsupported image encoding '{encoding}'": "nicht unterstützte Bildkodierung „{encoding}“",

@@ -134,7 +134,7 @@ pub fn validate(src: &Path, dst: &Path, subfolders: bool) -> Result<Vec<PathBuf>
     }
     let files = if subfolders { list_images_tree(src, dst)? } else { list_images(src)? };
     if files.is_empty() {
-        return Err(Error::msg("The source folder contains no supported image (jpg, png, bmp, tif, webp, gif)."));
+        return Err(Error::msg("The source folder contains no supported image (jpg, png, bmp, tif, webp, gif, jxl)."));
     }
     std::fs::create_dir_all(dst)?;
     Ok(files)

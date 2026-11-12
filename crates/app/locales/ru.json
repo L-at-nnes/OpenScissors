@@ -237,7 +237,7 @@
   "the edge clean-up is on": "включена очистка краёв",
   "The source folder does not exist.": "Исходная папка не существует.",
   "The source and destination folders must be different.": "Исходная папка и папка назначения должны различаться.",
-  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif).": "В исходной папке нет поддерживаемых изображений (jpg, png, bmp, tif, webp, gif).",
+  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif, jxl).": "В исходной папке нет поддерживаемых изображений (jpg, png, bmp, tif, webp, gif, jxl).",
   "project file is too large": "файл проекта слишком большой",
   "this is not an OpenScissors project": "это не проект OpenScissors",
   "unsupported image encoding '{encoding}'": "неподдерживаемая кодировка изображения «{encoding}»",

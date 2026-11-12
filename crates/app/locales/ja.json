@@ -237,7 +237,7 @@
   "the edge clean-up is on": "縁のクリーンアップが有効です",
   "The source folder does not exist.": "元のフォルダーが存在しません。",
   "The source and destination folders must be different.": "元のフォルダーと保存先フォルダーは別にしてください。",
-  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif).": "元のフォルダーに対応する画像がありません（jpg、png、bmp、tif、webp、gif）。",
+  "The source folder contains no supported image (jpg, png, bmp, tif, webp, gif, jxl).": "元のフォルダーに対応する画像がありません（jpg、png、bmp、tif、webp、gif、jxl）。",
   "project file is too large": "プロジェクトファイルが大きすぎます",
   "this is not an OpenScissors project": "これは OpenScissors のプロジェクトではありません",
   "unsupported image encoding '{encoding}'": "対応していない画像エンコード「{encoding}」",
