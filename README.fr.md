@@ -129,7 +129,7 @@ Supprimez `data/` pour repartir de zéro, `models/` pour libérer de la place. R
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> 100 % · <kbd>Ctrl</kbd>+<kbd>9</kbd> ajuster · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> zoom | molette : déplacer, <kbd>Ctrl</kbd>+molette : zoomer |
 | <kbd>Entrée</kbd> appliquer une sélection · <kbd>Retour arrière</kbd> retirer le dernier clic · <kbd>Échap</kbd> annuler | |
 
-<kbd>?</kbd> (ou <kbd>F1</kbd>, ou *Raccourcis clavier* dans le menu) les affiche tous dans la fenêtre. Le pinceau est **désactivé par défaut** : l'appli démarre sur l'outil *Déplacer*, le curseur ne peint donc jamais par surprise. Les raccourcis suivent les caractères des touches et marchent donc aussi sur un clavier AZERTY : Ctrl+à et Ctrl+ç zooment comme Ctrl+0 et Ctrl+9, AltGr+( et AltGr+) donnent les touches de taille du pinceau [ et ].
+<kbd>?</kbd> (ou <kbd>F1</kbd>, ou *Raccourcis clavier* dans le menu) les affiche tous dans la fenêtre. *Historique* dans le menu liste les dernières étapes : un clic revient (ou avance) à n'importe laquelle. Le pinceau est **désactivé par défaut** : l'appli démarre sur l'outil *Déplacer*, le curseur ne peint donc jamais par surprise. Les raccourcis suivent les caractères des touches et marchent donc aussi sur un clavier AZERTY : Ctrl+à et Ctrl+ç zooment comme Ctrl+0 et Ctrl+9, AltGr+( et AltGr+) donnent les touches de taille du pinceau [ et ].
 
 ## Vie privée
 

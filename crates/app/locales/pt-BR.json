@@ -337,5 +337,19 @@
   "Trained on people: hair, faces and shoulders. Full size, slow on a CPU; best with a GPU.": "Treinado com pessoas: cabelo, rostos e ombros. Versão completa, lenta na CPU; melhor com uma GPU.",
   "Brush size on the screen, whatever the zoom": "Tamanho do pincel na tela, seja qual for o zoom",
   "Reflection": "Reflexo",
-  "the reflection is on": "o reflexo está ativado"
+  "the reflection is on": "o reflexo está ativado",
+  "History": "Histórico",
+  "Opened picture": "Imagem aberta",
+  "Keep mark": "Marca para manter",
+  "Remove mark": "Marca para remover",
+  "Eraser": "Borracha",
+  "Hair mark": "Marca de cabelo",
+  "Hair eraser": "Borracha de cabelo",
+  "AI prediction": "Previsão da IA",
+  "Foreground setting": "Ajuste do primeiro plano",
+  "Background setting": "Ajuste do fundo",
+  "Shadow setting": "Ajuste da sombra",
+  "Mask setting": "Ajuste da máscara",
+  "Setting": "Ajuste",
+  "Several settings": "Vários ajustes"
 }

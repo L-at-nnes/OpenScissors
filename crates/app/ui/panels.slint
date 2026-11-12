@@ -211,6 +211,8 @@ component MenuRow inherits Rectangle {
     in property <string> text;
     in property <string> hint;
     in property <bool> enabled: true;
+    // Shown softer (an undone step of the history).
+    in property <bool> dimmed;
     callback clicked();
     height: 30px;
     border-radius: Theme.r-sm;
@@ -222,7 +224,7 @@ component MenuRow inherits Rectangle {
         x: 8px;
         width: parent.width - 16px;
         text: root.text;
-        color: Theme.text;
+        color: root.dimmed ? Theme.text-3 : Theme.text;
         font-size: Theme.fs-md;
         vertical-alignment: center;
         overflow: elide;
@@ -333,6 +335,13 @@ export component MenuPanel inherits Frame {
             }
         }
         MenuRow {
+            text: @tr("History");
+            enabled: Backend.has-doc;
+            clicked => {
+                Backend.popover = 7;
+            }
+        }
+        MenuRow {
             text: @tr("Keyboard shortcuts");
             hint: "?";
             clicked => {
@@ -417,6 +426,30 @@ export component ShortcutsPanel inherits Frame {
         KeyRow { label: @tr("Next candidate of the smart selection"); keys: "Tab"; }
         KeyRow { label: @tr("Close a panel, cancel"); keys: "Esc"; }
         KeyRow { label: @tr("This list"); keys: "? · F1"; }
+    }
+}
+
+export component HistoryPanel inherits Frame {
+    content-height: col.preferred-height;
+    col := VerticalLayout {
+        spacing: 2px;
+        PanelHead {
+            title: @tr("History");
+        }
+        // Newest first: a click undoes or redoes up to that step.
+        for row[i] in Backend.history: MenuRow {
+            text: row.label;
+            dimmed: !row.done;
+            clicked => {
+                Backend.history-go(Backend.history-count - i);
+            }
+        }
+        MenuRow {
+            text: @tr("Opened picture");
+            clicked => {
+                Backend.history-go(0);
+            }
+        }
     }
 }
 

@@ -337,5 +337,19 @@
   "Trained on people: hair, faces and shoulders. Full size, slow on a CPU; best with a GPU.": "Обучена на людях: волосы, лица и плечи. Полная версия, медленная на CPU; лучше всего с GPU.",
   "Brush size on the screen, whatever the zoom": "Размер кисти на экране, независимо от масштаба",
   "Reflection": "Отражение",
-  "the reflection is on": "отражение включено"
+  "the reflection is on": "отражение включено",
+  "History": "История",
+  "Opened picture": "Открытое изображение",
+  "Keep mark": "Метка «оставить»",
+  "Remove mark": "Метка «убрать»",
+  "Eraser": "Ластик",
+  "Hair mark": "Метка волос",
+  "Hair eraser": "Ластик волос",
+  "AI prediction": "Прогноз ИИ",
+  "Foreground setting": "Настройка переднего плана",
+  "Background setting": "Настройка фона",
+  "Shadow setting": "Настройка тени",
+  "Mask setting": "Настройка маски",
+  "Setting": "Настройка",
+  "Several settings": "Несколько настроек"
 }

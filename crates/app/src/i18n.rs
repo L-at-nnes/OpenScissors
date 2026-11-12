@@ -312,6 +312,8 @@ mod tests {
             keys.insert(spec.description);
         }
         keys.extend(CORE_MESSAGES.iter().map(|m| m.to_string()));
+        // The steps of the history panel are named by the core and translated with `t(label)`.
+        keys.extend(openscissors_core::document::HISTORY_LABELS.iter().map(|l| l.to_string()));
         keys
     }
 

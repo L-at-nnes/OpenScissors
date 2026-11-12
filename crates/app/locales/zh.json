@@ -337,5 +337,19 @@
   "Trained on people: hair, faces and shoulders. Full size, slow on a CPU; best with a GPU.": "针对人物训练：头发、面部和肩膀。完整版，在 CPU 上较慢；最好配合 GPU 使用。",
   "Brush size on the screen, whatever the zoom": "画笔大小按屏幕计算，不随缩放变化",
   "Reflection": "倒影",
-  "the reflection is on": "倒影已开启"
+  "the reflection is on": "倒影已开启",
+  "History": "历史记录",
+  "Opened picture": "打开的图片",
+  "Keep mark": "保留标记",
+  "Remove mark": "移除标记",
+  "Eraser": "橡皮擦",
+  "Hair mark": "头发标记",
+  "Hair eraser": "头发橡皮擦",
+  "AI prediction": "AI 预测",
+  "Foreground setting": "前景设置",
+  "Background setting": "背景设置",
+  "Shadow setting": "阴影设置",
+  "Mask setting": "蒙版设置",
+  "Setting": "设置",
+  "Several settings": "多项设置"
 }

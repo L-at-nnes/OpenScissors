@@ -57,6 +57,12 @@ export struct ModelRow {
     is-sam: bool,
 }
 
+// A step of the undo history: its label, and whether it is done (the others can be redone).
+export struct HistoryRow {
+    label: string,
+    done: bool,
+}
+
 export struct PluginRow {
     name: string,
     description: string,
@@ -181,6 +187,9 @@ export global Backend {
     in property <[string]> lang-options;
     in property <[string]> recent;
     in property <[PluginRow]> plugins;
+    // The last steps of the undo history, newest first, and how many steps there are in all.
+    in property <[HistoryRow]> history;
+    in property <int> history-count;
     in property <bool> can-run-plugin;
     in property <string> about-version;
     in property <string> root-path;
@@ -274,6 +283,8 @@ export global Backend {
     callback set-language(int);
     // 0 = the system, 1 = dark, 2 = light.
     callback set-theme(int);
+    // Undo or redo until this many steps of the history are done.
+    callback history-go(int);
     callback set-marker-on-screen(bool);
     callback plugin-toggle(int, bool);
     callback plugin-run(int);

@@ -62,6 +62,54 @@ enum Command {
     },
 }
 
+/// Every label a step of the history can have ([`DocState::history`]), for the interface to translate them all.
+pub const HISTORY_LABELS: &[&str] = &[
+    "Keep mark",
+    "Remove mark",
+    "Eraser",
+    "Hair mark",
+    "Hair eraser",
+    "AI prediction",
+    "Foreground setting",
+    "Background setting",
+    "Shadow setting",
+    "Mask setting",
+    "Crop",
+    "Setting",
+    "Several settings",
+    "Marks loaded",
+    "Turn the picture",
+    "Mask",
+];
+
+impl Command {
+    /// The label of the step in the history list: an English key the interface translates (see [`HISTORY_LABELS`]).
+    fn label(&self) -> &'static str {
+        match self {
+            Command::AddStroke(s) => match s.kind {
+                StrokeKind::Keep => "Keep mark",
+                StrokeKind::Remove => "Remove mark",
+                StrokeKind::Erase => "Eraser",
+                StrokeKind::Hair => "Hair mark",
+                StrokeKind::HairErase => "Hair eraser",
+            },
+            Command::SetPrediction { .. } => "AI prediction",
+            Command::SetParam { path, .. } => match path.split('.').next() {
+                Some("foreground") => "Foreground setting",
+                Some("background") => "Background setting",
+                Some("shadow") => "Shadow setting",
+                Some("mask") => "Mask setting",
+                Some("crop") => "Crop",
+                _ => "Setting",
+            },
+            Command::SetParams { .. } => "Several settings",
+            Command::SetStrokes { .. } => "Marks loaded",
+            Command::Turn(_) => "Turn the picture",
+            Command::SetMask { .. } => "Mask",
+        }
+    }
+}
+
 /// What the UI needs to know after every change.
 #[derive(Clone, Debug, Serialize)]
 pub struct DocState {
@@ -83,6 +131,10 @@ pub struct DocState {
     /// The background picture the parameters ask for could not be read (the path); nothing is drawn for it and the
     /// load is not retried until the path changes.
     pub bg_error: Option<String>,
+    /// The label of every step of the undo history, oldest first (English keys the interface translates), and how
+    /// many of them are done (the others were undone and can be redone).
+    pub history: Vec<&'static str>,
+    pub history_done: usize,
 }
 
 pub struct Document {
@@ -538,6 +590,17 @@ impl Document {
         }
     }
 
+    /// Undo or redo until `done` steps of the history are done (0: the picture as it was opened).
+    pub fn go_to(&mut self, done: usize) {
+        let done = done.min(self.undo.len());
+        while self.index > done {
+            self.undo();
+        }
+        while self.index < done {
+            self.redo();
+        }
+    }
+
     pub fn redo(&mut self) {
         if self.index < self.undo.len() {
             let cmd = std::mem::replace(
@@ -891,6 +954,8 @@ impl Document {
             params: self.params.clone(),
             crop,
             bg_error: self.bg_failed.clone().filter(|p| self.params.background.image_path.as_ref() == Some(p)),
+            history: self.undo.iter().map(Command::label).collect(),
+            history_done: self.index,
         }
     }
 
@@ -1334,6 +1399,28 @@ mod tests {
         assert_eq!(&out.data[(20 * 50 + 25) * 4..(20 * 50 + 25) * 4 + 4], &[10, 20, 30, 255]);
         let e = d.export();
         assert_eq!((e.w, e.h), (50, 40));
+    }
+
+    #[test]
+    fn the_history_names_each_step_and_goes_back_to_any_of_them() {
+        let mut d = doc();
+        d.add_stroke(keep(5.5, 5.5, 3));
+        d.set_param("shadow.enabled", json!(true)).unwrap();
+        d.set_param("background.mode", json!("color")).unwrap();
+        let st = d.state();
+        assert_eq!(st.history, ["Keep mark", "Shadow setting", "Background setting"]);
+        assert!(st.history.iter().all(|l| HISTORY_LABELS.contains(l)), "every label is listed for the translations");
+        assert_eq!(st.history_done, 3);
+        d.go_to(1);
+        let st = d.state();
+        assert_eq!((st.history_done, st.params.shadow.enabled, st.params.background.mode), (1, false, BgMode::Transparent));
+        assert_eq!(st.history.len(), 3, "the undone steps stay, to be redone");
+        d.go_to(3);
+        assert!(d.state().params.shadow.enabled);
+        d.go_to(0);
+        assert!(d.strokes().is_empty() && !d.can_undo(), "back to the picture as it was opened");
+        d.go_to(99);
+        assert_eq!(d.state().history_done, 3, "past the end: everything done");
     }
 
     #[test]

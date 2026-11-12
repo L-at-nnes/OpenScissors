@@ -337,5 +337,19 @@
   "Trained on people: hair, faces and shoulders. Full size, slow on a CPU; best with a GPU.": "人物向けに学習：髪、顔、肩。フルサイズで CPU では遅く、GPU との併用が最適です。",
   "Brush size on the screen, whatever the zoom": "ズームに関係なく画面上のブラシサイズを保つ",
   "Reflection": "反射",
-  "the reflection is on": "反射が有効です"
+  "the reflection is on": "反射が有効です",
+  "History": "履歴",
+  "Opened picture": "開いた画像",
+  "Keep mark": "残すマーク",
+  "Remove mark": "取り除くマーク",
+  "Eraser": "消しゴム",
+  "Hair mark": "髪のマーク",
+  "Hair eraser": "髪の消しゴム",
+  "AI prediction": "AI の予測",
+  "Foreground setting": "前景の設定",
+  "Background setting": "背景の設定",
+  "Shadow setting": "影の設定",
+  "Mask setting": "マスクの設定",
+  "Setting": "設定",
+  "Several settings": "複数の設定"
 }

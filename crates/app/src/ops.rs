@@ -680,6 +680,15 @@ impl Ctl {
         self.kick_alpha();
     }
 
+    /// Undo or redo until `done` steps of the history are done (the history panel).
+    pub fn history_go(self: &Arc<Self>, done: usize) {
+        if let Some(d) = self.st.doc.guard().as_mut() {
+            d.go_to(done);
+        }
+        self.refresh_doc();
+        self.kick_alpha();
+    }
+
     pub fn redo(self: &Arc<Self>) {
         if let Some(d) = self.st.doc.guard().as_mut() {
             d.redo();

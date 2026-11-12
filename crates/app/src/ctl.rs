@@ -287,6 +287,9 @@ fn file_name(path: &str) -> String {
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
 }
 
+/// How many of the last steps the history panel lists.
+const HISTORY_SHOWN: usize = 30;
+
 /// The index of the colour setting in [`crate::Theme`]: 0 follows the system, 1 dark (the default), 2 light.
 pub fn theme_mode(setting: &str) -> i32 {
     match setting {
@@ -502,6 +505,21 @@ impl Ctl {
         b.set_doc_title(title.into());
         b.set_can_undo(doc.is_some_and(|d| d.can_undo));
         b.set_can_redo(doc.is_some_and(|d| d.can_redo));
+        let (history, count) = match doc {
+            Some(d) => (
+                d.history
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .take(HISTORY_SHOWN)
+                    .map(|(i, label)| crate::HistoryRow { label: t(label).into(), done: i < d.history_done })
+                    .collect::<Vec<_>>(),
+                d.history.len(),
+            ),
+            None => (Vec::new(), 0),
+        };
+        b.set_history(ModelRc::new(VecModel::from(history)));
+        b.set_history_count(count as i32);
         if let Some(d) = doc {
             b.set_p(params_v(&d.params));
         }
