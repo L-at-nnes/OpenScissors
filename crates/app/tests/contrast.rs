@@ -2,19 +2,32 @@
 
 use std::collections::HashMap;
 
-fn tokens() -> HashMap<String, [f64; 3]> {
+/// The colours of one palette of the theme: `light` picks the light value of each `root.light ? light : dark` token.
+fn tokens(light: bool) -> HashMap<String, [f64; 3]> {
     let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/ui/theme.slint")).expect("theme.slint");
     let mut out = HashMap::new();
     for line in text.lines() {
         let line = line.trim();
         let Some(rest) = line.strip_prefix("out property <color> ") else { continue };
         let Some((name, value)) = rest.split_once(':') else { continue };
-        let hex = value.trim().trim_end_matches(';').trim_start_matches('#');
+        let value = value.trim().trim_end_matches(';');
+        let value = match value.strip_prefix("root.light ?").and_then(|v| v.split_once(':')) {
+            Some((l, d)) => {
+                if light {
+                    l
+                } else {
+                    d
+                }
+            }
+            None => value,
+        };
+        let hex = value.trim().trim_start_matches('#');
         if hex.len() == 6 {
             let n = u32::from_str_radix(hex, 16).expect("hex colour");
             out.insert(name.trim().to_string(), [(n >> 16 & 255) as f64, (n >> 8 & 255) as f64, (n & 255) as f64]);
         }
     }
+    assert!(out.len() >= 19, "every colour token was read: {}", out.len());
     out
 }
 
@@ -37,20 +50,25 @@ fn ratio(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 #[test]
 fn text_and_component_colours_reach_4_5_to_1_on_every_surface() {
-    let t = tokens();
+    for light in [false, true] {
+        check(&tokens(light), if light { "light" } else { "dark" });
+    }
+}
+
+fn check(t: &HashMap<String, [f64; 3]>, palette: &str) {
     for surface in ["bg", "canvas", "surface-1", "surface-2", "surface-3"] {
         for fg in ["text", "text-2", "text-3"] {
             let r = ratio(t[fg], t[surface]);
-            assert!(r >= 4.5, "{fg} on {surface}: {r:.2}:1");
+            assert!(r >= 4.5, "{palette}: {fg} on {surface}: {r:.2}:1");
         }
     }
     for surface in ["surface-1", "surface-2"] {
         for fg in ["accent", "keep", "remove", "hair", "warn", "danger"] {
             let r = ratio(t[fg], t[surface]);
-            assert!(r >= 4.5, "{fg} on {surface}: {r:.2}:1");
+            assert!(r >= 4.5, "{palette}: {fg} on {surface}: {r:.2}:1");
         }
     }
     // Text on the accent fill of primary buttons.
-    assert!(ratio(t["accent-ink"], t["accent"]) >= 4.5);
-    assert!(ratio(t["accent-ink"], t["accent-strong"]) >= 4.5);
+    assert!(ratio(t["accent-ink"], t["accent"]) >= 4.5, "{palette}: accent-ink on accent");
+    assert!(ratio(t["accent-ink"], t["accent-strong"]) >= 4.5, "{palette}: accent-ink on accent-strong");
 }
