@@ -38,7 +38,7 @@ Voilà. Environ 240 Mo de mémoire avec une photo ouverte (modèle non compté),
 - **Correction au pinceau** : marquer ce qu'il faut garder, effacer ce qui dépasse, et un outil **cheveux** pour des bords doux.
 - **Corrections du masque en un clic** : boucher les trous, retirer les taches, garder la plus grande partie, durcir les bords flous ou inverser le masque, chacune annulable en une étape.
 - **Grouper par couleur** (traits verts et rouges) quand l'IA hésite : les zones de couleur proche suivent vos traits.
-- **Sélection intelligente** : cliquez ce que vous voulez, clic droit ce que vous ne voulez pas, ou tracez un cadre (modèle SAM 2, léger).
+- **Sélection intelligente** : cliquez ce que vous voulez, clic droit ce que vous ne voulez pas, ou tracez un cadre (modèle SAM 2, léger). Un clic ambigu reçoit trois propositions (une partie, le tout, un entre-deux) : <kbd>Tab</kbd> passe de l'une à l'autre, <kbd>Entrée</kbd> applique celle affichée.
 - **Fonds** : transparent, couleur unie, dégradé (deux couleurs et un angle), une image, ou l'original avec le sujet comblé : la texture autour (un mur, de l'herbe, un sol) est prolongée derrière lui, morceau par morceau, en une seconde environ en arrière-plan, avec un remplissage lisse affiché en attendant. Flou, niveaux de gris, négatif, pixellisation ou coloration sur l'une ou l'autre couche. Une pipette près de chaque couleur la prend dans l'image.
 - **Nettoyage des bords** : les bords doux (cheveux, adoucissement) perdent la couleur de l'ancien fond, donc aucun halo sur le nouveau.
 - **Réglage des couleurs** du sujet seul (luminosité, saturation, chaleur) pour qu'il s'accorde à son nouveau fond.

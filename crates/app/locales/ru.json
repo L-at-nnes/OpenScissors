@@ -331,5 +331,7 @@
   "{name} wrote {file}": "{name} записал {file}",
   "Appearance": "Оформление",
   "Dark": "Тёмное",
-  "Light": "Светлое"
+  "Light": "Светлое",
+  "Candidate {n} of {total}. Tab shows the next one, Enter applies it.": "Вариант {n} из {total}. Tab — следующий, Enter — применить.",
+  "Next candidate of the smart selection": "Следующий вариант умного выделения"
 }

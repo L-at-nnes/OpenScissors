@@ -331,5 +331,7 @@
   "{name} wrote {file}": "{name} gravou {file}",
   "Appearance": "Aparência",
   "Dark": "Escuro",
-  "Light": "Claro"
+  "Light": "Claro",
+  "Candidate {n} of {total}. Tab shows the next one, Enter applies it.": "Proposta {n} de {total}. Tab mostra a próxima, Enter a aplica.",
+  "Next candidate of the smart selection": "Próxima proposta da seleção inteligente"
 }

@@ -331,5 +331,7 @@
   "{name} wrote {file}": "{name} が {file} を書き出しました",
   "Appearance": "外観",
   "Dark": "ダーク",
-  "Light": "ライト"
+  "Light": "ライト",
+  "Candidate {n} of {total}. Tab shows the next one, Enter applies it.": "候補 {n}/{total}。Tab で次の候補、Enter で適用。",
+  "Next candidate of the smart selection": "スマート選択の次の候補"
 }

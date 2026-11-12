@@ -130,6 +130,9 @@ pub struct Ux {
     pub prompts: Vec<Prompt>,
     pub smart_mode: SelectionMode,
     pub smart_busy: bool,
+    /// The candidates of the smart selection for the current points (network size, best first) and the one shown.
+    pub smart_candidates: Arc<Vec<openscissors_core::types::Mask>>,
+    pub smart_choice: usize,
     pub stroke: Option<Vec<(f64, f64)>>,
     /// The drawn part of `stroke` as path commands, for the view it was drawn in: a long stroke only appends its new
     /// points instead of writing every point again at each move.
@@ -322,6 +325,8 @@ impl Ctl {
                 prompts: Vec::new(),
                 smart_mode: SelectionMode::Replace,
                 smart_busy: false,
+                smart_candidates: Arc::new(Vec::new()),
+                smart_choice: 0,
                 stroke: None,
                 stroke_svg: None,
                 pan_from: None,

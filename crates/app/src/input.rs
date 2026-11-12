@@ -298,6 +298,9 @@ impl Ctl {
             if special(Key::Backspace) || c == '\u{8}' {
                 return self.smart_undo_prompt();
             }
+            if c == '\t' || special(Key::Tab) {
+                return self.smart_next_candidate();
+            }
         }
         if ctrl {
             match ctrl_key(c) {

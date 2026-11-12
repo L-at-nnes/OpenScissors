@@ -331,5 +331,7 @@
   "{name} wrote {file}": "{name} 已写入 {file}",
   "Appearance": "外观",
   "Dark": "深色",
-  "Light": "浅色"
+  "Light": "浅色",
+  "Candidate {n} of {total}. Tab shows the next one, Enter applies it.": "候选 {n}/{total}。按 Tab 查看下一个，按 Enter 应用。",
+  "Next candidate of the smart selection": "智能选择的下一个候选"
 }

@@ -541,7 +541,9 @@ impl Ctl {
                 let result = (|| -> Result<_, String> {
                     let sam = ensure_sam(&me.st)?;
                     let emb = embeddings(&me.st, &sam, (doc_id, geometry), &image)?;
-                    sam.select(&emb, &prompts, &image).map_err(|e| e.to_string())
+                    let found = sam.select_candidates(&emb, &prompts, &image).map_err(|e| e.to_string())?;
+                    let mask = openscissors_core::model::sam::refine(&image, &found[0]);
+                    Ok((mask, found))
                 })();
                 // A later click started another run: its selection (with more points) is the one to show.
                 if me.st.smart_gen.load(Ordering::SeqCst) != gen {
@@ -549,11 +551,17 @@ impl Ctl {
                 }
                 me.ux.guard().smart_busy = false;
                 match result {
-                    Ok(mask) => {
+                    Ok((mask, found)) => {
                         if let Some(d) = me.st.doc.guard().as_mut().filter(|d| d.id == doc_id && d.geometry() == geometry) {
                             d.set_selection(Some(mask));
                         }
-                        me.say("", false);
+                        let total = found.len();
+                        {
+                            let mut ux = me.ux.guard();
+                            ux.smart_candidates = Arc::new(found);
+                            ux.smart_choice = 0;
+                        }
+                        me.say_candidate(0, total);
                         me.refresh_doc();
                     }
                     Err(e) => {
@@ -574,6 +582,48 @@ impl Ctl {
             },
             reset,
         );
+    }
+
+    /// Show the next candidate of the smart selection (Tab): the decoder proposes a part, a whole and something in
+    /// between for the same points.
+    pub fn smart_next_candidate(self: &Arc<Self>) {
+        let (found, choice) = {
+            let mut ux = self.ux.guard();
+            if ux.prompts.is_empty() || ux.smart_busy || ux.smart_candidates.len() < 2 {
+                return;
+            }
+            ux.smart_choice = (ux.smart_choice + 1) % ux.smart_candidates.len();
+            (ux.smart_candidates.clone(), ux.smart_choice)
+        };
+        let (doc_id, geometry, image) = {
+            let g = self.st.doc.guard();
+            let Some(d) = g.as_ref() else { return };
+            (d.id, d.geometry(), d.image.clone())
+        };
+        let gen = self.st.smart_gen.load(Ordering::SeqCst);
+        let me = self.clone();
+        self.spawn(move || {
+            let mask = openscissors_core::model::sam::refine(&image, &found[choice]);
+            // Points added meanwhile start a new run, whose candidates are the ones to show.
+            if me.st.smart_gen.load(Ordering::SeqCst) != gen || me.ux.guard().smart_choice != choice {
+                return;
+            }
+            if let Some(d) = me.st.doc.guard().as_mut().filter(|d| d.id == doc_id && d.geometry() == geometry) {
+                d.set_selection(Some(mask));
+            }
+            me.say_candidate(choice, found.len());
+            me.refresh_doc();
+        });
+    }
+
+    /// Say which candidate is shown, when there is a choice.
+    fn say_candidate(self: &Arc<Self>, choice: usize, total: usize) {
+        if total > 1 {
+            let (n, total) = ((choice + 1).to_string(), total.to_string());
+            self.say(tf("Candidate {n} of {total}. Tab shows the next one, Enter applies it.", &[("n", &n), ("total", &total)]), false);
+        } else {
+            self.say("", false);
+        }
     }
 
     pub fn smart_apply(self: &Arc<Self>) {

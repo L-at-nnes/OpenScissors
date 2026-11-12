@@ -83,13 +83,25 @@ pub fn prompt_tensors(prompts: &[Prompt], w: usize, h: usize) -> Result<(Vec<f32
 /// Mask of the best of the decoder's candidates: `logits` holds `candidates` masks of
 /// `MASK_SIDE` squared logits; the one with the highest score becomes a 0..255 mask.
 pub fn best_mask(scores: &[f32], logits: &[f32]) -> Result<Mask> {
+    Ok(candidates(scores, logits)?.swap_remove(0))
+}
+
+/// Every candidate of the decoder as a 0..255 mask of `MASK_SIDE` squared, the best score first. The decoder gives a
+/// part, a whole and something in between for an ambiguous click (a shirt, the person, the person and the bike).
+pub fn candidates(scores: &[f32], logits: &[f32]) -> Result<Vec<Mask>> {
     let plane = MASK_SIDE * MASK_SIDE;
     if scores.is_empty() || logits.len() < scores.len() * plane {
         return Err(Error::msg("unexpected decoder output"));
     }
-    let best = scores.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i).unwrap_or(0);
-    let data = logits[best * plane..(best + 1) * plane].par_iter().map(|&v| ((1.0 / (1.0 + (-v).exp())) * 255.0).round() as u8).collect();
-    Ok(Mask { w: MASK_SIDE, h: MASK_SIDE, data })
+    let mut order: Vec<usize> = (0..scores.len()).collect();
+    order.sort_by(|&a, &b| scores[b].total_cmp(&scores[a]));
+    Ok(order
+        .into_iter()
+        .map(|i| {
+            let data = logits[i * plane..(i + 1) * plane].par_iter().map(|&v| ((1.0 / (1.0 + (-v).exp())) * 255.0).round() as u8).collect();
+            Mask { w: MASK_SIDE, h: MASK_SIDE, data }
+        })
+        .collect())
 }
 
 impl Sam2 {
@@ -128,6 +140,12 @@ impl Sam2 {
     /// Segment with `prompts`. The result has the size of `img` (255 = selected), with edges
     /// refined on the image like the AI prediction is.
     pub fn select(&self, emb: &Embeddings, prompts: &[Prompt], img: &Image) -> Result<Mask> {
+        Ok(upsample_guided(img, &self.select_candidates(emb, prompts, img)?[0]))
+    }
+
+    /// Every candidate of the decoder for `prompts`, the best first, at the network's size: give the one shown to
+    /// [`refine`].
+    pub fn select_candidates(&self, emb: &Embeddings, prompts: &[Prompt], img: &Image) -> Result<Vec<Mask>> {
         let (points, labels, boxes) = prompt_tensors(prompts, img.w, img.h)?;
         let (np, nb) = (labels.len(), boxes.len() / 4);
         let mut session = self.decoder.guard();
@@ -141,9 +159,13 @@ impl Sam2 {
             "image_embeddings.2" => TensorRef::from_array_view(([1usize, 256, 64, 64], emb.e2.as_slice()))?,
         ])?;
         let scores = out["iou_scores"].try_extract_tensor::<f32>()?.1.to_vec();
-        let low = best_mask(&scores, out["pred_masks"].try_extract_tensor::<f32>()?.1)?;
-        Ok(upsample_guided(img, &low))
+        candidates(&scores, out["pred_masks"].try_extract_tensor::<f32>()?.1)
     }
+}
+
+/// A candidate of [`Sam2::select_candidates`] at the size of `img`, its edges refined on the image.
+pub fn refine(img: &Image, candidate: &Mask) -> Mask {
+    upsample_guided(img, candidate)
 }
 
 #[cfg(test)]
@@ -187,5 +209,9 @@ mod tests {
         let m = best_mask(&[0.9, 0.2, 0.5], &logits).unwrap();
         assert!(m.data.iter().all(|&v| v == 0));
         assert!(best_mask(&[0.5], &logits[..10]).is_err());
+        let all = candidates(&[0.2, 0.9, 0.5], &logits).unwrap();
+        assert_eq!(all.len(), 3);
+        assert!(all[0].data.iter().all(|&v| v == 255), "the best score first");
+        assert!(all[1].data.iter().all(|&v| v == 0) && all[2].data.iter().all(|&v| v == 0));
     }
 }
