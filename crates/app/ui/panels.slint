@@ -200,6 +200,8 @@ export component ModelsPanel inherits Frame {
         Divider { }
         Note {
             text: @tr("Stored in") + " " + Backend.models-dir;
+            // A path has no spaces to break at: it is cut anywhere rather than widening the panel.
+            wrap: char-wrap;
         }
         Note {
             text: @tr("Add your own: put model.onnx and a model.json in a new folder there.");
@@ -471,6 +473,8 @@ export component AboutPanel inherits Frame {
         }
         Note {
             text: @tr("Portable folder") + ": " + Backend.root-path;
+            // A path has no spaces to break at: it is cut anywhere rather than widening the panel.
+            wrap: char-wrap;
         }
         AboutSlint {
             preferred-height: 110px;
