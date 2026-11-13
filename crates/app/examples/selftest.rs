@@ -274,7 +274,7 @@ fn main() {
 
 /// A scenario written as JSON: a list of steps such as
 /// `{"click":[x,y]}`, `{"rclick":[x,y]}`, `{"drag":[x0,y0,x1,y1]}`, `{"key":"z","ctrl":true}`,
-/// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"param":["background.mode","original"]}`, `{"language":n}` (0 = the system, then the list), `{"theme":n}` (0 system, 1 dark, 2 light), `{"smart":[x,y]}` (a smart-select point in image pixels), `{"drop_folder":"dir"}`, `{"tab":n}`, `{"popover":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
+/// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"param":["background.mode","original"]}`, `{"language":n}` (0 = the system, then the list), `{"theme":n}` (0 system, 1 dark, 2 light), `{"smart":[x,y]}` (a smart-select point in image pixels), `{"compare":true}` (compare the models), `{"drop_folder":"dir"}`, `{"tab":n}`, `{"popover":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
 fn run_script(d: &Driver, path: &str) {
     use slint::platform::{Key, PointerEventButton, WindowEvent};
     let steps: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(path).expect("script")).expect("json");
@@ -365,6 +365,14 @@ fn run_script(d: &Driver, path: &str) {
             let t = Instant::now();
             while d.ctl.ux.guard().smart_busy || t.elapsed() < Duration::from_millis(500) {
                 std::thread::sleep(Duration::from_millis(50));
+            }
+            d.settle(300);
+        } else if step["compare"].as_bool() == Some(true) {
+            // Compare the downloaded models on the open picture, and wait for the result.
+            d.ui(|c, _| c.compare_models());
+            let t = Instant::now();
+            while d.ctl.ux.guard().comparing || t.elapsed() < Duration::from_millis(500) {
+                std::thread::sleep(Duration::from_millis(100));
             }
             d.settle(300);
         } else if let Some(i) = step["theme"].as_i64() {
