@@ -92,7 +92,7 @@ The first time, no AI model is installed (they are not bundled). Click the chip 
 | BiRefNet portrait | 973 MB | heavy | people: hair, faces, shoulders; slow on a CPU |
 | SAM 2.1 tiny | 156 MB | ~1 GB while selecting | the Smart select tool |
 
-The app picks the lightest model you have until you choose another one, and refuses a model that wouldn't fit in its memory budget instead of freezing your PC.
+With two models or more, **Compare them on this picture** (in the models panel) runs each on the open picture and shows its cut-out, what it kept, how long it took and how much it agrees with the model in use. The app picks the lightest model you have until you choose another one, and refuses a model that wouldn't fit in its memory budget instead of freezing your PC.
 
 ## Portable by design
 

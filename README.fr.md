@@ -90,7 +90,7 @@ Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fourni
 | BiRefNet portrait | 973 Mo | lourd | personnes : cheveux, visages, épaules ; lent sur processeur |
 | SAM 2.1 tiny | 156 Mo | ~1 Go pendant la sélection | l'outil Sélection intelligente |
 
-L'appli prend le modèle le plus léger que vous avez tant que vous n'en choisissez pas un autre, et refuse un modèle qui ne tiendrait pas dans son budget mémoire plutôt que de figer votre PC.
+Avec deux modèles ou plus, **Les comparer sur cette image** (dans le panneau des modèles) fait tourner chacun sur l'image ouverte et montre son détourage, ce qu'il garde, son temps et son accord avec le modèle en service. L'appli prend le modèle le plus léger que vous avez tant que vous n'en choisissez pas un autre, et refuse un modèle qui ne tiendrait pas dans son budget mémoire plutôt que de figer votre PC.
 
 ## Portable pour de vrai
 

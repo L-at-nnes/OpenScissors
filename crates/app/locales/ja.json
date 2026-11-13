@@ -351,5 +351,11 @@
   "Shadow setting": "影の設定",
   "Mask setting": "マスクの設定",
   "Setting": "設定",
-  "Several settings": "複数の設定"
+  "Several settings": "複数の設定",
+  "Compare them on this picture": "この画像で比較",
+  "Compare the models": "モデルを比較",
+  "Every downloaded model runs on the picture, one after the other…": "ダウンロード済みの各モデルが順番に画像を処理しています…",
+  "{kept}% kept, {ms} ms": "{kept}% を保持、{ms} ms",
+  "{agree}% like {name}": "{name} と {agree}% 一致",
+  "Not run: too heavy for the memory budget, or it could not load.": "未実行：メモリの上限に対して重すぎるか、読み込めませんでした。"
 }

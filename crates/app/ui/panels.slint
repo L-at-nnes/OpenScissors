@@ -197,6 +197,14 @@ export component ModelsPanel inherits Frame {
                 }
             }
         }
+        if Backend.can-compare: Btn {
+            text: @tr("Compare them on this picture");
+            enabled: Backend.has-doc && !Backend.comparing;
+            clicked => {
+                Backend.compare-models();
+                Backend.popover = 8;
+            }
+        }
         Divider { }
         Note {
             text: @tr("Stored in") + " " + Backend.models-dir;
@@ -428,6 +436,48 @@ export component ShortcutsPanel inherits Frame {
         KeyRow { label: @tr("Next candidate of the smart selection"); keys: "Tab"; }
         KeyRow { label: @tr("Close a panel, cancel"); keys: "Esc"; }
         KeyRow { label: @tr("This list"); keys: "? · F1"; }
+    }
+}
+
+export component ComparePanel inherits Frame {
+    width: 380px;
+    content-height: col.preferred-height;
+    col := VerticalLayout {
+        spacing: 8px;
+        PanelHead {
+            title: @tr("Compare the models");
+        }
+        if Backend.comparing: Note {
+            text: @tr("Every downloaded model runs on the picture, one after the other…");
+        }
+        for row in Backend.compare-rows: HorizontalLayout {
+            spacing: 8px;
+            Image {
+                source: row.thumb;
+                width: 120px;
+                height: 90px;
+                image-fit: contain;
+            }
+            VerticalLayout {
+                spacing: 2px;
+                alignment: center;
+                Text {
+                    text: row.name;
+                    color: Theme.text;
+                    font-size: Theme.fs-md;
+                    overflow: elide;
+                }
+                Note {
+                    text: row.detail;
+                }
+                if row.id != "": Btn {
+                    text: @tr("Use");
+                    clicked => {
+                        Backend.use-model(row.id);
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -135,6 +135,9 @@ pub struct Ux {
     /// The candidates of the smart selection for the current points (network size, best first) and the one shown.
     pub smart_candidates: Arc<Vec<openscissors_core::types::Mask>>,
     pub smart_choice: usize,
+    /// The models being compared on the open picture, and the results of the last comparison.
+    pub comparing: bool,
+    pub compare: Vec<crate::models::CompareResult>,
     pub stroke: Option<Vec<(f64, f64)>>,
     /// The drawn part of `stroke` as path commands, for the view it was drawn in: a long stroke only appends its new
     /// points instead of writing every point again at each move.
@@ -348,6 +351,8 @@ impl Ctl {
                 smart_busy: false,
                 smart_candidates: Arc::new(Vec::new()),
                 smart_choice: 0,
+                comparing: false,
+                compare: Vec::new(),
                 stroke: None,
                 stroke_svg: None,
                 pan_from: None,
@@ -625,6 +630,28 @@ impl Ctl {
             })
             .collect();
         b.set_models(ModelRc::new(VecModel::from(rows)));
+        let segmenters = self.st.models().into_iter().filter(|m| m.kind == ModelKind::Segmenter && self.st.is_ready(m)).count();
+        b.set_can_compare(segmenters >= 2);
+        let (comparing, compare) = {
+            let ux = self.ux.guard();
+            (ux.comparing, ux.compare.clone())
+        };
+        b.set_comparing(comparing);
+        let compare_rows: Vec<crate::CompareRow> = compare
+            .into_iter()
+            .map(|r| crate::CompareRow {
+                id: r.id.into(),
+                name: r.name.into(),
+                detail: r.detail.into(),
+                thumb: r
+                    .thumb
+                    .map(|t| {
+                        slint::Image::from_rgba8(SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&t.data, t.w as u32, t.h as u32))
+                    })
+                    .unwrap_or_default(),
+            })
+            .collect();
+        b.set_compare_rows(ModelRc::new(VecModel::from(compare_rows)));
         b.set_model_error(status.error.clone().unwrap_or_default().into());
         let s = self.st.settings.guard();
         b.set_accel_index(match s.accelerator {

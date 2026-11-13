@@ -57,6 +57,14 @@ export struct ModelRow {
     is-sam: bool,
 }
 
+// One model of a comparison on the open picture: its cut-out in small, and what it measured.
+export struct CompareRow {
+    id: string,
+    name: string,
+    detail: string,
+    thumb: image,
+}
+
 // A step of the undo history: its label, and whether it is done (the others can be redone).
 export struct HistoryRow {
     label: string,
@@ -190,6 +198,10 @@ export global Backend {
     // The last steps of the undo history, newest first, and how many steps there are in all.
     in property <[HistoryRow]> history;
     in property <int> history-count;
+    in property <[CompareRow]> compare-rows;
+    in property <bool> comparing;
+    // Two cut-out models or more are downloaded.
+    in property <bool> can-compare;
     in property <bool> can-run-plugin;
     in property <string> about-version;
     in property <string> root-path;
@@ -285,6 +297,8 @@ export global Backend {
     callback set-theme(int);
     // Undo or redo until this many steps of the history are done.
     callback history-go(int);
+    // Run every downloaded cut-out model on the open picture, one after the other.
+    callback compare-models();
     callback set-marker-on-screen(bool);
     callback plugin-toggle(int, bool);
     callback plugin-run(int);

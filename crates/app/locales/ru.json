@@ -351,5 +351,11 @@
   "Shadow setting": "Настройка тени",
   "Mask setting": "Настройка маски",
   "Setting": "Настройка",
-  "Several settings": "Несколько настроек"
+  "Several settings": "Несколько настроек",
+  "Compare them on this picture": "Сравнить на этом изображении",
+  "Compare the models": "Сравнение моделей",
+  "Every downloaded model runs on the picture, one after the other…": "Каждая загруженная модель по очереди обрабатывает изображение…",
+  "{kept}% kept, {ms} ms": "Оставлено {kept} %, {ms} мс",
+  "{agree}% like {name}": "{agree} % совпадает с {name}",
+  "Not run: too heavy for the memory budget, or it could not load.": "Не запущена: слишком тяжёлая для бюджета памяти или не загрузилась."
 }

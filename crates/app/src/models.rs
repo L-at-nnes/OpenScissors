@@ -87,6 +87,29 @@ fn check_pipeline(model: &Predictor, w: usize, h: usize) -> Result<(), String> {
     Ok(())
 }
 
+/// One model of a comparison, for the panel.
+#[derive(Clone)]
+pub struct CompareResult {
+    /// Empty when there is nothing to use: the model did not run, or it is the one in use.
+    pub id: String,
+    pub name: String,
+    pub detail: String,
+    /// The cut-out over a checker, 240 px high at most (RGBA).
+    pub thumb: Option<openscissors_core::types::Rgba>,
+}
+
+/// The cut-out of `image` by `mask` over a grey checker, small: the right tile of a one-model contact sheet.
+fn cutout_thumb(image: &Image, mask: &Mask) -> openscissors_core::types::Rgba {
+    let sheet = openscissors_core::compare::contact_sheet(image, &[(String::new(), mask.clone())]);
+    let tile = (sheet.w - 8) / 2; // two tiles and the gap between them
+    let mut out = openscissors_core::types::Rgba::new(tile, sheet.h);
+    for y in 0..sheet.h {
+        let from = (y * sheet.w + sheet.w - tile) * 4;
+        out.data[y * tile * 4..(y + 1) * tile * 4].copy_from_slice(&sheet.data[from..from + tile * 4]);
+    }
+    out
+}
+
 type PendingJob = (u64, AlphaJob);
 
 fn take_job(state: &AppState) -> Option<PendingJob> {
@@ -184,6 +207,84 @@ impl Ctl {
             }
             me.refresh_doc();
         });
+    }
+
+    // -- comparing the models
+
+    /// Run every downloaded cut-out model on the open picture, one after the other (one in memory at a time; those that
+    /// would not fit the memory budget are listed, not run), and show each cut-out with what it kept, how long it took
+    /// and how much it agrees with the model in use.
+    pub fn compare_models(self: &Arc<Self>) {
+        let Some(image) = self.st.doc.guard().as_ref().map(|d| d.image.clone()) else { return };
+        let specs: Vec<ModelSpec> =
+            self.st.models().into_iter().filter(|s| s.kind == ModelKind::Segmenter && self.st.is_ready(s)).collect();
+        if specs.len() < 2 || self.ux.guard().comparing {
+            return;
+        }
+        let active = self.st.model.guard().as_ref().map(|m| m.spec().id.clone());
+        {
+            let mut ux = self.ux.guard();
+            ux.comparing = true;
+            ux.compare.clear();
+        }
+        self.refresh(R_MODELS);
+        let me = self.clone();
+        let owner = self.clone();
+        self.spawn_or(
+            move || {
+                let accelerator = me.st.settings.guard().accelerator;
+                let mut masks: Vec<(ModelSpec, Option<(Mask, u128)>)> = Vec::new();
+                for spec in &specs {
+                    me.say(tf("Running {name}…", &[("name", &spec.name)]), false);
+                    let result = fits_budget(spec, false)
+                        .then(|| {
+                            let started = std::time::Instant::now();
+                            let p = Predictor::load_with(spec, &me.st.model_path(spec), accelerator).ok()?;
+                            check_pipeline(&p, image.w, image.h).ok()?;
+                            let mask = p.predict(&image, true).ok()?;
+                            Some((mask, started.elapsed().as_millis()))
+                        })
+                        .flatten();
+                    masks.push((spec.clone(), result));
+                }
+                let reference =
+                    masks.iter().find(|(s, r)| Some(&s.id) == active.as_ref() && r.is_some()).map(|(s, r)| (s.name.clone(), r.clone()));
+                let rows: Vec<CompareResult> = masks
+                    .iter()
+                    .map(|(spec, result)| match result {
+                        Some((mask, ms)) => {
+                            let kept = format!("{:.0}", openscissors_core::compare::coverage(mask) * 100.0);
+                            let mut detail = tf("{kept}% kept, {ms} ms", &[("kept", &kept), ("ms", &ms.to_string())]);
+                            if let Some((name, Some((m, _)))) = &reference {
+                                if Some(&spec.id) != active.as_ref() {
+                                    let agree = format!("{:.0}", openscissors_core::compare::iou(mask, m) * 100.0);
+                                    detail.push_str(&format!("\n{}", tf("{agree}% like {name}", &[("agree", &agree), ("name", name)])));
+                                }
+                            }
+                            {
+                                // The model in use needs no "Use" button.
+                                let id = if Some(&spec.id) == active.as_ref() { String::new() } else { spec.id.clone() };
+                                CompareResult { id, name: spec.name.clone(), detail, thumb: Some(cutout_thumb(&image, mask)) }
+                            }
+                        }
+                        None => CompareResult {
+                            id: String::new(),
+                            name: spec.name.clone(),
+                            detail: t("Not run: too heavy for the memory budget, or it could not load."),
+                            thumb: None,
+                        },
+                    })
+                    .collect();
+                {
+                    let mut ux = me.ux.guard();
+                    ux.compare = rows;
+                    ux.comparing = false;
+                }
+                me.say("", false);
+                me.refresh(R_MODELS);
+            },
+            move || owner.ux.guard().comparing = false,
+        );
     }
 
     // -- loading a model

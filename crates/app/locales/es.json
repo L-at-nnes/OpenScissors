@@ -351,5 +351,11 @@
   "Shadow setting": "Ajuste de la sombra",
   "Mask setting": "Ajuste de la máscara",
   "Setting": "Ajuste",
-  "Several settings": "Varios ajustes"
+  "Several settings": "Varios ajustes",
+  "Compare them on this picture": "Compararlos en esta imagen",
+  "Compare the models": "Comparar los modelos",
+  "Every downloaded model runs on the picture, one after the other…": "Cada modelo descargado procesa la imagen, uno tras otro…",
+  "{kept}% kept, {ms} ms": "{kept} % conservado, {ms} ms",
+  "{agree}% like {name}": "{agree} % como {name}",
+  "Not run: too heavy for the memory budget, or it could not load.": "No ejecutado: demasiado pesado para el presupuesto de memoria, o no se pudo cargar."
 }
