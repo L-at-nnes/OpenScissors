@@ -135,6 +135,8 @@ pub struct Ux {
     /// The candidates of the smart selection for the current points (network size, best first) and the one shown.
     pub smart_candidates: Arc<Vec<openscissors_core::types::Mask>>,
     pub smart_choice: usize,
+    /// The mark being drawn is a lasso (Alt held at its start): its outline is filled when it ends.
+    pub stroke_lasso: bool,
     /// The models being compared on the open picture, and the results of the last comparison.
     pub comparing: bool,
     pub compare: Vec<crate::models::CompareResult>,
@@ -351,6 +353,7 @@ impl Ctl {
                 smart_busy: false,
                 smart_candidates: Arc::new(Vec::new()),
                 smart_choice: 0,
+                stroke_lasso: false,
                 comparing: false,
                 compare: Vec::new(),
                 stroke: None,

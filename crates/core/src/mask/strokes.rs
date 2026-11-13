@@ -67,6 +67,35 @@ pub fn paint_stroke(mask: &mut Mask, stroke: &Stroke, value: u8) {
     }
 }
 
+/// Strokes of `kind` and `width` (picture pixels) that fill the closed `outline` (a lasso): horizontal runs inside it,
+/// close enough for their round ends to leave no gap. They are ordinary strokes, so files and the undo history keep them
+/// as any other mark.
+pub fn fill_polygon(outline: &[[f32; 2]], kind: StrokeKind, width: u32) -> Vec<Stroke> {
+    if outline.len() < 3 {
+        return Vec::new();
+    }
+    let width = width.max(2);
+    let step = width as f32 * 0.6;
+    let (y0, y1) = outline.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
+    let mut out = Vec::new();
+    let mut y = y0 + step / 2.0;
+    while y < y1 {
+        // Where the scanline crosses the edges (even-odd rule), then the runs between pairs of crossings.
+        let mut xs: Vec<f32> = (0..outline.len())
+            .filter_map(|i| {
+                let (a, b) = (outline[i], outline[(i + 1) % outline.len()]);
+                ((a[1] <= y) != (b[1] <= y)).then(|| a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
+            })
+            .collect();
+        xs.sort_by(f32::total_cmp);
+        for pair in xs.chunks_exact(2) {
+            out.push(Stroke { kind, width, points: vec![[pair[0], y], [pair[1], y]] });
+        }
+        y += step;
+    }
+    out
+}
+
 /// Paint the strokes whose kind is in `kinds`, in order: keep-like = 255, eraser-like = 0.
 pub fn rasterize(strokes: &[Stroke], w: usize, h: usize, kinds: &[StrokeKind]) -> Mask {
     let mut m = Mask::new(w, h);
@@ -141,5 +170,21 @@ mod tests {
         paint_stroke(&mut m, &keep(&[], 5), 255);
         paint_stroke(&mut m, &keep(&[[100.0, 100.0]], 5), 255);
         assert!(m.is_empty_mask());
+    }
+
+    #[test]
+    fn a_lasso_fills_its_outline_and_nothing_else() {
+        // An L shape: concave, so a run must not bridge the notch.
+        let outline = [[10.0, 10.0], [50.0, 10.0], [50.0, 30.0], [30.0, 30.0], [30.0, 60.0], [10.0, 60.0]];
+        let strokes = fill_polygon(&outline, StrokeKind::Keep, 6);
+        assert!(!strokes.is_empty() && strokes.iter().all(|s| s.kind == StrokeKind::Keep && s.points.len() == 2));
+        let m = rasterize(&strokes, 70, 70, &[StrokeKind::Keep]);
+        for (x, y) in [(20, 20), (45, 15), (15, 55), (25, 45), (12, 12)] {
+            assert_eq!(m.get(x, y), 255, "inside at {x},{y}");
+        }
+        for (x, y) in [(45, 50), (40, 40), (60, 20), (5, 5)] {
+            assert_eq!(m.get(x, y), 0, "outside at {x},{y}");
+        }
+        assert!(fill_polygon(&outline[..2], StrokeKind::Keep, 6).is_empty(), "two points enclose nothing");
     }
 }

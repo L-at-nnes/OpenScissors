@@ -77,7 +77,7 @@ pub const HISTORY_LABELS: &[&str] = &[
     "Crop",
     "Setting",
     "Several settings",
-    "Marks loaded",
+    "Marks",
     "Turn the picture",
     "Mask",
 ];
@@ -103,7 +103,7 @@ impl Command {
                 _ => "Setting",
             },
             Command::SetParams { .. } => "Several settings",
-            Command::SetStrokes { .. } => "Marks loaded",
+            Command::SetStrokes { .. } => "Marks",
             Command::Turn(_) => "Turn the picture",
             Command::SetMask { .. } => "Mask",
         }
@@ -437,6 +437,17 @@ impl Document {
 
     pub fn add_stroke(&mut self, stroke: Stroke) {
         self.push(Command::AddStroke(stroke));
+    }
+
+    /// Add several strokes as one undoable step (a lasso, filled with [`crate::mask::strokes::fill_polygon`]).
+    pub fn add_strokes(&mut self, added: Vec<Stroke>) {
+        if added.is_empty() {
+            return;
+        }
+        let old = self.strokes.clone();
+        let mut new = old.clone();
+        new.extend(added);
+        self.push(Command::SetStrokes { old, new });
     }
 
     /// Replace all strokes with the ones of a marks file, as one undoable step.

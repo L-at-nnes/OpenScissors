@@ -37,7 +37,7 @@ So that's what this is. About 240 MB of memory with a photo open (not counting t
 ## What you get
 
 - **Automatic cut-out** the moment you open an image. The result appears next to the original; both views zoom and pan together.
-- **Brush correction**: mark what to keep, erase what shouldn't be there, and a *hair* tool for soft edges, computed at full resolution around the strokes so that single strands stay sharp. The brush size is in pixels of the picture, or of the screen whatever the zoom (*Settings*).
+- **Brush correction**: mark what to keep, erase what shouldn't be there, and a *hair* tool for soft edges, computed at full resolution around the strokes so that single strands stay sharp. The brush size is in pixels of the picture, or of the screen whatever the zoom (*Settings*). <kbd>Alt</kbd> + drag with a mark tool draws a lasso: its outline is filled with the mark.
 - **One-click mask fixes**: fill the holes, remove the specks, keep the largest part, harden soft edges or invert the mask, each one step to undo.
 - **Group by color** (green and red marks) when the AI struggles: whole areas of similar colour follow your strokes.
 - **Smart select**: click what you want, right-click what you don't, or drag a box (needs the small SAM 2 model). An ambiguous click gets three proposals (a part, the whole, something in between): <kbd>Tab</kbd> goes from one to the next, <kbd>Enter</kbd> applies the one shown.

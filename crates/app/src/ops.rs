@@ -697,6 +697,18 @@ impl Ctl {
         self.kick_alpha();
     }
 
+    /// Fill the outline `points` (a lasso, Alt + drag) with marks of `tool`, as one undoable step.
+    pub fn add_lasso(self: &Arc<Self>, tool: Tool, width: u32, points: Vec<(f64, f64)>) {
+        let Some(kind) = tool.stroke_kind() else { return };
+        let outline: Vec<[f32; 2]> = points.into_iter().map(|(x, y)| [x as f32, y as f32]).collect();
+        let strokes = openscissors_core::mask::strokes::fill_polygon(&outline, kind, width);
+        if let Some(d) = self.st.doc.guard().as_mut() {
+            d.add_strokes(strokes);
+        }
+        self.refresh_doc();
+        self.kick_alpha();
+    }
+
     pub fn add_stroke(self: &Arc<Self>, tool: Tool, width: u32, points: Vec<(f64, f64)>) {
         let Some(kind) = tool.stroke_kind() else { return };
         if points.is_empty() {

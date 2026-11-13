@@ -357,5 +357,8 @@
   "Every downloaded model runs on the picture, one after the other…": "Chaque modèle téléchargé passe sur l'image, l'un après l'autre…",
   "{kept}% kept, {ms} ms": "{kept} % gardé, {ms} ms",
   "{agree}% like {name}": "{agree} % comme {name}",
-  "Not run: too heavy for the memory budget, or it could not load.": "Non lancé : trop lourd pour le budget mémoire, ou impossible à charger."
+  "Not run: too heavy for the memory budget, or it could not load.": "Non lancé : trop lourd pour le budget mémoire, ou impossible à charger.",
+  "Marks": "Traits",
+  "Fill an outline with the mark (lasso)": "Remplir un contour avec le trait (lasso)",
+  "Alt+drag": "Alt+glisser"
 }

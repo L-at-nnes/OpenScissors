@@ -357,5 +357,8 @@
   "Every downloaded model runs on the picture, one after the other…": "每个已下载的模型依次处理该图片…",
   "{kept}% kept, {ms} ms": "保留 {kept}%，{ms} 毫秒",
   "{agree}% like {name}": "与 {name} 一致 {agree}%",
-  "Not run: too heavy for the memory budget, or it could not load.": "未运行：超出内存预算，或无法加载。"
+  "Not run: too heavy for the memory budget, or it could not load.": "未运行：超出内存预算，或无法加载。",
+  "Marks": "标记",
+  "Fill an outline with the mark (lasso)": "用标记填充轮廓（套索）",
+  "Alt+drag": "Alt+拖动"
 }

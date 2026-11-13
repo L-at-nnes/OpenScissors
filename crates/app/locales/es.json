@@ -357,5 +357,8 @@
   "Every downloaded model runs on the picture, one after the other…": "Cada modelo descargado procesa la imagen, uno tras otro…",
   "{kept}% kept, {ms} ms": "{kept} % conservado, {ms} ms",
   "{agree}% like {name}": "{agree} % como {name}",
-  "Not run: too heavy for the memory budget, or it could not load.": "No ejecutado: demasiado pesado para el presupuesto de memoria, o no se pudo cargar."
+  "Not run: too heavy for the memory budget, or it could not load.": "No ejecutado: demasiado pesado para el presupuesto de memoria, o no se pudo cargar.",
+  "Marks": "Marcas",
+  "Fill an outline with the mark (lasso)": "Rellenar un contorno con la marca (lazo)",
+  "Alt+drag": "Alt+arrastrar"
 }

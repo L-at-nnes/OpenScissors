@@ -150,6 +150,7 @@ impl Ctl {
         } else if button == 0 && drawing {
             let (ix, iy) = to_image(&ux.view, x, y);
             ux.stroke = Some(vec![(ix, iy)]);
+            ux.stroke_lasso = alt;
         } else {
             return;
         }
@@ -200,6 +201,7 @@ impl Ctl {
             Crop(Option<Rect>),
             Prompt(Prompt),
             Stroke(Tool, u32, Vec<(f64, f64)>),
+            Lasso(Tool, u32, Vec<(f64, f64)>),
         }
         let action = {
             let mut ux = self.ux.guard();
@@ -233,7 +235,12 @@ impl Ctl {
                 }
             }
             if let Some(points) = ux.stroke.take() {
-                action = Action::Stroke(ux.tool, ux.brush_width().round() as u32, points);
+                let width = ux.brush_width().round() as u32;
+                action = if std::mem::take(&mut ux.stroke_lasso) {
+                    Action::Lasso(ux.tool, width, points)
+                } else {
+                    Action::Stroke(ux.tool, width, points)
+                };
             }
             action
         };
@@ -242,6 +249,7 @@ impl Ctl {
             Action::Crop(r) => self.set_crop(r),
             Action::Prompt(p) => self.smart_add(p),
             Action::Stroke(tool, width, points) => self.add_stroke(tool, width, points),
+            Action::Lasso(tool, width, points) => self.add_lasso(tool, width, points),
         }
         self.refresh(R_VIEW | R_MAIN);
     }
