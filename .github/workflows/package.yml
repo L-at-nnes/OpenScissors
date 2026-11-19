@@ -2,8 +2,16 @@ name: package
 
 # The installable forms of a release, beside the portable zips of `release.yml`: an AppImage for Linux and an
 # OpenScissors.app for macOS (signed ad hoc; see docs/DISTRIBUTION.md for a Developer ID and notarization).
-# A workflow of its own: a failure here never stops a release. "Run workflow" builds them as artifacts only.
+# A job of `release.yml` calls it once the release is published (a release made with the workflow's own token does not
+# raise the "published" event), so a failure here never stops the release itself. Publishing a release by hand in the
+# web page runs it too. "Run workflow" builds them as artifacts only.
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The tag of the release to attach the builds to
+        type: string
+        required: true
   release:
     types: [published]
   workflow_dispatch:
@@ -31,10 +39,10 @@ jobs:
           path: dist/*.AppImage
           if-no-files-found: error
       - name: Attach to the release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.AppImage --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "${{ github.event.release.tag_name || inputs.tag }}" dist/*.AppImage --repo "$GITHUB_REPOSITORY"
 
   macos-app:
     runs-on: macos-latest
@@ -51,7 +59,7 @@ jobs:
           path: dist/OpenScissors-*-macos-arm64.zip
           if-no-files-found: error
       - name: Attach to the release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist/OpenScissors-*-macos-arm64.zip --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "${{ github.event.release.tag_name || inputs.tag }}" dist/OpenScissors-*-macos-arm64.zip --repo "$GITHUB_REPOSITORY"

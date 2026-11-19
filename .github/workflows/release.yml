@@ -74,6 +74,17 @@ jobs:
           gh release create "$GITHUB_REF_NAME" out/* \
             --repo "$GITHUB_REPOSITORY" --title "OpenScissors ${GITHUB_REF_NAME#v}" --generate-notes $flags
 
+  # The AppImage and the macOS app, built from the same tag and attached to the release (package.yml). A release made
+  # with this workflow's token does not start package.yml by itself, so it is called from here.
+  package:
+    needs: publish
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/package.yml
+    with:
+      tag: ${{ github.ref_name }}
+
   # The Scoop and winget manifests of packaging/windows always describe the latest release: once it is published, its
   # version, address and SHA-256 are written into them and committed to main. A pre-release (v1.2.3-rc1) is left alone.
   manifests:
