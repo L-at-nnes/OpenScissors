@@ -1,12 +1,12 @@
 {
-    "version": "2.0.0",
+    "version": "2.0.1",
     "description": "Offline background remover: AI cut-out, brush corrections, backgrounds, batch and command line.",
     "homepage": "https://github.com/L-at-nnes/OpenScissors",
     "license": "Apache-2.0",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/L-at-nnes/OpenScissors/releases/download/v2.0.0/OpenScissors-2.0.0-portable-win-x64.zip",
-            "hash": "c75c2ca6b374b3c21b113dd86abc7819368c26801a9323d4f77632c69c7fe329"
+            "url": "https://github.com/L-at-nnes/OpenScissors/releases/download/v2.0.1/OpenScissors-2.0.1-portable-win-x64.zip",
+            "hash": "de30bb7e793007a546451b0c1bef66901966a3c36a0453e2f89c0eb954fd9fe2"
         }
     },
     "extract_dir": "OpenScissors",
