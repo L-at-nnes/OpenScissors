@@ -28,5 +28,6 @@ two minutes every Monday and on demand, and keeps such inputs as an artifact.
 2. Tag **that commit** `vX.Y.Z` and push the tag. The release workflow stops if the tag and `Cargo.toml` disagree, so a release can never carry another version number than its tag (the `1.0.0` release was tagged before the version was bumped and ships as 0.2.0).
 3. The workflow unzips the archive it built and runs it (`scripts/check-package.mjs`: the command line everywhere; on Linux also the libraries and the window on a virtual display). A zip that does not start is not published. You can run it yourself after `node scripts/package-portable.mjs --build --zip`.
 4. Never upload archives by hand: the workflow builds them, names them with the version of `Cargo.toml` and publishes them with their checksums.
+5. Once the release is published the workflow does the rest: it attaches the AppImage and the macOS app (`package.yml`) and commits the new version and SHA-256 into the Scoop and winget manifests (`scripts/update-manifests.mjs`). A pre-release tag (`vX.Y.Z-rc1`) skips the manifests.
 
 By contributing you agree that your work is released under the Apache-2.0 license of the project.
