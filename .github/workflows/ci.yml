@@ -27,6 +27,7 @@ jobs:
           sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace   # the tests that need a model are ignored here and run by the `models` job
+      - run: node --test scripts/update-manifests.test.mjs   # the script that fills in the package manifests at a release
       # The window itself, on a virtual display: the selftest opens a picture that is already cut out (no model needed),
       # changes the background and saves snapshots of the real interface. It reuses what `cargo test` just built.
       - name: Window smoke test (Linux, virtual display)

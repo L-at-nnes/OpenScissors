@@ -73,3 +73,31 @@ jobs:
           case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" out/* \
             --repo "$GITHUB_REPOSITORY" --title "OpenScissors ${GITHUB_REF_NAME#v}" --generate-notes $flags
+
+  # The Scoop and winget manifests of packaging/windows always describe the latest release: once it is published, its
+  # version, address and SHA-256 are written into them and committed to main. A pre-release (v1.2.3-rc1) is left alone.
+  manifests:
+    needs: publish
+    if: github.ref_type == 'tag' && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: The checksums of the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$GITHUB_REF_NAME" --pattern SHA256SUMS.txt --repo "$GITHUB_REPOSITORY"
+      - run: node scripts/update-manifests.mjs "${GITHUB_REF_NAME#v}" SHA256SUMS.txt
+      - name: Commit to main
+        run: |
+          rm SHA256SUMS.txt
+          if git diff --quiet; then echo "The manifests already describe this release."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(dist): update the scoop and winget manifests for ${GITHUB_REF_NAME#v}"
+          # Someone may have pushed to main since the checkout: take their commits first (the files are not theirs).
+          git pull --rebase origin main
+          git push origin HEAD:main
