@@ -12,6 +12,6 @@ NestedInstallerFiles:
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/L-at-nnes/OpenScissors/releases/download/v2.0.0/OpenScissors-2.0.0-portable-win-x64.zip
-    InstallerSha256: REPLACE-WITH-THE-SHA256-OF-THE-ZIP-FROM-SHA256SUMS.txt
+    InstallerSha256: c75c2ca6b374b3c21b113dd86abc7819368c26801a9323d4f77632c69c7fe329
 ManifestType: installer
 ManifestVersion: 1.6.0

@@ -6,7 +6,7 @@
     "architecture": {
         "64bit": {
             "url": "https://github.com/L-at-nnes/OpenScissors/releases/download/v2.0.0/OpenScissors-2.0.0-portable-win-x64.zip",
-            "hash": "REPLACE-WITH-THE-SHA256-OF-THE-ZIP-FROM-SHA256SUMS.txt"
+            "hash": "c75c2ca6b374b3c21b113dd86abc7819368c26801a9323d4f77632c69c7fe329"
         }
     },
     "extract_dir": "OpenScissors",
