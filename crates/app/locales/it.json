@@ -360,5 +360,8 @@
   "Not run: too heavy for the memory budget, or it could not load.": "Non eseguito: troppo pesante per il budget di memoria, o non si è potuto caricare.",
   "Marks": "Segni",
   "Fill an outline with the mark (lasso)": "Riempi un contorno con il segno (lazo)",
-  "Alt+drag": "Alt+trascina"
+  "Alt+drag": "Alt+trascina",
+  "Not verified": "Non verificato",
+  "Tiny and quick (5 MB): rough edges, for drafts or a slow computer.": "Minuscolo e veloce (5 MB): bordi grossolani, per bozze o un computer lento.",
+  "Made for drawings and anime characters.": "Pensato per disegni e personaggi anime."
 }

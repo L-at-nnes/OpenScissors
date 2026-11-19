@@ -28,8 +28,12 @@ permissive list of `deny.toml` (`cargo deny check licenses`); `cargo deny list` 
 | BiRefNet lite, half precision | MIT | `onnx-community/BiRefNet_lite-ONNX` (`model_fp16.onnx`) |
 | BiRefNet portrait (Zheng et al.) | MIT | `onnx-community/BiRefNet-portrait-ONNX` |
 | IS-Net general use (DIS, Qin et al., ECCV 2022) | Apache-2.0 | `isnet-general-use.onnx`, rembg release `v0.0.0` |
+| U²-Net lite (U²-Net, Qin et al., 2020) | Apache-2.0 | `u2netp.onnx`, rembg release `v0.0.0` |
+| IS-Net anime | Apache-2.0 | `isnet-anime.onnx`, rembg release `v0.0.0` |
 | SAM 2.1 hiera tiny (Meta) | Apache-2.0 | `onnx-community/sam2.1-hiera-tiny-ONNX` |
 
-Each catalogue entry pins the SHA-256 of the file; a download that does not match is deleted.
+Each catalogue entry pins the SHA-256 of the file; a download that does not match is deleted. The exceptions are
+U²-Net lite and IS-Net anime: their release publishes no checksum, so they are downloaded unchecked and marked
+"Not verified".
 
 The built-in "Local file" entry only appears when `OPENSCISSORS_MODEL` is set (development).

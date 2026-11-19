@@ -360,5 +360,8 @@
   "Not run: too heavy for the memory budget, or it could not load.": "Не запущена: слишком тяжёлая для бюджета памяти или не загрузилась.",
   "Marks": "Метки",
   "Fill an outline with the mark (lasso)": "Залить контур меткой (лассо)",
-  "Alt+drag": "Alt+перетаскивание"
+  "Alt+drag": "Alt+перетаскивание",
+  "Not verified": "Не проверено",
+  "Tiny and quick (5 MB): rough edges, for drafts or a slow computer.": "Крошечная и быстрая (5 МБ): грубые края, для черновиков или медленного компьютера.",
+  "Made for drawings and anime characters.": "Создана для рисунков и аниме-персонажей."
 }

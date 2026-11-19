@@ -79,7 +79,7 @@ Windows 10/11 (64 bits), Linux x64 et macOS sur Apple Silicon ont chacun leur bu
 
 Les releases après la 2.0 reçoivent aussi une AppImage pour Linux et un `OpenScissors.app` pour macOS, qui gardent leurs fichiers dans votre profil ; des manifestes Scoop et winget sont prêts dans `packaging/`. [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) les explique, ainsi que la signature des builds.
 
-Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fournis). Cliquez sur la pastille en haut, choisissez-en un, **Télécharger**. Le fichier est vérifié par SHA-256 avant usage. Un téléchargement coupé (annulé, connexion perdue, ou plus rien reçu pendant une minute) reprend là où il s'était arrêté au prochain **Télécharger** ; un fichier déjà présent est revérifié avant d'être utilisé.
+Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fournis). Cliquez sur la pastille en haut, choisissez-en un, **Télécharger**. Le fichier est vérifié par SHA-256 avant usage (sauf les deux marqués ⚠ plus bas). Un téléchargement coupé (annulé, connexion perdue, ou plus rien reçu pendant une minute) reprend là où il s'était arrêté au prochain **Télécharger** ; un fichier déjà présent est revérifié avant d'être utilisé.
 
 | Modèle | Téléchargement | Mémoire | Pour |
 |---|---|---|---|
@@ -89,6 +89,10 @@ Au premier lancement, aucun modèle d'IA n'est installé (ils ne sont pas fourni
 | BiRefNet complet | 973 Mo | lourd | meilleure qualité, lent sur processeur |
 | BiRefNet portrait | 973 Mo | lourd | personnes : cheveux, visages, épaules ; lent sur processeur |
 | SAM 2.1 tiny | 156 Mo | ~1 Go pendant la sélection | l'outil Sélection intelligente |
+| U²-Net lite ⚠ | 5 Mo | non mesurée | brouillons ou ordinateur lent ; bords grossiers |
+| IS-Net anime ⚠ | 176 Mo | non mesurée | dessins et personnages d'anime |
+
+⚠ **Non vérifiés.** La release d'où viennent ces deux modèles ne publie aucune empreinte, le catalogue n'en fixe donc pas : le fichier est téléchargé et utilisé tel quel, et une mise à jour en amont se télécharge quand même. Le panneau des modèles les marque *Non vérifié*, `models list` affiche *(not verified)* et `models download` avertit. Leurs réglages suivent ceux que documente rembg ; ils n'ont pas été testés ici.
 
 Avec deux modèles ou plus, **Les comparer sur cette image** (dans le panneau des modèles) fait tourner chacun sur l'image ouverte et montre son détourage, ce qu'il garde, son temps et son accord avec le modèle en service. L'appli prend le modèle le plus léger que vous avez tant que vous n'en choisissez pas un autre, et refuse un modèle qui ne tiendrait pas dans son budget mémoire plutôt que de figer votre PC.
 

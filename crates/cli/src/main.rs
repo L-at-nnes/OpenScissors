@@ -108,6 +108,7 @@ fn models_json(registry: &ModelRegistry) -> String {
             let mut v = serde_json::to_value(s).unwrap_or_default();
             let ready = registry.state(s) == ModelState::Ready;
             v["ready"] = ready.into();
+            v["verified"] = s.verified().into();
             if ready {
                 v["path"] = registry.model_path(s).display().to_string().into();
             }
@@ -280,6 +281,9 @@ fn run(args: Vec<String>) -> Result<(), String> {
         Some("models") if args.get(1).map(String::as_str) == Some("download") => {
             let id = args.get(2).ok_or("model id expected")?;
             let spec = registry.get(id).ok_or_else(|| format!("unknown model '{id}'"))?;
+            if !spec.verified() {
+                eprintln!("warning: {} has no published checksum; the file is downloaded and used without being verified", spec.id);
+            }
             let mut last = 0;
             let mut progress = |done: u64, total: u64| {
                 let pct = (done * 100).checked_div(total).unwrap_or(0);
@@ -296,7 +300,10 @@ fn run(args: Vec<String>) -> Result<(), String> {
             let id = args.get(2).ok_or("model id expected")?;
             let spec = registry.get(id).ok_or_else(|| format!("unknown model '{id}'"))?;
             let bad = registry.verify(&spec, &AtomicBool::new(false)).map_err(|e| e.to_string())?;
-            if bad.is_empty() {
+            if bad.is_empty() && !spec.verified() {
+                eprintln!("{} is there, but it has no checksum to compare it with", spec.id);
+                Ok(())
+            } else if bad.is_empty() {
                 eprintln!("{} is intact", spec.id);
                 Ok(())
             } else {
@@ -354,7 +361,8 @@ fn run(args: Vec<String>) -> Result<(), String> {
             }
             for s in registry.available() {
                 let state = if registry.state(&s) == ModelState::Ready { "ready" } else { "not downloaded" };
-                println!("{:<18} {:<16} {:>6} MB  {}  {}", s.id, state, s.size_bytes / 1_000_000, s.license, s.name);
+                let unverified = if s.verified() { "" } else { "  (not verified)" };
+                println!("{:<18} {:<16} {:>6} MB  {}  {}{unverified}", s.id, state, s.size_bytes / 1_000_000, s.license, s.name);
             }
             Ok(())
         }
@@ -520,6 +528,9 @@ mod tests {
         let list: Vec<serde_json::Value> = serde_json::from_str(&models_json(&ModelRegistry::new(dir))).unwrap();
         assert!(list.len() >= 2);
         assert!(list.iter().all(|m| m["id"].is_string() && m["sha256"].is_string() && m["ready"] == false && m.get("path").is_none()));
+        let verified = |id: &str| list.iter().find(|m| m["id"] == id).map(|m| m["verified"].clone());
+        assert_eq!(verified("birefnet-lite"), Some(true.into()));
+        assert_eq!(verified("u2netp"), Some(false.into()), "a model without a pinned checksum says so");
     }
 
     #[test]

@@ -81,7 +81,7 @@ Windows 10/11 (64-bit), Linux x64 and macOS on Apple Silicon each have their bui
 
 The releases after 2.0 also get an AppImage for Linux and an `OpenScissors.app` for macOS, which keep their files in your profile; Scoop and winget manifests are ready in `packaging/`. [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) explains them and how to sign the builds.
 
-The first time, no AI model is installed (they are not bundled). Click the chip at the top, pick one, press **Download**. The file is checked against a SHA-256 before it is used. A download that is cut (cancelled, connection lost, or nothing received for a minute) resumes where it stopped the next time you press **Download**; a file that is already there is checked again before it is trusted.
+The first time, no AI model is installed (they are not bundled). Click the chip at the top, pick one, press **Download**. The file is checked against a SHA-256 before it is used (except the two marked ⚠ below). A download that is cut (cancelled, connection lost, or nothing received for a minute) resumes where it stopped the next time you press **Download**; a file that is already there is checked again before it is trusted.
 
 | Model | Download | Memory | Good for |
 |---|---|---|---|
@@ -91,6 +91,10 @@ The first time, no AI model is installed (they are not bundled). Click the chip 
 | BiRefNet full | 973 MB | heavy | best quality, slow on a CPU |
 | BiRefNet portrait | 973 MB | heavy | people: hair, faces, shoulders; slow on a CPU |
 | SAM 2.1 tiny | 156 MB | ~1 GB while selecting | the Smart select tool |
+| U²-Net lite ⚠ | 5 MB | not measured | drafts or a slow computer; rough edges |
+| IS-Net anime ⚠ | 176 MB | not measured | drawings and anime characters |
+
+⚠ **Not verified.** The release these two come from publishes no checksum, so the catalogue pins none: the file is downloaded and used as it comes, and an update of it upstream still downloads. The models panel marks them *Not verified*, `models list` says *(not verified)* and `models download` warns. Their settings follow the ones rembg documents; they have not been run here.
 
 With two models or more, **Compare them on this picture** (in the models panel) runs each on the open picture and shows its cut-out, what it kept, how long it took and how much it agrees with the model in use. The app picks the lightest model you have until you choose another one, and refuses a model that wouldn't fit in its memory budget instead of freezing your PC.
 

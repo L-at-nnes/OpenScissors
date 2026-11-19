@@ -72,7 +72,8 @@ pub struct ModelSpec {
     /// Empty for models the user placed by hand.
     #[serde(default)]
     pub url: String,
-    /// Lower-case hex SHA-256 of the file; required to download.
+    /// Hex SHA-256 of the file, checked after each download. Empty: the file is downloaded unchecked (see
+    /// [`ModelSpec::verified`]).
     #[serde(default)]
     pub sha256: String,
     #[serde(default)]
@@ -140,6 +141,24 @@ impl ModelSpec {
     /// Total download size in bytes.
     pub fn total_size(&self) -> u64 {
         self.all_files().iter().map(|f| f.size_bytes).sum()
+    }
+
+    /// Whether every file has a pinned SHA-256. A file without one is downloaded and used unchecked: the interface
+    /// and the command line say so.
+    pub fn verified(&self) -> bool {
+        self.all_files().iter().all(|f| !f.sha256.is_empty())
+    }
+}
+
+impl ModelFile {
+    /// The most bytes a download of this file may receive (0: no limit). A file without a pinned hash may be replaced
+    /// upstream by a slightly larger one, so it gets room to grow while a runaway server still cannot fill the disk.
+    fn size_limit(&self) -> u64 {
+        if self.sha256.is_empty() {
+            self.size_bytes.saturating_mul(2)
+        } else {
+            self.size_bytes
+        }
     }
 }
 
@@ -250,6 +269,50 @@ pub fn builtin_catalog() -> Vec<ModelSpec> {
             output: OutputNorm::Minmax,
             recommended: true,
             ram_mb: 600,
+            folder: None,
+            kind: ModelKind::Segmenter,
+            files: vec![],
+        },
+        // The two below come from the same release as IS-Net, which publishes no checksum: they are not pinned, so an
+        // update of the file upstream still downloads, and the interface marks them "Not verified".
+        ModelSpec {
+            id: "u2netp".into(),
+            name: "U²-Net lite".into(),
+            description: "Tiny and quick (5 MB): rough edges, for drafts or a slow computer.".into(),
+            url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx".into(),
+            sha256: String::new(),
+            size_bytes: 4_574_861,
+            license: "Apache-2.0".into(),
+            file_name: "model.onnx".into(),
+            input_size: [320, 320],
+            mean: IMAGENET_MEAN,
+            std: IMAGENET_STD,
+            input_name: None,
+            output_name: None,
+            output: OutputNorm::Minmax,
+            recommended: false,
+            ram_mb: 0,
+            folder: None,
+            kind: ModelKind::Segmenter,
+            files: vec![],
+        },
+        ModelSpec {
+            id: "isnet-anime".into(),
+            name: "IS-Net anime".into(),
+            description: "Made for drawings and anime characters.".into(),
+            url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx".into(),
+            sha256: String::new(),
+            size_bytes: 176_069_933,
+            license: "Apache-2.0".into(),
+            file_name: "model.onnx".into(),
+            input_size: [1024, 1024],
+            mean: IMAGENET_MEAN,
+            std: [1.0, 1.0, 1.0],
+            input_name: None,
+            output_name: None,
+            output: OutputNorm::Minmax,
+            recommended: false,
+            ram_mb: 0,
             folder: None,
             kind: ModelKind::Segmenter,
             files: vec![],
@@ -396,8 +459,8 @@ impl ModelRegistry {
         Ok(())
     }
 
-    /// Download every file of `spec` (HTTPS only) into its folder, verifying each SHA-256. A file already there is
-    /// checked and kept if intact; a download that was cut resumes where it stopped.
+    /// Download every file of `spec` (HTTPS only) into its folder, verifying each pinned SHA-256. A file already there
+    /// is checked and kept if intact; a download that was cut resumes where it stopped.
     /// `progress(done, total)` counts bytes over all files; set `cancel` to abort.
     pub fn download(&self, spec: &ModelSpec, progress: Progress, cancel: &AtomicBool) -> Result<PathBuf> {
         self.download_files(spec, progress, cancel, true)
@@ -405,7 +468,8 @@ impl ModelRegistry {
 
     fn download_files(&self, spec: &ModelSpec, progress: Progress, cancel: &AtomicBool, https_only: bool) -> Result<PathBuf> {
         let files = spec.all_files();
-        if let Some(f) = files.iter().find(|f| f.sha256.len() != 64) {
+        // No hash at all is allowed (an unverified model); a hash of the wrong length is a mistake in the spec.
+        if let Some(f) = files.iter().find(|f| !f.sha256.is_empty() && f.sha256.len() != 64) {
             return Err(Error::Download(format!("file '{}' of model '{}' has no pinned sha256", f.name, spec.id)));
         }
         if https_only && files.iter().any(|f| !f.url.starts_with("https://")) {
@@ -421,8 +485,9 @@ impl ModelRegistry {
         for f in &files {
             let dest = dir.join(&f.name);
             if dest.is_file() {
-                // Present is not the same as intact: a damaged file is downloaded again.
-                if file_matches(&dest, &f.sha256, cancel)? {
+                // Present is not the same as intact: a damaged file is downloaded again. Without a hash, present is
+                // all that can be known.
+                if f.sha256.is_empty() || file_matches(&dest, &f.sha256, cancel)? {
                     before += f.size_bytes;
                     progress(before, total);
                     continue;
@@ -463,7 +528,8 @@ impl ModelRegistry {
         let resuming = resume_from > 0 && resp.status().as_u16() == 206 && content_range_start(&resp) == Some(resume_from);
         let start = if resuming { resume_from } else { 0 };
         let total = announced.map_or(file.size_bytes, |n| start + n);
-        if !within_expected(file.size_bytes, total) {
+        let limit = file.size_limit();
+        if !within_expected(limit, total) {
             return Err(Error::Download(format!(
                 "the server announces {total} bytes for '{}', the catalogue says {}",
                 file.name, file.size_bytes
@@ -503,7 +569,7 @@ impl ModelRegistry {
             out.write_all(&chunk)?;
             hasher.update(&chunk);
             done += chunk.len() as u64;
-            if !within_expected(file.size_bytes, done) {
+            if !within_expected(limit, done) {
                 drop(out);
                 let _ = fs::remove_file(&part);
                 return Err(Error::Download(format!("'{}' is larger than the {} bytes the catalogue says", file.name, file.size_bytes)));
@@ -515,7 +581,7 @@ impl ModelRegistry {
         if announced.is_some() && done != total {
             return Err(Error::Download(format!("the connection closed after {done} of {total} bytes; the download can be resumed")));
         }
-        if !hex::encode(hasher.finalize()).eq_ignore_ascii_case(&file.sha256) {
+        if !file.sha256.is_empty() && !hex::encode(hasher.finalize()).eq_ignore_ascii_case(&file.sha256) {
             let _ = fs::remove_file(&part);
             return Err(Error::Checksum(id.to_string()));
         }
@@ -524,13 +590,13 @@ impl ModelRegistry {
     }
 
     /// Check the files of `spec` that are on disk against the pinned SHA-256: the names of the ones that are missing
-    /// or damaged (empty when the model is intact).
+    /// or damaged (empty when the model is intact). A file without a pinned hash is only checked to be there.
     pub fn verify(&self, spec: &ModelSpec, cancel: &AtomicBool) -> Result<Vec<String>> {
         let dir = self.model_dir(spec);
         let mut bad = Vec::new();
         for f in spec.all_files() {
             let path = dir.join(&f.name);
-            if !path.is_file() || !file_matches(&path, &f.sha256, cancel)? {
+            if !path.is_file() || (!f.sha256.is_empty() && !file_matches(&path, &f.sha256, cancel)?) {
                 bad.push(f.name);
             }
         }
@@ -645,13 +711,18 @@ mod tests {
     #[test]
     fn catalog_has_unique_ids_pinned_hashes_and_https() {
         let cat = builtin_catalog();
-        for s in &cat {
+        let unverified: Vec<&str> = cat.iter().filter(|s| !s.verified()).map(|s| s.id.as_str()).collect();
+        assert_eq!(unverified, ["u2netp", "isnet-anime"], "only these two are known to have no published checksum");
+        for s in cat.iter().filter(|s| s.verified()) {
             for f in s.all_files() {
                 assert_eq!(f.sha256.len(), 64, "{} / {}", s.id, f.name);
                 assert!(f.url.starts_with("https://"), "{} / {}", s.id, f.name);
                 assert!(f.sha256.chars().all(|c| c.is_ascii_hexdigit()));
                 assert!(f.size_bytes > 0);
             }
+        }
+        for s in cat.iter().filter(|s| !s.verified()) {
+            assert!(s.url.starts_with("https://") && s.size_bytes > 0, "{}", s.id);
         }
         let sam = cat.iter().find(|s| s.kind == ModelKind::Sam2).expect("SAM 2 entry");
         assert_eq!(sam.all_files().len(), 4);
@@ -749,12 +820,12 @@ mod tests {
     }
 
     #[test]
-    fn download_refuses_unpinned_or_non_https() {
+    fn download_refuses_a_malformed_hash_or_non_https() {
         let dir = tmp("dl");
         let reg = ModelRegistry::new(&dir);
         let cancel = AtomicBool::new(false);
         let mut spec = reg.get("birefnet-lite").unwrap();
-        spec.sha256.clear();
+        spec.sha256 = "00".into();
         assert!(matches!(reg.download(&spec, &mut |_, _| {}, &cancel), Err(Error::Download(_))));
         let mut spec = reg.get("birefnet-lite").unwrap();
         spec.url = "http://example.invalid/m.onnx".into();
@@ -920,6 +991,36 @@ mod tests {
         let reg = ModelRegistry::new(&dir);
         assert!(matches!(reg.download_file("m", &file, &dest, &mut |_, _| {}, &AtomicBool::new(false)), Err(Error::Checksum(_))));
         assert!(!dest.exists() && !part_path(&dest).exists());
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_file_without_a_hash_downloads_unchecked_with_room_to_grow() {
+        let dir = tmp("unpinned");
+        let data = body();
+        let (url, seen) = serve(data.clone(), 0, true);
+        let spec = ModelSpec {
+            id: "m".into(),
+            url,
+            sha256: String::new(),
+            size_bytes: data.len() as u64 * 3 / 4, // the file grew upstream since the catalogue was written
+            files: vec![],
+            ..builtin_catalog().remove(0)
+        };
+        assert!(!spec.verified());
+        let reg = ModelRegistry::new(&dir);
+        let no = AtomicBool::new(false);
+        reg.download_files(&spec, &mut |_, _| {}, &no, false).unwrap();
+        assert_eq!(fs::read(reg.model_path(&spec)).unwrap(), data);
+        assert!(reg.verify(&spec, &no).unwrap().is_empty(), "present is all that can be checked");
+        let requests = seen.lock().unwrap().len();
+        reg.download_files(&spec, &mut |_, _| {}, &no, false).unwrap();
+        assert_eq!(seen.lock().unwrap().len(), requests, "a file that is there is kept");
+        fs::remove_dir_all(&dir).ok();
+
+        // More than twice the catalogue size is still refused.
+        let small = ModelSpec { size_bytes: data.len() as u64 / 3, ..spec };
+        assert!(matches!(reg.download_files(&small, &mut |_, _| {}, &no, false), Err(Error::Download(_))));
         fs::remove_dir_all(dir).ok();
     }
 

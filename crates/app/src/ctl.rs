@@ -608,7 +608,10 @@ impl Ctl {
                 }
                 meta.push(m.license.clone());
                 let description = t(&m.description);
-                let badge = if m.recommended {
+                let badge = if !custom && !m.verified() {
+                    // No pinned checksum: the downloaded file is used as it comes.
+                    t("Not verified")
+                } else if m.recommended {
                     t("Recommended")
                 } else if is_sam {
                     t("Smart select")
