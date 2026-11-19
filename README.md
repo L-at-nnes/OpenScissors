@@ -15,9 +15,11 @@
   <img src="docs/images/composed.png" alt="OpenScissors with a mug cut out and placed on a cream background with a soft shadow" width="900">
 </p>
 
-## See it in 100 seconds
+## See it in less than 120 seconds
 
-https://github.com/user-attachments/assets/6f4a59e5-603f-447f-9e4b-1b8eae6a16a8
+
+https://github.com/user-attachments/assets/b79f1394-60df-468f-b715-ac8b7533e703
+
 
 <br>
 
