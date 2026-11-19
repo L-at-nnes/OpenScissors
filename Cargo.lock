@@ -3805,7 +3805,7 @@ dependencies = [
 
 [[package]]
 name = "openscissors"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "arboard",
  "openscissors-core",
@@ -3820,7 +3820,7 @@ dependencies = [
 
 [[package]]
 name = "openscissors-cli"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "openscissors-core",
  "serde_json",
@@ -3828,7 +3828,7 @@ dependencies = [
 
 [[package]]
 name = "openscissors-core"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "base64 0.22.1",
  "fast_image_resize",
