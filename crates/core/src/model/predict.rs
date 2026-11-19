@@ -114,10 +114,13 @@ fn gpu_session(model_path: &Path) -> Result<(Session, &'static str)> {
     Err(last)
 }
 
+// On a platform with no provider (Linux without the `cuda` feature) `GpuProvider` has no variant: the match has no arm,
+// nothing after it runs, and `ep` and the arguments are not used. `gpu_providers` is empty there, so this is never called.
+#[allow(unused_imports, unused_variables, unreachable_code)]
 fn provider_session(provider: GpuProvider, model_path: &Path) -> Result<Session> {
     use ort::ep;
     let builder = Session::builder(environment()?)?.with_optimization_level(GraphOptimizationLevel::Level3)?;
-    let mut builder = match provider {
+    let mut builder: ort::session::builder::SessionBuilder = match provider {
         #[cfg(feature = "cuda")]
         GpuProvider::Cuda => builder.with_execution_providers([ep::CUDA::default().build().error_on_failure()])?,
         #[cfg(windows)]
