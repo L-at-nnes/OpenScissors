@@ -22,7 +22,9 @@ if (!zip) {
 }
 
 const where = fs.mkdtempSync(path.join(os.tmpdir(), 'osc-check-'));
-if (win) execFileSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -Path '${path.join(dist, zip)}' -DestinationPath '${where}'`], { stdio: 'inherit' });
+// Windows: the tar that ships with the system (bsdtar) reads zip files. Expand-Archive broke on the runner when its image
+// moved to a newer Archive module that Windows PowerShell 5.1 cannot load.
+if (win) execFileSync(path.join(process.env.SystemRoot, 'System32', 'tar.exe'), ['-xf', path.join(dist, zip), '-C', where], { stdio: 'inherit' });
 else execFileSync('unzip', ['-q', path.join(dist, zip), '-d', where], { stdio: 'inherit' });
 const folder = path.join(where, fs.readdirSync(where)[0]);
 const app = path.join(folder, win ? 'OpenScissors.exe' : 'OpenScissors');
