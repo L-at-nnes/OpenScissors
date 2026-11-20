@@ -664,6 +664,9 @@ component ViewPane inherits Rectangle {
             viewbox-width: self.width / 1px;
             viewbox-height: self.height / 1px;
             commands: Backend.stroke-path;
+            // The commands are window pixels already: without this Slint scales the path into the box, less the stroke
+            // width, so a wide mark was drawn away from the mouse, more so near the edges of the picture.
+            fit: preserve;
             stroke: Backend.stroke-color;
             stroke-width: Backend.stroke-width;
             stroke-line-cap: round;
