@@ -748,10 +748,11 @@ component ViewPane inherits Rectangle {
                 Backend.pane-down(root.side, e.button == PointerEventButton.left ? 0 : e.button == PointerEventButton.middle ? 1 : 2, self.mouse-x / 1px, self.mouse-y / 1px, e.modifiers.alt);
             } else if (e.kind == PointerEventKind.up) {
                 Backend.pane-up(root.side, e.button == PointerEventButton.left ? 0 : e.button == PointerEventButton.middle ? 1 : 2, self.mouse-x / 1px, self.mouse-y / 1px);
+            } else if (e.kind == PointerEventKind.move) {
+                // Every move, with or without a button down: the `moved` callback only fires while a button is held,
+                // so the brush outline and the crop cursors would not follow a mouse that is only hovering.
+                Backend.pane-move(root.side, self.mouse-x / 1px, self.mouse-y / 1px);
             }
-        }
-        moved => {
-            Backend.pane-move(root.side, self.mouse-x / 1px, self.mouse-y / 1px);
         }
         scroll-event(e) => {
             Backend.pane-wheel(root.side, self.mouse-x / 1px, self.mouse-y / 1px, e.delta-x / 1px, e.delta-y / 1px, e.modifiers.control, e.modifiers.shift);
