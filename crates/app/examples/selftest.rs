@@ -18,9 +18,18 @@ struct Driver {
     ctl: std::sync::Arc<Ctl>,
     ui: slint::Weak<MainWindow>,
     out: PathBuf,
+    /// What the window looked like at the last `mark` step: (width, pixels).
+    reference: std::sync::Mutex<Option<(usize, Vec<u8>)>>,
 }
 
 impl Driver {
+    /// The window as it is now: (width in pixels, RGBA pixels, scale factor).
+    fn pixels(&self) -> (usize, Vec<u8>, f32) {
+        let (snap, scale) = self.ui(|_, ui| (ui.window().take_snapshot(), ui.window().scale_factor()));
+        let buf = snap.expect("snapshot");
+        (buf.width() as usize, buf.as_bytes().to_vec(), scale)
+    }
+
     /// Run `f` on the interface thread and wait for it.
     fn ui<R: Send + 'static>(&self, f: impl FnOnce(&std::sync::Arc<Ctl>, &MainWindow) -> R + Send + 'static) -> R {
         let (tx, rx) = mpsc::channel();
@@ -119,7 +128,7 @@ fn main() {
     }
     ui.show().expect("show");
 
-    let driver = Driver { ctl: ctl.clone(), ui: ui.as_weak(), out };
+    let driver = Driver { ctl: ctl.clone(), ui: ui.as_weak(), out, reference: std::sync::Mutex::new(None) };
     std::thread::spawn(move || {
         let d = driver;
         d.settle(600);
@@ -273,8 +282,9 @@ fn main() {
 }
 
 /// A scenario written as JSON: a list of steps such as
-/// `{"click":[x,y]}`, `{"rclick":[x,y]}`, `{"tool":"erase"}` (keep, remove, erase, select, hair, hair_erase, move), `{"move":[x,y]}` (the mouse moves, no button down), `{"assert_brush":[x,y]}` (the
-/// brush outline is shown at that window position, or the run fails), `{"drag":[x0,y0,x1,y1]}`, `{"key":"z","ctrl":true}`,
+/// `{"click":[x,y]}`, `{"rclick":[x,y]}`, `{"tool":"erase"}` (keep, remove, erase, select, hair, hair_erase, move), `{"move":[x,y]}` (the mouse moves, no button down), `{"down":[x,y]}` and `{"up":[x,y]}` (the left button),
+/// `{"marker":n}` (the brush size), `{"assert_brush":[x,y]}` (the brush outline is shown at that window position, or the run fails),
+/// `{"mark":true}` then `{"assert_stroke":[x,y]}` (the mark being drawn covers that window position, or the run fails),`{"drag":[x0,y0,x1,y1]}`, `{"key":"z","ctrl":true}`,
 /// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"param":["background.mode","original"]}`, `{"language":n}` (0 = the system, then the list), `{"theme":n}` (0 system, 1 dark, 2 light), `{"smart":[x,y]}` (a smart-select point in image pixels), `{"compare":true}` (compare the models), `{"drop_folder":"dir"}`, `{"tab":n}`, `{"popover":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
 fn run_script(d: &Driver, path: &str) {
     use slint::platform::{Key, PointerEventButton, WindowEvent};
@@ -294,6 +304,42 @@ fn run_script(d: &Driver, path: &str) {
             d.ui(move |_, ui| {
                 let _ =
                     ui.window().dispatch_event_with_result(WindowEvent::PointerMoved { position: slint::LogicalPosition::new(p[0], p[1]) });
+            });
+            d.settle(250);
+        } else if step["mark"].as_bool() == Some(true) {
+            // Remember what the window looks like now, for `assert_stroke`.
+            d.settle(250);
+            let (width, pixels, _) = d.pixels();
+            *d.reference.lock().expect("reference") = Some((width, pixels));
+        } else if let Some(p) = pt("assert_stroke") {
+            // The mark being drawn must cover the window position where the mouse is: the pixel there is brighter than
+            // it was at the `mark` step (the mark is white over a dark window, so use the dark theme).
+            d.settle(250);
+            let (width, now, scale) = d.pixels();
+            let guard = d.reference.lock().expect("reference");
+            let (ref_width, before) = guard.as_ref().expect("assert_stroke needs a mark step first");
+            assert_eq!(*ref_width, width, "the window changed size since the mark step");
+            let at = ((p[1] * scale).round() as usize * width + (p[0] * scale).round() as usize) * 4;
+            let gain: Vec<i32> = (0..3).map(|c| now[at + c] as i32 - before[at + c] as i32).collect();
+            if gain.iter().any(|g| *g < 40) {
+                eprintln!("FAILED: the mark being drawn does not cover the mouse at {},{}: the pixel gained {gain:?}", p[0], p[1]);
+                std::process::exit(1);
+            }
+            println!("the mark covers the mouse at {},{}", p[0], p[1]);
+        } else if let Some(n) = step["marker"].as_i64() {
+            d.ui(move |c, _| c.set_marker(n as i32));
+            d.settle(250);
+        } else if let Some(p) = pt("down").or_else(|| pt("up")) {
+            // The left button goes down or up where the mouse is (go there first with `move`): a drag is down, moves, up.
+            let pressed = step.get("down").is_some();
+            d.ui(move |_, ui| {
+                let position = slint::LogicalPosition::new(p[0], p[1]);
+                let button = PointerEventButton::Left;
+                let _ = ui.window().dispatch_event_with_result(if pressed {
+                    WindowEvent::PointerPressed { position, button }
+                } else {
+                    WindowEvent::PointerReleased { position, button }
+                });
             });
             d.settle(250);
         } else if let Some(p) = pt("assert_brush") {
