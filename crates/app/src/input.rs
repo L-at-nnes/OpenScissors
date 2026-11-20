@@ -190,8 +190,15 @@ impl Ctl {
         self.refresh(R_VIEW);
     }
 
-    pub fn pane_leave(self: &Arc<Self>, _side: i32) {
-        self.ux.guard().hover = None;
+    pub fn pane_leave(self: &Arc<Self>, side: i32) {
+        {
+            let mut ux = self.ux.guard();
+            // Moving from one picture to the other, Slint reports the move into the new one and then the exit from the
+            // old one: only forget the position when it is the old one's.
+            if ux.hover.is_some_and(|(hovered, _, _)| hovered == side) {
+                ux.hover = None;
+            }
+        }
         self.refresh(R_VIEW);
     }
 
