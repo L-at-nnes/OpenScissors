@@ -273,7 +273,8 @@ fn main() {
 }
 
 /// A scenario written as JSON: a list of steps such as
-/// `{"click":[x,y]}`, `{"rclick":[x,y]}`, `{"drag":[x0,y0,x1,y1]}`, `{"key":"z","ctrl":true}`,
+/// `{"click":[x,y]}`, `{"rclick":[x,y]}`, `{"move":[x,y]}` (the mouse moves, no button down), `{"assert_brush":[x,y]}` (the
+/// brush outline is shown at that window position, or the run fails), `{"drag":[x0,y0,x1,y1]}`, `{"key":"z","ctrl":true}`,
 /// `{"wheel":[x,y,dy],"ctrl":true}`, `{"preset":n}`, `{"param":["background.mode","original"]}`, `{"language":n}` (0 = the system, then the list), `{"theme":n}` (0 system, 1 dark, 2 light), `{"smart":[x,y]}` (a smart-select point in image pixels), `{"compare":true}` (compare the models), `{"drop_folder":"dir"}`, `{"tab":n}`, `{"popover":n}`, `{"shot":"name"}`, `{"wait":ms}`, `{"say":"text"}`.
 fn run_script(d: &Driver, path: &str) {
     use slint::platform::{Key, PointerEventButton, WindowEvent};
@@ -282,6 +283,29 @@ fn run_script(d: &Driver, path: &str) {
         let pt = |k: &str| step[k].as_array().map(|a| a.iter().map(|v| v.as_f64().unwrap_or(0.0) as f32).collect::<Vec<_>>());
         if let Some(p) = pt("click") {
             d.click(p[0], p[1]);
+        } else if let Some(p) = pt("move") {
+            // The mouse moves with no button down: what a hover does.
+            d.ui(move |_, ui| {
+                let _ =
+                    ui.window().dispatch_event_with_result(WindowEvent::PointerMoved { position: slint::LogicalPosition::new(p[0], p[1]) });
+            });
+            d.settle(250);
+        } else if let Some(p) = pt("assert_brush") {
+            // The brush outline must be on screen where the mouse is (a window position, within 2 px): the run fails if not.
+            let (visible, x, y) = d.ui(|_, ui| {
+                let b = ui.global::<Backend>();
+                (b.get_brush_visible(), b.get_brush_x(), b.get_brush_y())
+            });
+            // The left pane starts at x = 48, y = 48.
+            let (want_x, want_y) = (p[0] - 48.0, p[1] - 48.0);
+            if !visible || (x - want_x).abs() > 2.0 || (y - want_y).abs() > 2.0 {
+                eprintln!(
+                    "FAILED: the brush outline is {} at {x},{y}, expected at {want_x},{want_y}",
+                    if visible { "shown" } else { "hidden" }
+                );
+                std::process::exit(1);
+            }
+            println!("brush outline at {x},{y}");
         } else if let Some(p) = pt("rclick") {
             d.ui(move |_, ui| {
                 let pos = slint::LogicalPosition::new(p[0], p[1]);
