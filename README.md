@@ -9,6 +9,10 @@
 [![Portable](https://img.shields.io/badge/install-none%20(one%20folder)-success)](#portable-by-design)
 [![No telemetry](https://img.shields.io/badge/telemetry-none-lightgrey)](#privacy)
 
+<p align="center">
+  <img src="https://jmcrafter26.github.io/badges/available/fmhy/cozy.svg" alt="FMHY">
+</p>
+
 *Français : [README.fr.md](README.fr.md)*
 
 <p align="center">
